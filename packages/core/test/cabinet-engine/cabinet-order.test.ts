@@ -100,7 +100,6 @@ describe('REF-001 cabinet order', () => {
     { startCorner: 'top-right' },
     { startCorner: 'bottom-right' },
     { startCorner: 'bottom-left' },
-    { direction: 'right-to-left' },
     { direction: 'top-to-bottom' },
     { direction: 'bottom-to-top' },
   ]
@@ -156,10 +155,17 @@ describe('independent cabinet transformations', () => {
     expect(offsets).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])
   })
 
-  it('applies left-to-right independently and rejects unimplemented directions', () => {
+  it('applies horizontal directions independently and rejects vertical directions', () => {
+    for (let offset = 0; offset < 4; offset += 1) {
+      const position = Object.freeze({ line: 1, offset, lineLength: 4 })
+      expect(applyCabinetDirection(position, 'left-to-right')).toEqual(position)
+      expect(applyCabinetDirection(position, 'right-to-left')).toEqual({
+        ...position,
+        offset: position.lineLength - 1 - position.offset,
+      })
+      expect(position.offset).toBe(offset)
+    }
     const position = Object.freeze({ line: 1, offset: 0, lineLength: 4 })
-    expect(applyCabinetDirection(position, 'left-to-right')).toEqual(position)
-    expect(() => applyCabinetDirection(position, 'right-to-left')).toThrowError(/UNSUPPORTED_ORDERING/)
     expect(() => applyCabinetDirection(position, 'top-to-bottom')).toThrowError(/UNSUPPORTED_ORDERING/)
     expect(() => applyCabinetDirection(position, 'bottom-to-top')).toThrowError(/UNSUPPORTED_ORDERING/)
   })

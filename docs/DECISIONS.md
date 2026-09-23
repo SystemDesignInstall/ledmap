@@ -83,6 +83,8 @@
 - **Статус:** Working
 - **Решение:** домен — плоские immutable-сущности (`readonly` свойства, ссылки по брендированным ID), value objects как readonly-структуры с фабриками (`createSize`, `createPoint`, …), один класс только для ошибок (`DomainError` с кодами). Без класса-обёрток, getters/setters, UI/Electron/Node-зависимостей.
 - **Три уровня индексации разделены и не сводятся к одному индексу:** Geometry (x,y,row,column,localX,localY) | Ordering (cabinetIndex/moduleIndex/pixelIndex/logicalIndex — производные, чистые, WORKING) | Signal topology (processor/port/receiver + dataIndex — WORKING).
+- **Pixel ≠ PixelAddress.** Pixel — физическая/логическая сущность (cabinet, module, coordinate, physical, logicalIndex). PixelAddress — отдельная derived addressing-структура (hardware + cabinet + module + coordinate + dataIndex). Биекция `Pixel → Mapping Engine → PixelAddress` по ключу `(cabinet, module, coordinate)`; PixelAddress не наследуется от Pixel и не является его полем.
+- **Derived allocation state не хранится:** `usedPixels`/`remainingPixels`/`assignedReceivers` (Port) вычисляются из capacity и назначений, никогда не хранятся как независимые поля (устраняется риск рассинхрона capacity ↔ usage). Аллокатор не реализован.
 - Координаты 0-базовые, origin top-left, Y растёт вниз (см. ADR-004).
 - Производные индексы на сущностях **не хранятся** (кроме read-model `Pixel`, заполняемой движками); правило «derived не персистится» сохраняется.
 - Инварианты проверяются в фабриках (полный список — `docs/domain-model.md` §7).

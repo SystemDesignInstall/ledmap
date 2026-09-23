@@ -1,5 +1,5 @@
 import type { CabinetId, ModuleId, PortId, ProcessorId, ReceiverId, SignalPathId } from './ids.js'
-import type { PixelCoordinate, Point } from './coordinates.js'
+import type { PixelCoordinate } from './coordinates.js'
 
 export interface HardwareAddress {
   readonly processor: ProcessorId
@@ -18,6 +18,5 @@ export interface PixelAddress {
   readonly cabinet: CabinetId
   readonly module: ModuleId
   readonly coordinate: PixelCoordinate
-  readonly physical: Point
   readonly dataIndex: number
 }

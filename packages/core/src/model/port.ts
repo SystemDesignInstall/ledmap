@@ -1,12 +1,12 @@
-import { asPortId, type PortId, type ProcessorId, type ReceiverId } from './ids.js'
+import { asPortId, type PortId, type ProcessorId } from './ids.js'
 import { assertNonNegativeInteger, assertPositiveInteger } from './coordinates.js'
+import type { Receiver } from './receiver.js'
 
 export interface Port {
   readonly id: PortId
   readonly processor: ProcessorId
   readonly index: number
   readonly receiverCapacity: number
-  readonly receivers: readonly ReceiverId[]
 }
 
 export interface CreatePortInput {
@@ -14,13 +14,6 @@ export interface CreatePortInput {
   processor: ProcessorId
   index: number
   receiverCapacity: number
-  receivers?: readonly ReceiverId[]
-}
-
-const noReceivers: readonly ReceiverId[] = []
-
-export function portReceiverCount(port: Pick<Port, 'receivers'>): number {
-  return port.receivers.length
 }
 
 export function createPort(input: CreatePortInput): Port {
@@ -31,6 +24,12 @@ export function createPort(input: CreatePortInput): Port {
     processor: input.processor,
     index: input.index,
     receiverCapacity: input.receiverCapacity,
-    receivers: input.receivers ?? noReceivers,
   }
+}
+
+export function portReceiverCount(port: Port, receivers: readonly Receiver[]): number {
+  return receivers.reduce(
+    (count, receiver) => (receiver.port === port.id ? count + 1 : count),
+    0,
+  )
 }

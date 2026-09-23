@@ -38,17 +38,32 @@ Module (физический LED-модуль внутри Cabinet)
 
 Processor / Port / Receiver (hardware topology)
   ├── Processor: id, name, portCount
-  ├── Port: id, processor, index, receiverCapacity, receivers[]
+  ├── Port: id, processor, index (portIndex), receiverCapacity
+  │   (receivers / usedPixels / remainingPixels — derived allocation state, НЕ хранятся)
   └── Receiver: id, index, processor, port, cabinets[]
-  (used/remaining pixels — производные метрики Hardware Engine, не хранятся)
 
 SignalPath / PixelAddress / Pixel
   ├── SignalPath: id + HardwareAddress{processor, port, receiver} + cabinet
-  ├── PixelAddress: hardware + cabinet + module + coordinate + physical + dataIndex (derived, WORKING)
-  └── Pixel: PixelAddress + logicalIndex (derived, WORKING)
+  ├── PixelAddress (derived addressing): hardware → cabinet → module → coordinate → dataIndex (WORKING)
+  └── Pixel (физическая/логическая сущность): cabinet, module, coordinate (local), physical, logicalIndex (WORKING)
+       Pixel ≠ PixelAddress; однозначная связь: Pixel → (Mapping Engine) → PixelAddress,
+       ключ биекции: (cabinet, module, coordinate)
 ```
 
 Сущности ссылаются друг на друга **по ID** (плоская модель, без вложенности и рекурсии). Полные объекты собираются контекстами/движками.
+
+### 1a. Stored vs derived
+
+| Данные | Stored (config/assignment) | Derived (пересчитываются движками) |
+|---|---|---|
+| Screen.resolution, Cabinet размеры, GridOrdering, Port.receiverCapacity | ✓ | |
+| Cabinet → Grid, Module → Cabinet, Receiver → Port/Processor, Receiver.cabinets | ✓ (primary assignment, ADR-007) | |
+| standalone `receivers` на Port | | ✓ (**удалено** из модели) |
+| `usedPixels` / `remainingPixels` / `assignedReceivers` (Port) | | ✓ (allocation state, аллокатора пока нет) |
+| `cabinetIndex` / `moduleIndex` / `pixelIndex` | | ✓ (Cabinet Engine) |
+| `logicalIndex` (на Pixel) | | ✓ (Cabinet/Mapping Engine) |
+| `dataIndex`, `PixelAddress` | | ✓ (Mapping Engine; биекция с Pixel) |
+| `physical` (на Pixel) | | ✓ (из geometry) |
 
 ## 2. Value objects
 
@@ -87,8 +102,9 @@ SignalPath / PixelAddress / Pixel
 
 ## 6. Signal topology
 
-- `HardwareAddress` — `{ processor, port, receiver }`; `SignalPath` — hardware + cabinet; `PixelAddress` доадресует module + pixel; `Pixel` = PixelAddress + `logicalIndex`.
-- **`dataIndex`** — конечный сигнальный индекс (WORKING), отдельный от `logicalIndex` и от физических координат.
+- `HardwareAddress` — `{ processor, port, receiver }`; `SignalPath` — hardware + cabinet; `PixelAddress` — hardware + cabinet + module + `coordinate` (адресует конкретный Pixel) + **`dataIndex`**.
+- **Pixel ≠ PixelAddress.** Pixel — физическая/логическая pixel-сущность (geometry: cabinet/module/coordinate/physical + ordering: logicalIndex). PixelAddress — отдельная derived addressing-структура (hardware chain + dataIndex). Они связаны однозначно (`Pixel → Mapping Engine → PixelAddress`), но это две разные концепции; PixelAddress не является частью Pixel.
+- `usedPixels` / `remainingPixels` / `assignedReceivers` — **derived allocation state**: вычисляются из ёмкостей и назначений, никогда не хранятся как независимые поля (нет возможности рассинхрона capacity ↔ usage). Аллокатор не реализован (Hardware Engine, Phase 6).
 - Precedence Processor→Port→Receiver→Cabinet — **WORKING**, финализируется после REF-001…004.
 - auto-allocation (ёмкости Port/Receiver/Processor) — **WORKING**.
 

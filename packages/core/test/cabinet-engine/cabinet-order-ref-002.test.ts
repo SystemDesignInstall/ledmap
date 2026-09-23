@@ -100,7 +100,7 @@ describe('REF-002 cabinet order', () => {
   it('applies Snake independently to an already Right-to-Left traversal', () => {
     const rows: TraversalPosition[][] = [0, 1, 2].map((line) => (
       [0, 1, 2, 3].map((offset) => applyCabinetDirection(
-        { line, offset, lineLength: 4 },
+        { line, offset, lineLength: 4, axis: 'horizontal' },
         'right-to-left',
       ))
     ))

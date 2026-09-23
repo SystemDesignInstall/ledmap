@@ -148,7 +148,7 @@ describe('independent cabinet transformations', () => {
     for (let row = 0; row < 3; row += 1) {
       for (let column = 0; column < 4; column += 1) {
         const numbered = numberCabinetPosition(grid, { column, row }, 'row', 'top-left')
-        expect(numbered).toEqual({ line: row, offset: column, lineLength: 4 })
+        expect(numbered).toEqual({ line: row, offset: column, lineLength: 4, axis: 'horizontal' })
         offsets.push(numbered.line * numbered.lineLength + numbered.offset)
       }
     }
@@ -157,7 +157,7 @@ describe('independent cabinet transformations', () => {
 
   it('applies horizontal directions independently and rejects vertical directions', () => {
     for (let offset = 0; offset < 4; offset += 1) {
-      const position = Object.freeze({ line: 1, offset, lineLength: 4 })
+      const position = Object.freeze({ line: 1, offset, lineLength: 4, axis: 'horizontal' })
       expect(applyCabinetDirection(position, 'left-to-right')).toEqual(position)
       expect(applyCabinetDirection(position, 'right-to-left')).toEqual({
         ...position,
@@ -165,7 +165,7 @@ describe('independent cabinet transformations', () => {
       })
       expect(position.offset).toBe(offset)
     }
-    const position = Object.freeze({ line: 1, offset: 0, lineLength: 4 })
+    const position = Object.freeze({ line: 1, offset: 0, lineLength: 4, axis: 'horizontal' })
     expect(() => applyCabinetDirection(position, 'top-to-bottom')).toThrowError(/UNSUPPORTED_ORDERING/)
     expect(() => applyCabinetDirection(position, 'bottom-to-top')).toThrowError(/UNSUPPORTED_ORDERING/)
   })
@@ -175,7 +175,7 @@ describe('independent cabinet transformations', () => {
     for (let line = 0; line < 3; line += 1) {
       const offsets = []
       for (let offset = 0; offset < 4; offset += 1) {
-        const position = Object.freeze({ line, offset, lineLength: 4 })
+        const position = Object.freeze({ line, offset, lineLength: 4, axis: 'horizontal' })
         expect(applyCabinetSnake(position, false)).toEqual(position)
         const result = applyCabinetSnake(position, true)
         expect(result.line).toBe(line)

@@ -6,11 +6,14 @@ export function applyCabinetDirection(
   position: TraversalPosition,
   direction: Direction,
 ): TraversalPosition {
-  if (direction === 'left-to-right') {
+  if (position.axis === 'horizontal' && direction === 'left-to-right') {
     return { ...position }
   }
-  if (direction === 'right-to-left') {
+  if (position.axis === 'horizontal' && direction === 'right-to-left') {
     return { ...position, offset: position.lineLength - 1 - position.offset }
   }
-  throw new DomainError('UNSUPPORTED_ORDERING', 'only horizontal directions are implemented')
+  if (position.axis === 'vertical' && direction === 'top-to-bottom') {
+    return { ...position }
+  }
+  throw new DomainError('UNSUPPORTED_ORDERING', `direction ${direction} is unsupported for ${position.axis} traversal`)
 }

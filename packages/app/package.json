@@ -1,0 +1,14 @@
+{
+  "name": "@ledmap/app",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "LedMAP Electron application: main/preload/renderer, fs, dialogs, IPC, canvas renderer.",
+  "dependencies": {
+    "@ledmap/core": "*"
+  },
+  "scripts": {
+    "build": "tsc --noEmit -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  }
+}

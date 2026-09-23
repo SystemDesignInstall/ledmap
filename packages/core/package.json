@@ -1,0 +1,11 @@
+{
+  "name": "@ledmap/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "LedMAP pure domain core: model, cabinet/hardware/mapping/remap engines, validation, serialization. No I/O, no Electron, no DOM.",
+  "scripts": {
+    "build": "tsc --noEmit -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  }
+}

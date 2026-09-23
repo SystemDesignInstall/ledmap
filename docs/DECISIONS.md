@@ -79,6 +79,14 @@
 - **Решение:** 002 — Row + Right→Left + Snake; 003 — Column + Snake; 004 — Column + варианты Direction. Каждый фиксирует Numbering/Direction/Snake по отдельности и в комбинациях; полные spec-файлы пишутся до реализации, по образцу 001.
 - **Следствия:** 001 — полный приёмочный; 002–004 — регрессия независимости трансформаций.
 
+## ADR-014: Конвенции Domain Model (Phase 1)
+- **Статус:** Working
+- **Решение:** домен — плоские immutable-сущности (`readonly` свойства, ссылки по брендированным ID), value objects как readonly-структуры с фабриками (`createSize`, `createPoint`, …), один класс только для ошибок (`DomainError` с кодами). Без класса-обёрток, getters/setters, UI/Electron/Node-зависимостей.
+- **Три уровня индексации разделены и не сводятся к одному индексу:** Geometry (x,y,row,column,localX,localY) | Ordering (cabinetIndex/moduleIndex/pixelIndex/logicalIndex — производные, чистые, WORKING) | Signal topology (processor/port/receiver + dataIndex — WORKING).
+- Координаты 0-базовые, origin top-left, Y растёт вниз (см. ADR-004).
+- Производные индексы на сущностях **не хранятся** (кроме read-model `Pixel`, заполняемой движками); правило «derived не персистится» сохраняется.
+- Инварианты проверяются в фабриках (полный список — `docs/domain-model.md` §7).
+
 ## Открытые вопросы для окончательной фиксации
 1. **dataIndex** — семантика сигнального индекса (пересматривается после REF-001…004).
 2. Точный формат `extensions` (свободный JSON vs схема).

@@ -55,12 +55,16 @@ LedMap/
 ├─ docs/
 │  ├─ ARCHITECTURE.md
 │  ├─ DECISIONS.md
-│  └─ test-001/spec.md       # спецификация Reference Test 001 (создаётся на этапе тестов)
+│  ├─ domain-model.md       # сущности, value objects, ID, инварианты, open questions
+│  └─ test-001/spec.md      # спецификация Reference Test 001 (создаётся на этапе тестов)
 ├─ packages/
 │  ├─ core/                  # ЧИСТЫЙ ДОМЕН: runtime-зависимостей нет
 │  │  ├─ src/
 │  │  │  ├─ index.ts         # только явный public API barrel
-│  │  │  ├─ model/           # units, geometry, screen, mapping-region, cabinet-grid, cabinet, module, hardware, ordering
+│  │  │  ├─ model/           # errors.ts, ids.ts, coordinates.ts, ordering.ts,
+│  │  │  │                   # screen.ts, mapping-region.ts, cabinet-grid.ts, cabinet.ts,
+│  │  │  │                   # module.ts, pixel.ts, processor.ts, port.ts, receiver.ts, signal-path.ts
+│  │  │  │                   # (подробности — docs/domain-model.md)
 │  │  │  ├─ cabinet-engine/  # numbering.ts, direction.ts, snake.ts, module-order.ts, pixel-order.ts, index.ts
 │  │  │  ├─ hardware-engine/ # allocate.ts, resolve.ts, index.ts
 │  │  │  ├─ mapping-engine/  # index.ts → PixelMap (компактно, диапазонами, не попиксельно)

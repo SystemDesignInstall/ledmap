@@ -97,7 +97,7 @@ y = moduleRow × modulePixelHeight + pixelY
 | `(0,7)` | 105 | Первый пиксель M04 |
 | `(14,13)` | 209 | Последний пиксель M06 |
 
-Executable-проверки: `packages/core/test/cabinet-engine/pixel-layout.test.ts` и `pixel-layout-validation.test.ts`.
+Executable-проверки: `packages/core/test/cabinet-engine/pixel-layout.test.ts`, `pixel-layout-validation.test.ts` и `pixel-layout-degenerate.test.ts`.
 
 Приёмка включает полный round-trip всех 210 координат, точное покрытие offset 0…209 без повторов, обратный round-trip всех 210 offset и независимый обход модулей с проверкой полного разложения. Дополнительно проверяются минимальные входы функций, независимость от Cabinet ordering, детерминизм, immutability, вырожденные сетки, границы координат, все пять переполнений и допустимая арифметика около `Number.MAX_SAFE_INTEGER`.
 

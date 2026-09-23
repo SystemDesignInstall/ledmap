@@ -111,6 +111,15 @@
 - **Совместимость:** один frozen `referenceCabinetLayout` и четыре прежних `reference*` wrapper сохраняют API и результаты REF-001. Производные данные не сериализуются; новые режимы ordering не вводятся.
 - **Контракт и приёмка:** [Cabinet Pixel Layout Specification](specs/LEDMAP-CABINET-PIXEL-LAYOUT-001.md), полный двусторонний round-trip 3×2 модулей по 5×7 px, независимые якоря и регрессия исходных 185 тестов.
 
+## ADR-017: Early Alpha UI — Cabinet Grid Visualizer
+
+- **Статус:** Accepted — пользователь одобрил план 2026-09-23.
+- **Основание:** Phase 4E принята пользователем на commit `67fd975cf0e0036fd50c06d533a13a1bff871651`. Cabinet ordering и обобщённый pixel layout позволяют визуализировать сетку через существующий public API, не дожидаясь Hardware Engine. StartCorner сейчас не расширяется.
+- **Решение:** на основании одобренной спецификации [LEDMAP-ALPHA-UI-001](specs/LEDMAP-ALPHA-UI-001.md) разрешить отдельный Early Alpha UI между Phase 4E и дальнейшими движками: Electron, один Screen/Grid, настройки и Canvas preview. Это узкое исключение из «UI только в Phase 8»; полный UI остаётся Phase 8.
+- **Границы:** production-код только в app и конфигурации запуска/сборки. UI потребляет готовый core; математика, public API и reference-тесты не меняются. Physical position и logical signal order отображаются отдельно. Mapping Region не подменяется Cabinet/Grid; Alpha не строит Input→Output mapping.
+- **Отложено:** Hardware/Receiver/Port/Processor, addressing, Mapping/Remap, сериализация и Open/Save, экспорт, packaging, новые StartCorner и module/pixel ordering.
+- **Приёмка:** спецификация фиксирует сценарий Create Screen, допустимые настройки, ошибки/лимиты, интеграцию API и проверку реального Electron-окна. Обязательны test/typecheck/lint/build и smoke-приёмка. Перед production-кодом утверждённый контракт фиксируется отдельным documentation commit.
+
 ## Открытые вопросы для окончательной фиксации
 
 1. Multi-processor project ordering, scope Receiver.index и конфигурация Module/Pixel ordering вне ReferenceAddressingProfile-001 (см. спецификацию §16).

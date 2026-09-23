@@ -1,6 +1,8 @@
 # LedMAP — Architecture
 
-Статус: **черновик контракта** (фиксируется по результатам аудита). Никакого production-кода на этом этапе ещё нет.
+Статус: **целевой архитектурный контракт**, реализуемый по этапам. Cabinet Engine Phase 4E принят; наличие раздела в этом документе не означает готовность соответствующего движка.
+
+Утверждённое исключение из очередности UI: [Early Alpha UI — Cabinet Grid Visualizer](docs/specs/LEDMAP-ALPHA-UI-001.md), ADR-017 (Accepted, 2026-09-23). App может визуализировать готовый Cabinet Engine до Hardware/Mapping Engine: один Screen/Grid, настройки и Canvas. Полный pipeline и границы core/app сохраняются; Alpha не создаёт Input→Output mapping, hardware addressing или PixelMap. Полный UI остаётся Phase 8.
 
 ## 1. Цель
 

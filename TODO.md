@@ -2,6 +2,13 @@
 
 Поэтапный план. Никакой этап не начинается без одобрения предыдущего. Каждый этап: зелёные тесты + `typecheck` + `lint`. Статусы: `[ ]` — не начато, `[x]` — готово, `[~]` — в работе.
 
+## Текущая точка и следующий этап
+
+- [x] Phase 4E — обобщённая геометрия Cabinet pixel layout принята пользователем на `67fd975cf0e0036fd50c06d533a13a1bff871651`.
+- Cabinet Engine поддерживает Row/Column, LTR/RTL, TTB/BTT, независимый Snake, Top Left и прямоугольный module-first pixel layout с inverse mapping и safe integer validation. REF-001…004 служат регрессией Cabinet Engine; полная hardware/mapping-приёмка из Phase 5 ниже этим не объявляется завершённой.
+- Старые пункты Phase 0–5 ниже сохраняют исходный план и не являются актуальным отчётом о каждом реализованном файле.
+- Следующий утверждённый этап — **Early Alpha UI**, см. отдельный раздел ниже. Расширение StartCorner отложено.
+
 ## Phase 0 — Environment & Repository
 - [ ] Установить Node.js 24 LTS через winget (в окружении отсутствует)
 - [ ] `package.json` корня (npm workspaces, scripts)
@@ -47,6 +54,17 @@
 - [ ] Фикстуры и тесты 002 (Row, R→L, Snake), 003 (Column, Snake), 004 (Column, варианты Direction)
 - [ ] **Milestone:** математическое ядро доказано headless
 
+## Early Alpha UI — Cabinet Grid Visualizer (после Phase 4E)
+
+Статус: **Accepted** (2026-09-23), пользователь одобрил [LEDMAP-ALPHA-UI-001](docs/specs/LEDMAP-ALPHA-UI-001.md) и ADR-017. Это ограниченное исключение из прежнего запрета раннего UI; Phase 6–8 сохраняются.
+
+- [x] Подготовить спецификацию, ADR-017 и согласованные изменения архитектурного плана/AGENTS.md.
+- [x] Получить одобрение плана реализации Early Alpha UI.
+- [ ] Подключить Electron/electron-vite и запуск `npm run dev`; сборка приложения через `npm run build`.
+- [ ] Create Screen: один Screen/Grid, настройки геометрии и ordering, readonly snapshot через существующий core, ошибки и лимиты preview.
+- [ ] Canvas: физические ID, отдельные логические номера, модульная сетка, направленный путь, fit-to-window и сводка размеров.
+- [ ] Целевые тесты app, регрессия core, typecheck/lint/build, smoke-проверка реального Electron-окна и инструкция запуска.
+
 ## Phase 6 — Hardware (Receiver/Processor/Port) Engine
 - [ ] `hardware-engine/allocate.ts` (ёмкости, precedence Processor→Port→Receiver)
 - [ ] `hardware-engine/resolve.ts` (явные назначения + доводка)
@@ -58,10 +76,10 @@
 - [ ] `remap-engine` (пост-коррекция готового PixelMap, без мутации модели)
 - [ ] `validation` (rules, codes, validator)
 - [ ] `serialization` schema v1 + round-trip + миграции (скелет)
-- [ ] Все тесты зелёные, всё ещё headless
+- [ ] Все тесты движков зелёные и выполняются headless независимо от Alpha UI
 
-## Phase 8 — UI (packages/app) — только последним
-- [ ] Минимальное Electron-окно (electron-vite dev)
+## Phase 8 — Полный UI (packages/app)
+- [ ] Развить минимальное Electron-окно Early Alpha до полного редактора
 - [ ] Open/Save `.ledmap` через IPC + `main/services`
 - [ ] Реактивное state; Canvas: screen → cabinet outline → module grid из read-only модели
 - [ ] Диагностики валидатора в UI
@@ -69,8 +87,8 @@
 - [ ] Экспорт hardware-форматов производителей (отдельный контракт)
 
 ## Запреты на ближайших этапах (0–5)
-- Без UI (окно, компоненты, canvas) — Phase 8
-- Без Electron runtime интеграции (main/preload/IPC) — Phase 8
+- UI — Phase 8; исключение только для Early Alpha UI по утверждённым LEDMAP-ALPHA-UI-001 / ADR-017
+- Electron runtime — Phase 8; в одобренном Early Alpha разрешены окно и renderer, без привилегированного IPC
 - Без hardware драйверов/сетевых протоколов видеопроцессоров
 - Без экспортных форматов производителей
 - Без packaging/distribution, undo/redo, локализации, превью-рендера пикселей

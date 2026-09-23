@@ -1,9 +1,18 @@
 import type { PixelCoordinate } from '../model/coordinates.js'
 import { assertIndexInBounds } from './bounds.js'
-import { referenceModulePixelHeight, referenceModulePixelWidth } from './reference-profile.js'
+import { modulePixelCount, type CabinetPixelLayoutConfig } from './pixel-layout.js'
+import { referenceCabinetLayout } from './reference-profile.js'
+
+export function pixelIndexWithinModule(
+  layout: Pick<CabinetPixelLayoutConfig, 'modulePixelWidth' | 'modulePixelHeight'>,
+  coordinate: PixelCoordinate,
+): number {
+  modulePixelCount(layout)
+  assertIndexInBounds('pixelX', coordinate.x, layout.modulePixelWidth)
+  assertIndexInBounds('pixelY', coordinate.y, layout.modulePixelHeight)
+  return coordinate.y * layout.modulePixelWidth + coordinate.x
+}
 
 export function referencePixelIndexWithinModule(coordinate: PixelCoordinate): number {
-  assertIndexInBounds('pixelX', coordinate.x, referenceModulePixelWidth)
-  assertIndexInBounds('pixelY', coordinate.y, referenceModulePixelHeight)
-  return coordinate.y * referenceModulePixelWidth + coordinate.x
+  return pixelIndexWithinModule(referenceCabinetLayout, coordinate)
 }

@@ -103,6 +103,14 @@
 - **Контракт и приёмка:** [LEDMAP-HARDWARE-ADDRESSING-SPEC-001](specs/LEDMAP-HARDWARE-ADDRESSING-SPEC-001.md), [LEDMAP-REF-001](reference/LEDMAP-REF-001.md). Ключевая граница: P01:01 last `dataIndex=131071`, P01:02 first `dataIndex=0`, при непрерывном `globalRemapIndex` 131071 → 131072.
 - **Следствия:** никаких изменений TypeScript-модели, интерфейса HardwareProfile, calculators или Engines в Phase 2A. Математическая executable-приёмка следует отдельным этапом.
 
+## ADR-016: Независимая геометрия Cabinet pixel layout
+
+- **Статус:** Normative — Phase 4E.
+- **Решение:** `CabinetPixelLayoutConfig` задаёт только `moduleColumns`, `moduleRows`, `modulePixelWidth`, `modulePixelHeight`; `CabinetEngineConfig` — пересечение с существующим `CabinetOrderingInput`. Функции module/pixel index принимают минимальные части конфигурации, не зависят от Cabinet ordering и сущностей Cabinet/Hardware.
+- **Математика:** Module и Pixel внутри Module — Row Major, Top Left, Snake OFF; flattening — module-first. Геометрия прямоугольная, все модули одного размера. Каждый входной размер и каждое производное произведение обязаны быть positive safe integers.
+- **Совместимость:** один frozen `referenceCabinetLayout` и четыре прежних `reference*` wrapper сохраняют API и результаты REF-001. Производные данные не сериализуются; новые режимы ordering не вводятся.
+- **Контракт и приёмка:** [Cabinet Pixel Layout Specification](specs/LEDMAP-CABINET-PIXEL-LAYOUT-001.md), полный двусторонний round-trip 3×2 модулей по 5×7 px, независимые якоря и регрессия исходных 185 тестов.
+
 ## Открытые вопросы для окончательной фиксации
 
 1. Multi-processor project ordering, scope Receiver.index и конфигурация Module/Pixel ordering вне ReferenceAddressingProfile-001 (см. спецификацию §16).

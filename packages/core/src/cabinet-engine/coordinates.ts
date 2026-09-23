@@ -1,18 +1,11 @@
 import type { PixelCoordinate } from '../model/coordinates.js'
 import { assertIndexInBounds } from './bounds.js'
-import { referenceModuleIndex } from './module-order.js'
-import { referencePixelIndexWithinModule } from './pixel-order.js'
-import {
-  referenceCabinetPixelCount,
-  referenceCabinetPixelHeight,
-  referenceCabinetPixelWidth,
-  referenceModuleColumns,
-  referenceModulePixelCount,
-  referenceModulePixelHeight,
-  referenceModulePixelWidth,
-} from './reference-profile.js'
+import { moduleIndex } from './module-order.js'
+import { pixelIndexWithinModule } from './pixel-order.js'
+import { cabinetPixelLayoutDimensions, type CabinetPixelLayoutConfig } from './pixel-layout.js'
+import { referenceCabinetLayout } from './reference-profile.js'
 
-export interface ReferenceCabinetPixel {
+export interface CabinetPixel {
   readonly moduleColumn: number
   readonly moduleRow: number
   readonly moduleIndex: number
@@ -22,36 +15,48 @@ export interface ReferenceCabinetPixel {
   readonly cabinetPixelOffset: number
 }
 
-export function decomposeReferenceCabinetPixel(coordinate: PixelCoordinate): ReferenceCabinetPixel {
-  assertIndexInBounds('cabinetX', coordinate.x, referenceCabinetPixelWidth)
-  assertIndexInBounds('cabinetY', coordinate.y, referenceCabinetPixelHeight)
-  const moduleColumn = Math.floor(coordinate.x / referenceModulePixelWidth)
-  const moduleRow = Math.floor(coordinate.y / referenceModulePixelHeight)
-  const moduleIndex = referenceModuleIndex({ column: moduleColumn, row: moduleRow })
-  const pixelX = coordinate.x % referenceModulePixelWidth
-  const pixelY = coordinate.y % referenceModulePixelHeight
-  const pixelIndexWithinModule = referencePixelIndexWithinModule({ x: pixelX, y: pixelY })
+export type ReferenceCabinetPixel = CabinetPixel
+
+export function decomposeCabinetPixel(layout: CabinetPixelLayoutConfig, coordinate: PixelCoordinate): CabinetPixel {
+  const dimensions = cabinetPixelLayoutDimensions(layout)
+  assertIndexInBounds('cabinetX', coordinate.x, dimensions.cabinetPixelWidth)
+  assertIndexInBounds('cabinetY', coordinate.y, dimensions.cabinetPixelHeight)
+  const moduleColumn = Math.floor(coordinate.x / layout.modulePixelWidth)
+  const moduleRow = Math.floor(coordinate.y / layout.modulePixelHeight)
+  const index = moduleIndex(layout, { column: moduleColumn, row: moduleRow })
+  const pixelX = coordinate.x % layout.modulePixelWidth
+  const pixelY = coordinate.y % layout.modulePixelHeight
+  const pixelIndex = pixelIndexWithinModule(layout, { x: pixelX, y: pixelY })
   return {
     moduleColumn,
     moduleRow,
-    moduleIndex,
+    moduleIndex: index,
     pixelX,
     pixelY,
-    pixelIndexWithinModule,
-    cabinetPixelOffset: moduleIndex * referenceModulePixelCount + pixelIndexWithinModule,
+    pixelIndexWithinModule: pixelIndex,
+    cabinetPixelOffset: index * dimensions.modulePixelCount + pixelIndex,
   }
 }
 
-export function referenceCabinetPixelCoordinate(cabinetPixelOffset: number): PixelCoordinate {
-  assertIndexInBounds('cabinetPixelOffset', cabinetPixelOffset, referenceCabinetPixelCount)
-  const moduleIndex = Math.floor(cabinetPixelOffset / referenceModulePixelCount)
-  const moduleColumn = moduleIndex % referenceModuleColumns
-  const moduleRow = Math.floor(moduleIndex / referenceModuleColumns)
-  const pixelIndexWithinModule = cabinetPixelOffset % referenceModulePixelCount
-  const pixelX = pixelIndexWithinModule % referenceModulePixelWidth
-  const pixelY = Math.floor(pixelIndexWithinModule / referenceModulePixelWidth)
+export function cabinetPixelCoordinate(layout: CabinetPixelLayoutConfig, cabinetPixelOffset: number): PixelCoordinate {
+  const dimensions = cabinetPixelLayoutDimensions(layout)
+  assertIndexInBounds('cabinetPixelOffset', cabinetPixelOffset, dimensions.cabinetPixelCount)
+  const index = Math.floor(cabinetPixelOffset / dimensions.modulePixelCount)
+  const moduleColumn = index % layout.moduleColumns
+  const moduleRow = Math.floor(index / layout.moduleColumns)
+  const pixelIndex = cabinetPixelOffset % dimensions.modulePixelCount
+  const pixelX = pixelIndex % layout.modulePixelWidth
+  const pixelY = Math.floor(pixelIndex / layout.modulePixelWidth)
   return {
-    x: moduleColumn * referenceModulePixelWidth + pixelX,
-    y: moduleRow * referenceModulePixelHeight + pixelY,
+    x: moduleColumn * layout.modulePixelWidth + pixelX,
+    y: moduleRow * layout.modulePixelHeight + pixelY,
   }
+}
+
+export function decomposeReferenceCabinetPixel(coordinate: PixelCoordinate): ReferenceCabinetPixel {
+  return decomposeCabinetPixel(referenceCabinetLayout, coordinate)
+}
+
+export function referenceCabinetPixelCoordinate(cabinetPixelOffset: number): PixelCoordinate {
+  return cabinetPixelCoordinate(referenceCabinetLayout, cabinetPixelOffset)
 }

@@ -15,5 +15,8 @@ export function applyCabinetDirection(
   if (position.axis === 'vertical' && direction === 'top-to-bottom') {
     return { ...position }
   }
+  if (position.axis === 'vertical' && direction === 'bottom-to-top') {
+    return { ...position, offset: position.lineLength - 1 - position.offset }
+  }
   throw new DomainError('UNSUPPORTED_ORDERING', `direction ${direction} is unsupported for ${position.axis} traversal`)
 }

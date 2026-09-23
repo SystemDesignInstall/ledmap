@@ -2,6 +2,8 @@
 
 Статус: **Normative — Phase 4C**. Спецификация фиксирует Column numbering, совместимость Direction с осью traversal и независимый Snake для Cabinet Engine.
 
+Примечание Phase 4D: `vertical + bottom-to-top` реализован и нормативно описан в [LEDMAP-REF-004](LEDMAP-REF-004.md). Ниже сохранены исторические ограничения Phase 4C; начиная с Phase 4D остаются четыре несовместимые пары Numbering/Direction.
+
 ## 1. Конфигурация и физическая сетка
 
 | Параметр | Значение |

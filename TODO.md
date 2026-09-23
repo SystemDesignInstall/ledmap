@@ -13,7 +13,7 @@
 
 ## Phase 1 — Architecture deliverables
 - [ ] `docs/ARCHITECTURE.md`, `docs/DECISIONS.md` — финализированы (ADR-002…013 → Accepted)
-- [ ] `docs/test-001/spec.md` — письменная спецификация Reference Test 001
+- [x] `docs/reference/LEDMAP-REF-001.md` — corrected письменная спецификация Reference Test 001 (Phase 2A)
 - [ ] Спеки Reference Tests 002–004 (ADR-013)
 - [ ] Enforce-правила границ core/app в eslint
 
@@ -31,6 +31,9 @@
 - [ ] Unit-тесты геометрии/единиц
 
 ## Phase 4 — Cabinet Engine (САМОЕ ВАЖНОЕ)
+
+- [x] Phase 2A — [Hardware Addressing Specification](docs/specs/LEDMAP-HARDWARE-ADDRESSING-SPEC-001.md) + [corrected REF-001](docs/reference/LEDMAP-REF-001.md), ADR-006 amended / ADR-015: port-local dataIndex, отдельный globalRemapIndex, HardwareProfile boundary; документационный контракт готов
+- [ ] Оставшийся prerequisite: одобрить отдельный план Cabinet Engine Phase 1 — REF-001 executable implementation по новому контракту; Engines и executable REF-тесты не входят в Phase 2A
 - [ ] `cabinet-engine/numbering.ts` (Row/Column) + тесты
 - [ ] `cabinet-engine/direction.ts` (L→R / R→L, ось нумерации) + тесты
 - [ ] `cabinet-engine/snake.ts` (ON/OFF, чередование рядов) + тесты
@@ -40,7 +43,7 @@
 
 ## Phase 5 — Reference Tests 001–004 (приёмочные критерии ядра)
 - [ ] Фикстура `test-001/project.json` + `expected.json`
-- [ ] Приёмочный тест 001: порядок cabinets, пиксельные якоря (0, 16383, 16384, 65536, 65535, 131072, 196607), полное равенство, SignalPath-границы, round-trip, детерминизм
+- [ ] Приёмочный тест 001: порядок cabinets, T01–T09 и прежние globalRemapIndex-якоря (0, 16383, 16384, 65536, 65535, 131072, 196607), отдельные port-local dataIndex, полное равенство, SignalPath-границы, reverse mapping, round-trip, детерминизм
 - [ ] Фикстуры и тесты 002 (Row, R→L, Snake), 003 (Column, Snake), 004 (Column, варианты Direction)
 - [ ] **Milestone:** математическое ядро доказано headless
 

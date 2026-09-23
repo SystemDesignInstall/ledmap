@@ -10,9 +10,9 @@
 - Snake semantics
 - Module Ordering
 - Pixel Ordering
-- Processor → Port → Receiver → Cabinet precedence
+- Общая конфигурация project-wide ordering вне REF-001 (порядок flattening уточнён в ADR-006)
 - auto-allocation
-- dataIndex semantics (логический сигнальный индекс пикселя, отличный от физического; определение фиксируется тестами)
+- Реализация и executable-проверка addressing (нормативная семантика dataIndex уже зафиксирована ADR-015)
 
 Математические решения валидируются на REF-001 → REF-002 → REF-003 до того, как перейдут в UI/hardware/renderer.
 
@@ -34,9 +34,9 @@
 - **Решение:** доменные данные — обычные замороженные объекты/типы (TS `const`, никаких классов с методами). Движки — `(model) → derived`, детерминированы и идемпотентны.
 - **Следствия:** детерминированные ассерты попиксельной раскладки; возможность headless-потребителя core (CLI/экспорт).
 
-## ADR-004: Координатная система и порядок скана
+## ADR-004: Координатная система и логический порядок
 - **Статус:** Proposed
-- **Решение:** origin — верхний левый угол; ось Y растёт вниз (в духе Canvas2D). `Direction` применяется к оси нумерации: Numbering=Row → горизонтальное чтение (Left→Right / Right→Left); Numbering=Column → вертикальное. Порядок скана пикселей/модулей по умолчанию: row-major L→R, затем T→B (origin верхний левый, внутри кабинета и внутри модуля).
+- **Решение:** origin — верхний левый угол; ось Y растёт вниз (в духе Canvas2D). `Direction` применяется к оси нумерации: Numbering=Row → горизонтальное чтение (Left→Right / Right→Left); Numbering=Column → вертикальное. **Уточнение Phase 2A:** ReferenceAddressingProfile-001 задаёт логический row-major L→R/T→B порядок модулей, затем пикселей внутри каждого модуля (start top-left, оба snake OFF). Это не physical panel scan и не обход всего кабинета по строкам; универсальный default для остальных профилей не устанавливается.
 - **Почему:** без фиксации пиксельные ассерты Test 001 неоднозначны; snake-семантика зависит от направления Y.
 
 ## ADR-005: Mapping Region vs Cabinet Grid
@@ -45,9 +45,11 @@
 - **Почему:** фиксирует, кто кем компонуется, и не требует переписывания типов под общий случай.
 
 ## ADR-006: Precedence сигнальных индексов
-- **Статус:** Proposed
-- **Решение:** глобальный порядок пикселя = **Processor → Port → Receiver → Cabinet → Module → Pixel**. Реальная видеопроцессорная периферия нумерует порты фиксированно, поэтому это safe default.
-- **Следствия для Test 001:** processor0 → port0 (Receiver0..1, pix 0..131071) → port1 (Receiver2, pix 131072..196607).
+- **Статус:** Amended — Phase 2A; normative для global flattening, см. ADR-015.
+- **История:** исходное Proposed-решение называло порядок глобальным, но обосновывало его аппаратной нумерацией портов и приводило диапазоны без указания scope. Это смешивало flattened reference numbering с hardware addressing. Исторические числа сохранены ниже с точным названием; вывод об универсальности аппаратного представления отозван.
+- **Уточнённое решение LedMAP:** **Processor → Port → Receiver → Cabinet → Module → Pixel** определяет отдельный derived `globalRemapIndex` / deterministic global flattening. Оно **не определяет PixelAddress.dataIndex** и не задаёт vendor physical address.
+- **Следствия для REF-001:** P01 → P01:01 (R01/R02, **globalRemapIndex 0..131071**) → P01:02 (R03, **globalRemapIndex 131072..196607**). Старые processor0/port0/port1 — нуль-базовые обозначения тех же сущностей. Port-local `dataIndex` второго порта равен **0..65535**; C09 начинается с 0, его `globalRemapIndex=131072`.
+- **Основание:** это нормативный порядок flattening LedMAP для reference model, не утверждение о едином протоколе всех LED vendors. Детали multi-processor ordering остаются OPEN в спецификации.
 
 ## ADR-007: Явные назначения + авторазметка
 - **Статус:** Proposed
@@ -72,7 +74,7 @@
 
 ## ADR-012: Reference Test 001 как приёмочный тест
 - **Статус:** Proposed
-- **Решение:** методология — fixture-driven (`project.json` + `expected.json`), независимые ручные пиксельные якоря (см. ARCHITECTURE §6), полное равенство золотого файла, границы SignalPath, round-trip, вызов движков дважды для проверки детерминизма.
+- **Решение:** методология — fixture-driven (`project.json` + `expected.json`), независимые ручные пиксельные якоря (см. [LEDMAP-REF-001](reference/LEDMAP-REF-001.md) и ARCHITECTURE §6), полное равенство золотого файла, границы SignalPath, round-trip, вызов движков дважды для проверки детерминизма. Phase 2A задаёт только документационный контракт, executable REF-тесты ещё впереди.
 
 ## ADR-013: Reference Tests 002–004 (спецификации к фиксации)
 - **Статус:** Proposed
@@ -82,16 +84,29 @@
 ## ADR-014: Конвенции Domain Model (Phase 1)
 - **Статус:** Working
 - **Решение:** домен — плоские immutable-сущности (`readonly` свойства, ссылки по брендированным ID), value objects как readonly-структуры с фабриками (`createSize`, `createPoint`, …), один класс только для ошибок (`DomainError` с кодами). Без класса-обёрток, getters/setters, UI/Electron/Node-зависимостей.
-- **Три уровня индексации разделены и не сводятся к одному индексу:** Geometry (x,y,row,column,localX,localY) | Ordering (cabinetIndex/moduleIndex/pixelIndex/logicalIndex — производные, чистые, WORKING) | Signal topology (processor/port/receiver + dataIndex — WORKING).
+- **Уровни разделены и не сводятся к одному индексу:** Geometry (x,y,row,column,localX,localY) | Ordering (cabinetIndex/moduleIndex/pixelIndex/logicalIndex — производные) | Signal topology (processor/port/receiver + port-local dataIndex по ADR-015) | Physical panel scan / vendor encoding (будущий HardwareProfile). Общее ordering остаётся WORKING; ReferenceAddressingProfile-001 уже задан нормативно.
 - **Pixel ≠ PixelAddress.** Pixel — физическая/логическая сущность (cabinet, module, coordinate, physical, logicalIndex). PixelAddress — отдельная derived addressing-структура (hardware + cabinet + module + coordinate + dataIndex). Биекция `Pixel → Mapping Engine → PixelAddress` по ключу `(cabinet, module, coordinate)`; PixelAddress не наследуется от Pixel и не является его полем.
 - **Derived allocation state не хранится:** `usedPixels`/`remainingPixels`/`assignedReceivers` (Port) вычисляются из capacity и назначений, никогда не хранятся как независимые поля (устраняется риск рассинхрона capacity ↔ usage). Аллокатор не реализован.
 - Координаты 0-базовые, origin top-left, Y растёт вниз (см. ADR-004).
 - Производные индексы на сущностях **не хранятся** (кроме read-model `Pixel`, заполняемой движками); правило «derived не персистится» сохраняется.
 - Инварианты проверяются в фабриках (полный список — `docs/domain-model.md` §7).
 
+## ADR-015: Port-local dataIndex и граница HardwareProfile
+
+- **Статус:** Normative — Phase 2A, documentation / contract only; реализация движков не выполнена.
+- **Проверено по репозиторию:** `model/signal-path.ts` уже разделяет HardwareAddress, SignalPath и PixelAddress; `model/pixel.ts` определяет отдельный Pixel; `receiver.ts`, `port.ts`, `processor.ts` явно описывают topology. Тип `dataIndex: number` сам по себе не определял scope.
+- **Проверено по hardware research:** [NovaLCT V5.4.7.1, §5.2.2](https://oss.novastar.tech/uploads/2023/06/NovaLCT-LED-Configuration-Tool-for-Multimedia-Player-User-Manual-V5.4.7.1.pdf) описывает receiving-card connections для выбранного output port; [rpi-rgb-led-matrix](https://github.com/hzeller/rpi-rgb-led-matrix/blob/master/utils/README.md) отдельно описывает multiplexing, row-address type и pixel mapping. Эти источники подтверждают отдельные hardware concerns, но не универсальную числовую адресацию vendors.
+- **Нормативное решение LedMAP:** Port — независимый output stream и scope/reset boundary. `dataIndex` = **zero-based canonical pixel offset inside one Processor Port stream**. Receiver на том же Port не сбрасывает индекс; следующий Port начинает с 0. Это не Pixel.logicalIndex, не физическая координата, не HUB75 scan index и не vendor packet address.
+- **Global flattening:** отдельный `globalRemapIndex` по уточнённому ADR-006 сохраняет прежние reference numbers. Он не входит в HardwareAddress/PixelAddress и не сохраняется в проекте.
+- **Граница vendor:** logical Module/Pixel ordering задаётся явной LedMAP/reference конфигурацией. Physical scan/wiring, scan ratio, driver-IC/shift-register/packet encoding относятся к будущему `HardwareProfile.encode(...)`. Cabinet Engine остаётся независимым от vendor hardware.
+- **Обратимость:** для valid resolved mapping Pixel ↔ PixelAddress — биекция; reverse lookup требует `(processor, port, dataIndex)`. Голый индекс без контекста запрещён.
+- **Контракт и приёмка:** [LEDMAP-HARDWARE-ADDRESSING-SPEC-001](specs/LEDMAP-HARDWARE-ADDRESSING-SPEC-001.md), [LEDMAP-REF-001](reference/LEDMAP-REF-001.md). Ключевая граница: P01:01 last `dataIndex=131071`, P01:02 first `dataIndex=0`, при непрерывном `globalRemapIndex` 131071 → 131072.
+- **Следствия:** никаких изменений TypeScript-модели, интерфейса HardwareProfile, calculators или Engines в Phase 2A. Математическая executable-приёмка следует отдельным этапом.
+
 ## Открытые вопросы для окончательной фиксации
-1. **dataIndex** — семантика сигнального индекса (пересматривается после REF-001…004).
+
+1. Multi-processor project ordering, scope Receiver.index и конфигурация Module/Pixel ordering вне ReferenceAddressingProfile-001 (см. спецификацию §16).
 2. Точный формат `extensions` (свободный JSON vs схема).
-2. Экспортный формат производителей видеопроцессоров (отдельный контракт, этап 4+).
-3. Диагностики: типовой набор кодов валидации (перечень до UI-этапа).
-4. Нужен ли отдельный headless CLI на базе `core` (опционально).
+3. HardwareProfile/vendor encoding и экспортный формат производителей (отдельный контракт).
+4. Диагностики: типовой набор кодов валидации (перечень до UI-этапа).
+5. Нужен ли отдельный headless CLI на базе `core` (опционально).

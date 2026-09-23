@@ -1,6 +1,6 @@
 # LedMAP — Domain Model
 
-Статус: **Working** (каркас Phase 1). Математические контракты (ordering/dataIndex) не доказаны — финализируются по REF-001…004.
+Статус: **Working** (каркас Phase 1), дополнен нормативным addressing-контрактом Phase 2A. Семантика `dataIndex` и ReferenceAddressingProfile-001 зафиксированы в [LEDMAP-HARDWARE-ADDRESSING-SPEC-001](specs/LEDMAP-HARDWARE-ADDRESSING-SPEC-001.md); реализация и executable-приёмка движков ещё впереди. Общее ordering вне reference profile остаётся WORKING.
 
 Принцип документа: Domain Model — это **слой под математикой**. Он описывает, *какие сущности существуют* и *какие у них инварианты*, но не *как* они вычисляются (это зона движков: Cabinet Engine, Hardware Engine, Mapping Engine, Remap Engine).
 
@@ -44,7 +44,7 @@ Processor / Port / Receiver (hardware topology)
 
 SignalPath / PixelAddress / Pixel
   ├── SignalPath: id + HardwareAddress{processor, port, receiver} + cabinet
-  ├── PixelAddress (derived addressing): hardware → cabinet → module → coordinate → dataIndex (WORKING)
+  ├── PixelAddress (derived addressing): hardware → cabinet → module → coordinate → dataIndex (port-local)
   └── Pixel (физическая/логическая сущность): cabinet, module, coordinate (local), physical, logicalIndex (WORKING)
        Pixel ≠ PixelAddress; однозначная связь: Pixel → (Mapping Engine) → PixelAddress,
        ключ биекции: (cabinet, module, coordinate)
@@ -63,6 +63,7 @@ SignalPath / PixelAddress / Pixel
 | `cabinetIndex` / `moduleIndex` / `pixelIndex` | | ✓ (Cabinet Engine) |
 | `logicalIndex` (на Pixel) | | ✓ (Cabinet/Mapping Engine) |
 | `dataIndex`, `PixelAddress` | | ✓ (Mapping Engine; биекция с Pixel) |
+| `globalRemapIndex` | | ✓ (project-wide flattening; отдельный diagnostic/remap index, не поле PixelAddress) |
 | `physical` (на Pixel) | | ✓ (из geometry) |
 
 ## 2. Value objects
@@ -97,15 +98,21 @@ SignalPath / PixelAddress / Pixel
 
 Производные индексы упорядочивания — **не хранятся** в сущностях (правило: derived data не персистится; их вычисляет Cabinet Engine):
 - `cabinetIndex` — порядок кабинета в сетке по конфигу Numbering/StartCorner/Direction/Snake;
-- `moduleIndex`, `pixelIndex` — порядок в пределах кабинета (Module Ordering / Pixel Ordering, WORKING);
+- `moduleIndex` — логический порядок модулей внутри кабинета; `pixelIndex` — логический порядок пикселей внутри модуля. В ReferenceAddressingProfile-001 оба row-major, start top-left, snake OFF; общее представление конфигурации вне профиля остаётся WORKING;
 - `logicalIndex` (на `Pixel`) — индекс в логическом порядке экрана (WORKING).
+
+Logical Pixel Ordering ≠ Physical Panel Scan / Wiring. Cabinet Engine задаёт только явный логический порядок; multiplexing, scan ratio, row mapping, driver-IC и shift-register order — будущий HardwareProfile/vendor слой. Геометрия, ordering, topology и physical scan разделены.
 
 ## 6. Signal topology
 
 - `HardwareAddress` — `{ processor, port, receiver }`; `SignalPath` — hardware + cabinet; `PixelAddress` — hardware + cabinet + module + `coordinate` (адресует конкретный Pixel) + **`dataIndex`**.
 - **Pixel ≠ PixelAddress.** Pixel — физическая/логическая pixel-сущность (geometry: cabinet/module/coordinate/physical + ordering: logicalIndex). PixelAddress — отдельная derived addressing-структура (hardware chain + dataIndex). Они связаны однозначно (`Pixel → Mapping Engine → PixelAddress`), но это две разные концепции; PixelAddress не является частью Pixel.
+- `PixelAddress.dataIndex` — **zero-based canonical pixel offset inside one Processor Port stream**. Сбрасывается на Port; Receiver того же Port продолжает индекс. Единица — пиксель, не vendor physical address, HUB75 scan index или packet address; это также не `Pixel.logicalIndex` и не координата.
+- `coordinate` в Pixel/PixelAddress — module-local pixel coordinate. Для valid resolved mapping Pixel ↔ PixelAddress — биекция. Reverse lookup требует `(processor, port, dataIndex)` и возвращает ровно один receiver/cabinet/module/coordinate; голого dataIndex недостаточно.
+- `globalRemapIndex` — отдельный derived project-wide flattening Processor → Port → Receiver → Cabinet → Module → Pixel. В [REF-001](reference/LEDMAP-REF-001.md) C09 начинается с `dataIndex=0` на P01:02 и `globalRemapIndex=131072`. Это не поле HardwareAddress/PixelAddress и не persisted project data.
+- `PixelAddress → HardwareProfile.encode(...) → vendor-specific address` — будущая граница; интерфейс HardwareProfile сейчас не создаётся, TypeScript-модель не меняется.
 - `usedPixels` / `remainingPixels` / `assignedReceivers` — **derived allocation state**: вычисляются из ёмкостей и назначений, никогда не хранятся как независимые поля (нет возможности рассинхрона capacity ↔ usage). Аллокатор не реализован (Hardware Engine, Phase 6).
-- Precedence Processor→Port→Receiver→Cabinet — **WORKING**, финализируется после REF-001…004.
+- Global precedence задан ADR-006/015; конкретный порядок REF-001 указан явно. Хранение multi-processor порядка и scope Receiver.index остаются OPEN.
 - auto-allocation (ёмкости Port/Receiver/Processor) — **WORKING**.
 
 ## 7. Invariants (реализованы в фабриках)
@@ -126,10 +133,10 @@ SignalPath / PixelAddress / Pixel
 
 1. Direction semantics (применение к оси нумерации; 4 токена) — ревизия по REF-002.
 2. Snake semantics — ревизия по REF-001/003.
-3. Module Ordering, Pixel Ordering (row-major L→R/T→B как предположение) — ревизия по REF-001…004.
-4. Processor→Port→Receiver→Cabinet precedence — ревизия по REF-001.
+3. Конфигурация Module/Pixel Ordering вне нормативного ReferenceAddressingProfile-001 — будущий контракт и REF-002…004.
+4. Хранение multi-processor ordering и scope Receiver.index; hierarchy global flattening уже задана ADR-006/015.
 5. auto-allocation (полное/частичное заполнение) — Hardware Engine (Phase 6).
-6. `dataIndex` семантика (logicalIndex ≠ dataIndex ≠ physical) — ревизия по REF-001…004.
+6. Реализация addressing, reverse mapping и executable-приёмка по REF-001; port-local семантика `dataIndex` нормативно закрыта ADR-015.
 7. Rotation/flip — допустимые значения (90-градусная сетка?) и как влияют на module/pixel order.
 8. MappingRegion: допустимы ли повёрнутые/непрямоугольные регионы; связь Input→Output корреляция.
 9. Точная модель экспорта производителей (отдельный контракт, не в core-модели).

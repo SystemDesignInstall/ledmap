@@ -139,6 +139,19 @@
 - **Единственное изменение 6A-движка:** аддитивный инвариант в `resolveHardware` — `receiverLoad ≤ pixelCapacity` при заданном `pixelCapacity`. Addressing/spans/order, `dataIndex`/`globalRemapIndex` не меняются.
 - **Приёмка:** REF-001 reconstruction с `pixelCapacity=65536`/Receiver и полное equality с `resolveHardware(referenceTopology())`, тестовая матрица capacity/overflow/partial, вся существующая регрессия (336/336), typecheck/lint/build.
 
+## ADR-020: Phase 7A — identity-translation Mapping
+
+- **Статус:** Accepted — спецификация и план приняты пользователем 2026-09-24; production-код пока не разрешён.
+- **Контракт:** [LEDMAP-MAPPING-001](specs/LEDMAP-MAPPING-001.md). Ограниченный профиль: один InputCanvas, Screen, Grid и MappingRegion; source rect отображается 1:1 на весь Grid с origin `(0,0)` в Screen space. Mapping Region ≠ Cabinet.
+- **Модель:** минимальный InputCanvas (`id + resolution`), InputCanvasId и обязательная ссылка `MappingRegion.inputCanvas`. `MappingRegion.position/size` нормативно обозначают source rect в InputCanvas; source целиком внутри canvas, Region.size и Screen.resolution равны Grid pixel size. Сериализационная миграция отложена до 7D.
+- **Геометрия:** полная физическая сетка, ровно один Cabinet на cell, одинаковые Cabinet.pixelWidth/pixelHeight; Grid pixel size вычисляется по pixel geometry, не physical width/height/origin. Input, Region-local/Grid/Screen, Cabinet-local и Module-local пространства явно разделены; размеры, координаты и арифметика проверяются на safe integers.
+- **API и snapshot:** `resolveMapping` принимает полную HardwareTopologyInput, внутри вызывает существующий `resolveHardware` и создаёт компактный immutable ResolvedPixelMap. Нет массива на каждый пиксель, удержания изменяемых входов или auto-allocation. `mapInputPixel` и `unmapHardwarePixel` возвращают диагностический MappedPixel; globalRemapIndex остаётся отдельным derived API 6A.
+- **Граница движков:** forward выбирает Cabinet исключительно по физическим column/row и передаёт Cabinet-local coordinate в `addressPixel`; reverse использует `locatePixel`, physical cell и Region.position. Numbering/Direction/Snake не применяются повторно. Hardware addressing и существующая skeleton-validation не меняются и не рефакторятся.
+- **Ошибки:** два разных CabinetId в одной physical cell → `MAPPING_DUPLICATE`; повтор CabinetId во входной topology → существующий `HARDWARE_DUPLICATE` от `resolveHardware`. Остальные ошибки и границы заданы спецификацией.
+- **Приёмка будущей реализации:** identity и offset fixtures REF-001, два forward sweep по 196 608 pixels, независимый reverse traversal, оба round-trip, уникальность hardware keys, 11 anchors, ordering independence, multi-processor, bounds и snapshot immutability; сохранить существующую регрессию 425 тестов.
+- **Границы:** произвольные OutputRect и Input→Output rotation/flip/scale — будущее расширение Mapping contract, не Remap 7B. Remap работает над готовым PixelMap. UI, serialization, HardwareProfile и другие подэтапы Phase 7 в 7A не входят.
+- **Docs-only gate:** разрешён commit `docs: define mapping phase 7a` только из спецификации, DECISIONS и TODO. После проверки SHA и этих трёх файлов пользователь отдельно разрешает production-код; принятие контракта само по себе его не разрешает.
+
 ## Открытые вопросы для окончательной фиксации
 
 1. Persistence/serialization of explicit `processorOrder` remains open; runtime ordering semantics are defined by ADR-018 / Phase 6A. Scope Receiver.index и конфигурация Module/Pixel ordering вне ReferenceAddressingProfile-001 (см. спецификацию §16).

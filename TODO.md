@@ -7,7 +7,7 @@
 - [x] Phase 4E — обобщённая геометрия Cabinet pixel layout принята пользователем на `67fd975cf0e0036fd50c06d533a13a1bff871651`.
 - Cabinet Engine поддерживает Row/Column, LTR/RTL, TTB/BTT, независимый Snake, Top Left и прямоугольный module-first pixel layout с inverse mapping и safe integer validation. REF-001…004 служат регрессией Cabinet Engine; полная hardware/mapping-приёмка из Phase 5 ниже этим не объявляется завершённой.
 - Старые пункты Phase 0–5 ниже сохраняют исходный план и не являются актуальным отчётом о каждом реализованном файле.
-- Early Alpha UI принята пользователем на `88f110d15f06a86f7c277ef61979520218140720`, Phase 6A закрыта. **Phase 6B** реализована по [утверждённому плану](docs/specs/LEDMAP-HARDWARE-CAPACITY-001.md) и ADR-019, готова к приёмке; см. [отчёт](docs/hardware-engine-6b-validation.md). Расширение StartCorner отложено.
+- Early Alpha UI принята пользователем на `88f110d15f06a86f7c277ef61979520218140720`, Phase 6A и 6B закрыты; 6B принята на `63f340a5e181f98b93713cafcdc2d56ebd37ce1f`. **План Phase 7A принят**, см. [LEDMAP-MAPPING-001](docs/specs/LEDMAP-MAPPING-001.md) и ADR-020. Текущий шаг — docs-only gate; production-код 7A ожидает отдельного разрешения после проверки docs-commit. Расширение StartCorner отложено.
 
 ## Phase 0 — Environment & Repository
 - [ ] Установить Node.js 24 LTS через winget (в окружении отсутствует)
@@ -68,17 +68,20 @@
 ## Phase 6 — Hardware (Receiver/Processor/Port) Engine
 - [x] Phase 6A: явная полная topology, компактные spans, port-local dataIndex, forward/reverse и отдельный globalRemapIndex; реализация принята пользователем, этап закрыт.
 - [x] Phase 6A: полный REF-001 sweep, multi-processor, variable sizes, валидация, регрессия и [итоговый отчёт](docs/hardware-engine-6a-validation.md). 336/336 тестов, typecheck/lint/build и Electron smoke проходят локально.
-- Phase 6B (allocation/capacity) — план принят 2026-09-24, см. [LEDMAP-HARDWARE-CAPACITY-001](docs/specs/LEDMAP-HARDWARE-CAPACITY-001.md) и ADR-019; docs-commit `a8c6fb0` принят. Реализация готова к приёмке, пользовательская приёмка ещё не выполнена.
+- Phase 6B (allocation/capacity) закрыта: план и docs-commit `a8c6fb0` приняты, реализация принята пользователем на `63f340a5e181f98b93713cafcdc2d56ebd37ce1f`. Контракт: [LEDMAP-HARDWARE-CAPACITY-001](docs/specs/LEDMAP-HARDWARE-CAPACITY-001.md), ADR-019.
 - [x] `hardware-engine/allocate.ts` → `allocateHardware()` (порядок processorOrder→Port.index→receiverOrder, first-fit, опциональный `Receiver.pixelCapacity`)
 - [x] `resolveHardware`: единственный аддитивный инвариант `receiverLoad ≤ pixelCapacity`; addressing/spans/order не меняются (генератор explicit topology в `allocateHardware()`)
 - [x] Диагностики unused-slot (unit: pixels/receivers/ports) / overflow
 - [x] Тестовая матрица capacity/overflow/partial + REF-001 reconstruction (pixelCapacity=65536/Receiver); 425/425 тестов, typecheck/lint/build и Electron smoke проходят локально. См. [отчёт 6B](docs/hardware-engine-6b-validation.md).
 
 ## Phase 7 — Mapping, Remap, Validation, Serialization
-- [ ] `mapping-engine` (Input Canvas rect → логическая позиция → PixelMap компактно)
-- [ ] `remap-engine` (пост-коррекция готового PixelMap, без мутации модели)
-- [ ] `validation` (rules, codes, validator)
-- [ ] `serialization` schema v1 + round-trip + миграции (скелет)
+- [x] План 7A принят 2026-09-24: [LEDMAP-MAPPING-001](docs/specs/LEDMAP-MAPPING-001.md), ADR-020; identity-translation profile, один InputCanvas/Screen/Grid/Region, компактный immutable PixelMap.
+- Docs-only gate: commit `docs: define mapping phase 7a` включает только спецификацию, DECISIONS и TODO. После проверки SHA пользователь отдельно разрешает production-код 7A; реализация пока не начата.
+- [ ] 7A: InputCanvas/InputCanvasId и ссылка MappingRegion; `resolveMapping`, `mapInputPixel`, `unmapHardwarePixel` через существующие API 6A; physical cell lookup без повторного Numbering/Direction/Snake.
+- [ ] 7A: identity/offset REF-001 sweeps, reverse traversal, validation/immutability, регрессия 425 тестов, typecheck/lint/build/Electron smoke и diff check.
+- [ ] 7B: отдельный контракт и `remap-engine` (пост-коррекция готового PixelMap, без мутации модели); базовые Input→Output transforms остаются будущим расширением Mapping.
+- [ ] 7C: `validation` проекта (rules, codes, validator); обязательные инварианты реализуются уже в 7A/7B.
+- [ ] 7D: `serialization` schema v1 + round-trip + миграции (скелет)
 - [ ] Все тесты движков зелёные и выполняются headless независимо от Alpha UI
 
 ## Phase 8 — Полный UI (packages/app)

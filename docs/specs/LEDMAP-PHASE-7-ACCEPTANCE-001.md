@@ -1717,10 +1717,10 @@ Phase 7B — Remap
 и подготовить:
 
 ```text
-LEDMAP-FINAL-REMAP-REVERSEINDEX-SPEC-001
+LEDMAP-REMAP-001
 ```
 
-либо иное окончательное имя Remap 7B specification, если repository naming будет унифицировано отдельно.
+Это логический remap/post-processing контракт (Phase 7B), отдельный от Final Hardware Remap. Имя `LEDMAP-FINAL-REMAP-REVERSEINDEX-SPEC-001` остаётся зарезервированным для этапа после Hardware Profiles + AddressEncoder (InputPixel ↔ HardwareAddress через ReverseIndex).
 
 ---
 

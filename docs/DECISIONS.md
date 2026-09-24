@@ -153,6 +153,217 @@
 - **Docs-only gate:** разрешён commit `docs: define mapping phase 7a` только из спецификации, DECISIONS и TODO. После проверки SHA и этих трёх файлов пользователь отдельно разрешает production-код; принятие контракта само по себе его не разрешает.
 - **Принятие реализации:** Gate 7A закрыт PASS на `0071eeed001ed2e275e3efb827b216a1d49da1f8`. Приёмка по [LEDMAP-PHASE-7-ACCEPTANCE-001](specs/LEDMAP-PHASE-7-ACCEPTANCE-001.md): identity/offset forward sweep и reverse traversal по 196 608 pixels, оба round-trip, 196 608 уникальных hardware keys, 11 normative anchors × 2 fixtures, регрессия 425/425, общий набор 543/543, typecheck/lint/build/Electron smoke/`git diff --check` PASS. Hardware/Cabinet Engine math не изменялись; в двух REF-001 hardware-swep тестах таймаут поднят 60000→120000 ms без изменения assertions. Валидация: [отчёт 7A](mapping-engine-7a-validation.md).
 
+## ADR-021: Separate Phase 7B logical Remap from final hardware remap
+
+- **Статус:** Accepted — принято пользователем 2026-09-24 вместе с docs-gate Phase 7B. Docs Gate 7B: PASS (формально зафиксирован по SHA).
+- **Контракт:** `docs/specs/LEDMAP-REMAP-001.md`.
+- **Связанные решения:** ADR-018, ADR-019, ADR-020.
+- **Production baseline Phase 7A:** `0071eeed001ed2e275e3efb827b216a1d49da1f8`.
+- **Docs baseline перед 7B:** `08c0c387c9dbbaae91c5fa26cd676d914eba4c3f`.
+
+### Контекст
+
+В ранних архитектурных документах термин `Remap Engine` использовался для финального преобразования:
+
+```text
+Input Pixel
+→ Mapping
+→ Cabinet
+→ Module
+→ Receiver
+→ Port
+→ Processor
+→ Final Address
+```
+
+Позднее архитектура LedMAP разделилась на несколько независимых уровней:
+
+```text
+Mapping
+Hardware Topology
+Hardware Profile
+Address Encoding
+Final Hardware Address
+```
+
+Phase 7A уже зафиксировала и реализовала Mapping как отдельный слой:
+
+```text
+InputCanvas
+→ MappingRegion
+→ Screen/Grid
+→ Cabinet
+→ PixelAddress
+```
+
+При этом `LEDMAP-MAPPING-001` определяет Phase 7B как постобработку уже разрешённого PixelMap и прямо исключает из 7B:
+
+```text
+OutputRect
+Input→Output rotation
+flip
+scale/resampling
+hardware allocation
+vendor addressing
+```
+
+Одновременно `LEDMAP-HARDWARE-PROFILE-ADDRESSING-SPEC-001` резервирует аппаратно-зависимые:
+
+```text
+HardwareProfile
+AddressEncoder
+HardwareAddress
+EncodedHardwareAddress
+ReverseIndex
+```
+
+для более позднего hardware-final слоя.
+
+Использование одного названия `Final Remap` для обоих уровней создаёт неоднозначность ответственности.
+
+### Решение
+
+LedMAP разделяет два разных понятия.
+
+#### 1. Phase 7B — Logical Remap
+
+Нормативный документ:
+
+```text
+LEDMAP-REMAP-001
+```
+
+Phase 7B работает **поверх результата Mapping 7A**:
+
+```text
+ResolvedPixelMap
+        ↓
+Logical Remap Pipeline
+        ↓
+RemappedPixelMap
+```
+
+Phase 7B:
+
+```text
+≠ Mapping Transform
+≠ Hardware Allocation
+≠ Hardware Profile
+≠ Address Encoder
+≠ Vendor Addressing
+≠ Final Hardware Remap
+```
+
+Project Model и исходный `ResolvedPixelMap` не мутируются.
+
+Для пустого набора правил обязателен identity invariant:
+
+```text
+Remap(mapping, []) == mapping
+```
+
+Phase 7B v1 вводит deterministic immutable remap infrastructure, но не вводит production rule types без отдельного утверждённого контракта.
+
+#### 2. Final Hardware Remap
+
+Имя:
+
+```text
+LEDMAP-FINAL-REMAP-REVERSEINDEX-SPEC-001
+```
+
+резервируется для более позднего hardware-final этапа после:
+
+```text
+Hardware Profile
+        ↓
+AddressEncoder
+        ↓
+Canonical HardwareAddress
+```
+
+Этот слой должен окончательно замкнуть:
+
+```text
+InputPixel
+        ↔
+HardwareAddress
+```
+
+и определить:
+
+```text
+FinalRemap
+ReverseIndex
+Forward hardware lookup
+Reverse hardware lookup
+cache/rebuild policy
+hardware-address invalidation
+vendor-independent canonical addressing
+```
+
+### Нормативная последовательность
+
+```text
+Phase 7A — Mapping
+        ↓
+ResolvedPixelMap
+        ↓
+Phase 7B — LEDMAP-REMAP-001
+Logical Remap
+        ↓
+Phase 7C — Project Validation
+        ↓
+Phase 7D — Serialization
+        ↓
+Hardware Profiles
+        ↓
+Address Encoder
+        ↓
+LEDMAP-FINAL-REMAP-REVERSEINDEX-SPEC-001
+        ↓
+Final Hardware Remap / ReverseIndex
+```
+
+### Последствия
+
+Положительные:
+
+```text
+Mapping не смешивается с post-processing.
+Logical Remap не знает vendor hardware protocol.
+AddressEncoder не просачивается в Phase 7B.
+Final HardwareAddress остаётся аппаратно-зависимым слоем.
+ReverseIndex получает однозначную ответственность.
+Название Final Remap больше не используется для двух разных subsystem.
+```
+
+Ограничения:
+
+```text
+Phase 7B v1 не предоставляет пользовательские remap operations.
+Dead-LED, swap, mask, mirroring и иные rule types требуют отдельных решений.
+OutputRect/rotation/flip/scale остаются расширением Mapping contract.
+HardwareAddress нельзя считать завершённым до Hardware Profile + AddressEncoder.
+```
+
+### Invariant
+
+Главная граница:
+
+```text
+Mapping answers:
+"Какой physical/hardware-topology pixel соответствует Input Pixel?"
+
+Logical Remap answers:
+"Как постобработать уже разрешённый mapping?"
+
+Final Hardware Remap answers:
+"Какой окончательный HardwareAddress соответствует pixel и как выполнить обратный lookup?"
+```
+
+Эти три ответственности не должны объединяться в одном Engine или контракте.
+
 ## Открытые вопросы для окончательной фиксации
 
 1. Persistence/serialization of explicit `processorOrder` remains open; runtime ordering semantics are defined by ADR-018 / Phase 6A. Scope Receiver.index и конфигурация Module/Pixel ordering вне ReferenceAddressingProfile-001 (см. спецификацию §16).

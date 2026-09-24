@@ -1594,10 +1594,26 @@ Phase 7A считается завершённой только после пр�
 После успешного прохождения Gate следующим архитектурным документом становится:
 
 ```text
-LEDMAP-FINAL-REMAP-REVERSEINDEX-SPEC-001
+LEDMAP-REMAP-001 — Phase 7B Remap (logical post-processing layer)
 ```
 
 который определит:
+
+```text
+RemappedPixelMap
+identity-remap invariant
+deterministic immutable post-processing pipeline
+REMAP_* error namespace
+```
+
+Затем:
+
+```text
+7C Validation
+7D Serialization
+```
+
+Имя `LEDMAP-FINAL-REMAP-REVERSEINDEX-SPEC-001` резервируется для отдельного hardware-final этапа после Hardware Profiles + AddressEncoder. Он замкнёт:
 
 ```text
 Forward Map
@@ -1620,11 +1636,15 @@ canvas → hardware selection
 Таким образом нормативная последовательность:
 
 ```text
-PHASE 7 IMPLEMENTATION
+PHASE 7A MAPPING
         ↓
 LEDMAP-PHASE-7-ACCEPTANCE-001
         ↓
-INTEGRATION GATE
+INTEGRATION GATE 7A
+        ↓
+LEDMAP-REMAP-001 (7B logical remap)
+        ↓
+7C Validation / 7D Serialization
         ↓
 Hardware Profile implementation
         ↓

@@ -68,11 +68,11 @@
 ## Phase 6 — Hardware (Receiver/Processor/Port) Engine
 - [x] Phase 6A: явная полная topology, компактные spans, port-local dataIndex, forward/reverse и отдельный globalRemapIndex; план принят 2026-09-24, реализация готова к приёмке.
 - [x] Phase 6A: полный REF-001 sweep, multi-processor, variable sizes, валидация, регрессия и [итоговый отчёт](docs/hardware-engine-6a-validation.md). 336/336 тестов, typecheck/lint/build и Electron smoke проходят локально.
-- Phase 6B (пункты allocation/partial ниже) требует отдельного плана; в 6A не входит.
-- [ ] `hardware-engine/allocate.ts` (ёмкости, precedence Processor→Port→Receiver)
-- [ ] `hardware-engine/resolve.ts` (явные назначения + доводка)
-- [ ] Диагностики overflow / unused slot
-- [ ] Тестовая матрица capacity/overflow/partial
+- Phase 6B (allocation/capacity) — план принят 2026-09-24, см. [LEDMAP-HARDWARE-CAPACITY-001](docs/specs/LEDMAP-HARDWARE-CAPACITY-001.md) и ADR-019. Production-код только после docs-commit.
+- [ ] `hardware-engine/allocate.ts` → `allocateHardware()` (прецедент Processor→Port→Receiver, first-fit, опциональный `Receiver.pixelCapacity`)
+- [ ] `resolveHardware`: единственный аддитивный инвариант `receiverLoad ≤ pixelCapacity`; addressing/spans/order не меняются (доводка NOT in resolver — генератор explicit topology в `allocateHardware()`)
+- [ ] Диагностики unused-slot (unit: pixels/receivers/ports) / overflow
+- [ ] Тестовая матрица capacity/overflow/partial + REF-001 reconstruction (pixelCapacity=65536/Receiver)
 
 ## Phase 7 — Mapping, Remap, Validation, Serialization
 - [ ] `mapping-engine` (Input Canvas rect → логическая позиция → PixelMap компактно)

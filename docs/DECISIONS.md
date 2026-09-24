@@ -129,6 +129,16 @@
 - **Представление:** immutable компактные Port/Receiver/Cabinet spans и реальные pixel counts из Cabinet Engine; разные размеры Cabinet допустимы, все накопленные суммы проверяются как safe integers. PixelAddress вычисляется по запросу.
 - **Приёмка:** полный независимый sweep 196608 пикселей REF-001, оба round-trip, multi-processor с Port.index=0/dataIndex=0 на обоих Processor, variable cabinet sizes и вся существующая регрессия.
 
+## ADR-019: Phase 6B — capacity и авто-allocation
+
+- **Статус:** Accepted — одобрено пользователем 2026-09-24.
+- **Контракт:** [LEDMAP-HARDWARE-CAPACITY-001](specs/LEDMAP-HARDWARE-CAPACITY-001.md). Этот ADR **принимает/уточняет соответствующую часть ADR-007 и ADR-008**: auto-allocation теперь не «доводит» resolver, а генерирует explicit topology; Receiver pixel capacity становится **опциональным** constraint.
+- **Capacity:** опциональный `Receiver.pixelCapacity?: number` (positive safe integer). Отсутствие = «в LedMAP pixel-limit не задан»; для allocator — отсутствие верхней границы, не утверждение о физической бесконечности устройства. Аддитивно: 6A-topology без миграции, 336 тестов не меняются.
+- **Allocation:** `allocateHardware()` — генератор explicit topology: entities + Processor/Receiver-скелет + fixed assignments + `cabinetOrder` → полный `HardwareTopologyInput` → неизменный `resolveHardware()` (запускается allocator'ом до возврата proposal как executable-инвариант). First-fit по явному `processorOrder → Port.index → receiverOrder`; Cabinet атомарен (split не вводится); fixed assignments фиксированы, только append; fixed поверх capacity → immediate `HARDWARE_CAPACITY_EXCEEDED`.
+- **Диагностики:** unused-slot с unit (`pixels`/`receivers`/`ports`) по уровню; Receiver без `pixelCapacity` unused-slot не даёт. Overflow → ошибка валидации.
+- **Единственное изменение 6A-движка:** аддитивный инвариант в `resolveHardware` — `receiverLoad ≤ pixelCapacity` при заданном `pixelCapacity`. Addressing/spans/order, `dataIndex`/`globalRemapIndex` не меняются.
+- **Приёмка:** REF-001 reconstruction с `pixelCapacity=65536`/Receiver и полное equality с `resolveHardware(referenceTopology())`, тестовая матрица capacity/overflow/partial, вся существующая регрессия (336/336), typecheck/lint/build.
+
 ## Открытые вопросы для окончательной фиксации
 
 1. Persistence/serialization of explicit `processorOrder` remains open; runtime ordering semantics are defined by ADR-018 / Phase 6A. Scope Receiver.index и конфигурация Module/Pixel ordering вне ReferenceAddressingProfile-001 (см. спецификацию §16).

@@ -79,7 +79,7 @@
 - [x] Docs-only gate: commit `docs: define mapping phase 7a` включает только спецификацию, DECISIONS и TODO. После проверки SHA пользователь отдельно разрешил production-код 7A.
 - [x] 7A: InputCanvas/InputCanvasId и ссылка MappingRegion; `resolveMapping`, `mapInputPixel`, `unmapHardwarePixel` через существующие API 6A; physical cell lookup без повторного Numbering/Direction/Snake.
 - [x] 7A: identity/offset REF-001 sweeps, reverse traversal, validation/immutability, регрессия 425 тестов, typecheck/lint/build/Electron smoke и diff check.
-- [x] **Phase 7A ACCEPTED / CLOSED** на `0071eeed001ed2e275e3efb827b216a1d49da1f8` (18 файлов, 880+/6-, 543/543 тестов). Отчёт: [mapping-engine-7a-validation.md](docs/mapping-engine-7a-validation.md). Приёмка по [LEDMAP-PHASE-7-ACCEPTANCE-001](docs/specs/LEDMAP-PHASE-7-ACCEPTANCE-001.md).
+- [x] **Phase 7A ACCEPTED / CLOSED** на `0071eeed001ed2e275e3efb827b216a1d49da1f8` (18 файлов, 880+/6-, 543/543 тестов — локальные результаты, CI-подтверждение не заявляется). Отчёт: [mapping-engine-7a-validation.md](docs/mapping-engine-7a-validation.md). Приёмка по [LEDMAP-PHASE-7-ACCEPTANCE-001](docs/specs/LEDMAP-PHASE-7-ACCEPTANCE-001.md).
 - [ ] 7B: отдельный контракт `LEDMAP-REMAP-001` и `remap-engine` (логический пост-processing слой: пост-коррекция готового PixelMap в `RemappedPixelMap`, без мутации модели). `LEDMAP-FINAL-REMAP-REVERSEINDEX-SPEC-001` зарезервирован для hardware-final этапа после Hardware Profiles + AddressEncoder. Базовые Input→Output transforms остаются будущим расширением Mapping. Текущий шаг — docs-only gate 7B.
 - [ ] 7C: `validation` проекта (rules, codes, validator); обязательные инварианты реализуются уже в 7A/7B.
 - [ ] 7D: `serialization` schema v1 + round-trip + миграции (скелет)

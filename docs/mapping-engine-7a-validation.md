@@ -1,6 +1,6 @@
 # Phase 7A — Mapping Engine validation
 
-Дата локальной проверки: 2026-09-24. Контракт: [LEDMAP-MAPPING-001](specs/LEDMAP-MAPPING-001.md), ADR-020. Docs-only gate принят на `247ed4abb499394f8a49ab58b1d3340166769241`; после проверки этого SHA пользователь отдельно разрешил production-реализацию 7A. Реализация представляется к приёмке, пользовательская приёмка ещё не выполнена.
+Дата локальной проверки: 2026-09-24. Контракт: [LEDMAP-MAPPING-001](specs/LEDMAP-MAPPING-001.md), ADR-020. Docs-only gate принят на `247ed4abb499394f8a49ab58b1d3340166769241`; после проверки этого SHA пользователь отдельно разрешил production-реализацию 7A. Production-реализация принята пользователем на `0071eeed001ed2e275e3efb827b216a1d49da1f8` без блокирующих замечаний; Phase 7A закрыта. Проверки 543/543, typecheck/lint/build/Electron smoke и diff-check подтверждены локально, CI-подтверждение не заявляется.
 
 ## Реализация и public API
 

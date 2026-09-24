@@ -66,8 +66,8 @@
 - [x] Целевые тесты app, регрессия core, typecheck/lint/build, smoke-проверка реального Electron-окна и инструкция запуска. См. [отчёт Alpha](docs/alpha-ui-001-validation.md).
 
 ## Phase 6 — Hardware (Receiver/Processor/Port) Engine
-- [~] Phase 6A: явная полная topology, компактные spans, port-local dataIndex, forward/reverse и отдельный globalRemapIndex; план принят 2026-09-24.
-- [ ] Phase 6A: полный REF-001 sweep, multi-processor, variable sizes, валидация, регрессия и итоговый отчёт.
+- [x] Phase 6A: явная полная topology, компактные spans, port-local dataIndex, forward/reverse и отдельный globalRemapIndex; план принят 2026-09-24, реализация готова к приёмке.
+- [x] Phase 6A: полный REF-001 sweep, multi-processor, variable sizes, валидация, регрессия и [итоговый отчёт](docs/hardware-engine-6a-validation.md). 336/336 тестов, typecheck/lint/build и Electron smoke проходят локально.
 - Phase 6B (пункты allocation/partial ниже) требует отдельного плана; в 6A не входит.
 - [ ] `hardware-engine/allocate.ts` (ёмкости, precedence Processor→Port→Receiver)
 - [ ] `hardware-engine/resolve.ts` (явные назначения + доводка)

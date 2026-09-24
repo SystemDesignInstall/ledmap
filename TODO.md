@@ -7,7 +7,7 @@
 - [x] Phase 4E — обобщённая геометрия Cabinet pixel layout принята пользователем на `67fd975cf0e0036fd50c06d533a13a1bff871651`.
 - Cabinet Engine поддерживает Row/Column, LTR/RTL, TTB/BTT, независимый Snake, Top Left и прямоугольный module-first pixel layout с inverse mapping и safe integer validation. REF-001…004 служат регрессией Cabinet Engine; полная hardware/mapping-приёмка из Phase 5 ниже этим не объявляется завершённой.
 - Старые пункты Phase 0–5 ниже сохраняют исходный план и не являются актуальным отчётом о каждом реализованном файле.
-- Early Alpha UI принята пользователем на `88f110d15f06a86f7c277ef61979520218140720`, Phase 6A и 6B закрыты; 6B принята на `63f340a5e181f98b93713cafcdc2d56ebd37ce1f`. **План Phase 7A принят**, см. [LEDMAP-MAPPING-001](docs/specs/LEDMAP-MAPPING-001.md) и ADR-020. Текущий шаг — docs-only gate; production-код 7A ожидает отдельного разрешения после проверки docs-commit. Расширение StartCorner отложено.
+- Early Alpha UI принята пользователем на `88f110d15f06a86f7c277ef61979520218140720`, Phase 6A и 6B закрыты; 6B принята на `63f340a5e181f98b93713cafcdc2d56ebd37ce1f`. **Phase 7A принята/закрыта на `0071eeed001ed2e275e3efb827b216a1d49da1f8`** (`feat(core): implement mapping phase 7a`), применение протоколируется в ADR-020. Контракты: [LEDMAP-MAPPING-001](docs/specs/LEDMAP-MAPPING-001.md), [LEDMAP-HARDWARE-PROFILE-ADDRESSING-SPEC-001](docs/specs/LEDMAP-HARDWARE-PROFILE-ADDRESSING-SPEC-001.md), [LEDMAP-PHASE-7-ACCEPTANCE-001](docs/specs/LEDMAP-PHASE-7-ACCEPTANCE-001.md). Текущий шаг — docs-only gate Phase 7B (Remap); production-код 7B ожидает отдельного разрешения после проверки 7B-контракта. Расширение StartCorner отложено.
 
 ## Phase 0 — Environment & Repository
 - [ ] Установить Node.js 24 LTS через winget (в окружении отсутствует)
@@ -76,10 +76,11 @@
 
 ## Phase 7 — Mapping, Remap, Validation, Serialization
 - [x] План 7A принят 2026-09-24: [LEDMAP-MAPPING-001](docs/specs/LEDMAP-MAPPING-001.md), ADR-020; identity-translation profile, один InputCanvas/Screen/Grid/Region, компактный immutable PixelMap.
-- Docs-only gate: commit `docs: define mapping phase 7a` включает только спецификацию, DECISIONS и TODO. После проверки SHA пользователь отдельно разрешает production-код 7A; реализация пока не начата.
-- [ ] 7A: InputCanvas/InputCanvasId и ссылка MappingRegion; `resolveMapping`, `mapInputPixel`, `unmapHardwarePixel` через существующие API 6A; physical cell lookup без повторного Numbering/Direction/Snake.
-- [ ] 7A: identity/offset REF-001 sweeps, reverse traversal, validation/immutability, регрессия 425 тестов, typecheck/lint/build/Electron smoke и diff check.
-- [ ] 7B: отдельный контракт и `remap-engine` (пост-коррекция готового PixelMap, без мутации модели); базовые Input→Output transforms остаются будущим расширением Mapping.
+- [x] Docs-only gate: commit `docs: define mapping phase 7a` включает только спецификацию, DECISIONS и TODO. После проверки SHA пользователь отдельно разрешил production-код 7A.
+- [x] 7A: InputCanvas/InputCanvasId и ссылка MappingRegion; `resolveMapping`, `mapInputPixel`, `unmapHardwarePixel` через существующие API 6A; physical cell lookup без повторного Numbering/Direction/Snake.
+- [x] 7A: identity/offset REF-001 sweeps, reverse traversal, validation/immutability, регрессия 425 тестов, typecheck/lint/build/Electron smoke и diff check.
+- [x] **Phase 7A ACCEPTED / CLOSED** на `0071eeed001ed2e275e3efb827b216a1d49da1f8` (18 файлов, 880+/6-, 543/543 тестов). Отчёт: [mapping-engine-7a-validation.md](docs/mapping-engine-7a-validation.md). Приёмка по [LEDMAP-PHASE-7-ACCEPTANCE-001](docs/specs/LEDMAP-PHASE-7-ACCEPTANCE-001.md).
+- [ ] 7B: отдельный контракт `LEDMAP-FINAL-REMAP-REVERSEINDEX-SPEC-001` и `remap-engine` (пост-коррекция готового PixelMap, без мутации модели); базовые Input→Output transforms остаются будущим расширением Mapping. Текущий шаг — docs-only gate 7B.
 - [ ] 7C: `validation` проекта (rules, codes, validator); обязательные инварианты реализуются уже в 7A/7B.
 - [ ] 7D: `serialization` schema v1 + round-trip + миграции (скелет)
 - [ ] Все тесты движков зелёные и выполняются headless независимо от Alpha UI

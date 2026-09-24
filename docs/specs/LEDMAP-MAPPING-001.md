@@ -1,6 +1,6 @@
 # LEDMAP-MAPPING-001 — Phase 7A: identity-translation mapping profile
 
-Статус: **Accepted — documentation only**. Пользователь принял контракт и план Phase 7A 2026-09-24. Разрешён docs-only commit этой спецификации, ADR-020 и TODO. Production-код 7A пока не разрешён: после проверки docs-commit требуется отдельное разрешение пользователя.
+Статус: **Accepted — implementation accepted**. Документ был принят как docs-only контракт 2026-09-24 (`247ed4abb499394f8a49ab58b1d3340166769241`); production-код реализован и принят Gate 7A на `0071eeed001ed2e275e3efb827b216a1d49da1f8`. Phase 7A — **ACCEPTED / CLOSED**. Этап 7B (Remap) не начинается без отдельного 7B-контракта.
 
 Основание: [архитектура](../../ARCHITECTURE.md), [доменная модель](../domain-model.md), ADR-005/009/014/015/018/019 в [DECISIONS](../DECISIONS.md), [REF-001](../reference/LEDMAP-REF-001.md), [Hardware Engine 6A](LEDMAP-HARDWARE-ENGINE-001.md) и [Capacity 6B](LEDMAP-HARDWARE-CAPACITY-001.md). Phase 6A и 6B закрыты; принятый production-commit 6B — `63f340a5e181f98b93713cafcdc2d56ebd37ce1f`.
 

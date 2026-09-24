@@ -57,7 +57,9 @@ It does not redefine Hardware Addressing.
 ResolvedPixelMap
 ```
 
-Производный объект строится движками из исходной модели (`Project Model`). Непривилегированная ручная сборка недоверенного `ResolvedPixelMap` не является способом обхода validation.
+Поддерживаемый `mapping` MUST быть immutable `ResolvedPixelMap` snapshot, произведённым `resolveMapping()` в 7A из исходной модели (`Project Model`). 7B проверяет достаточную immutability для безопасного reference sharing (§16); mutable / unfrozen mapping отклоняется с `REMAP_INVALID_VALUE`.
+
+Проверка immutability **не доказывает provenance**: deep-frozen вручную сфабрикованный объект нельзя надёжно отличить от результата `resolveMapping()` только по runtime-форме. Такой объект не становится поддерживаемым input лишь потому, что он заморожен. 7B MUST NOT вызывать `resolveMapping()` или повторять semantic validation Mapping/Hardware topology.
 
 ```text
 Source Project Model
@@ -122,7 +124,13 @@ rules.length > 0
       until a concrete rule-type contract is accepted
 ```
 
-Ненулевой набор правил в v1 не «применяется» по наитию: неизвестный `type` возвращает `REMAP_UNSUPPORTED_RULE`, а не молчаливый passthrough.
+Нормативный порядок validation в v1:
+
+1. Проверить оболочку `ResolveRemapInput`, наличие `rules` как массива и immutable boundary `mapping` (§3, §16). Нарушение v1 input ownership contract возвращает `REMAP_INVALID_VALUE`.
+2. После успешной проверки boundary проверить `rules.length`. Любой непустой массив возвращает `REMAP_UNSUPPORTED_RULE`, без интерпретации или validation `id/version/type` его элементов.
+3. Для пустого массива создать identity wrapper с собственным immutable empty rules array.
+
+Таким образом, нарушение boundary имеет приоритет над непустым набором правил; неизвестные или некорректные descriptors не получают отдельной семантики в v1.
 
 ---
 
@@ -229,7 +237,7 @@ RemapRuleDescriptor
 }
 ```
 
-Отдельного поля `order` нет: порядок задаётся array order (§7), а не значением поля. Правило без `version` в v1 не принимается.
+Отдельного поля `order` нет: порядок задаётся array order (§7), а не значением поля. Требования к полям descriptor относятся к будущим concrete rule contracts. В v1 любой непустой набор отклоняется с `REMAP_UNSUPPORTED_RULE` после проверки input boundary, без validation полей descriptor (§3.1).
 
 Изменение семантики правила, способное изменить результат, MUST приводить к изменению `version` (или `id`, если изменение фундаментальное).
 
@@ -334,19 +342,28 @@ Clamp / wrap / rounding / silent coercion remain prohibited.
 
 # 16. Immutability and reference ownership
 
-`RemappedPixelMap` и его вложенные объекты MUST быть immutable. Входные объекты не замораживаются и не мутируются.
+`RemappedPixelMap` и его вложенные объекты MUST быть deeply immutable. Ownership v1 разделён следующим образом:
 
 ```text
-RemappedPixelMap MAY retain references to immutable objects
-owned by ResolvedPixelMap.
+ResolveRemapInput wrapper MAY be a mutable caller-owned object.
+7B MUST NOT mutate, freeze or retain that mutable wrapper.
 
-It MUST NOT retain mutable references supplied by Remap Rules
-or other caller-owned mutable state.
+rules MAY be a mutable caller-owned array.
+7B MUST NOT mutate, freeze or retain that mutable array.
+For an empty rule set, v1 creates and freezes its own empty rules array.
+
+mapping MUST be an immutable ResolvedPixelMap snapshot produced by 7A.
+7B MAY share this immutable snapshot by reference:
+result.source MAY === input.mapping.
+
+mutable / unfrozen mapping → REMAP_INVALID_VALUE
 
 7B MUST NOT mutate or freeze upstream objects.
 ```
 
-Так как 7A уже гарантирует immutable `ResolvedPixelMap`, 7B **имеет право безопасно разделять immutable references** с 7A — полное копирование snapshot не требуется. Запрещается mutable aliasing: изменение входного объекта после вызова не должно менять уже построенный результат.
+Проверка immutable boundary MUST охватывать вложенные объекты snapshot, разделяемые по ссылке: замороженной внешней оболочки с mutable вложенными данными недостаточно. Это проверка безопасности reference sharing, а не provenance или повторная semantic validation (§3).
+
+Так как 7A уже гарантирует immutable `ResolvedPixelMap`, полное копирование snapshot не требуется. Изменение caller-owned wrapper или массива `rules` после вызова MUST NOT менять уже построенный результат. Mutable references на другое caller-owned состояние также не удерживаются.
 
 ---
 
@@ -424,35 +441,20 @@ Remap Rules
 
 # 20. Error namespace
 
-Новые ошибки 7B используют существующий `DomainError` с отдельными кодами:
+Новые ошибки 7B используют существующий `DomainError`. Достижимость кодов в identity-only v1:
 
-```text
-REMAP_INVALID_VALUE
+| Код | Статус | Условие / граница |
+|---|---|---|
+| `REMAP_INVALID_VALUE` | ACTIVE in v1 | Некорректный `ResolveRemapInput`, включая `rules`, не являющийся массивом; mutable / unfrozen mapping; другое нарушение v1 input ownership contract (§3, §16). |
+| `REMAP_UNSUPPORTED_RULE` | ACTIVE in v1 | `rules.length > 0` после успешной проверки input boundary, без validation полей descriptor (§3.1). |
+| `REMAP_OVERFLOW` | RESERVED | Identity-only v1 не выполняет собственной арифметики, способной породить remap overflow. |
+| `REMAP_UNKNOWN_REFERENCE` | RESERVED | v1 не имеет remap-owned references. `MAPPING_UNKNOWN_REFERENCE` / `HARDWARE_UNKNOWN_REFERENCE` передаются без переименования. |
+| `REMAP_OUT_OF_RANGE` | RESERVED FOR FUTURE RULE CONTRACTS | Bounds upstream lookup остаются `MAPPING_*` / `HARDWARE_*` (§15, §21). |
+| `REMAP_DUPLICATE` | RESERVED FOR FUTURE RULE CONTRACTS | Недостижим в identity-only v1. |
+| `REMAP_INCOMPLETE` | RESERVED FOR FUTURE RULE CONTRACTS | Недостижим в identity-only v1. |
+| `REMAP_SIZE_MISMATCH` | RESERVED FOR FUTURE RULE CONTRACTS | Недостижим в identity-only v1. |
 
-REMAP_OVERFLOW
-
-REMAP_UNKNOWN_REFERENCE
-```
-
-Отдельная группа, зарезервированная под правило:
-
-```text
-REMAP_OUT_OF_RANGE
-
-REMAP_DUPLICATE
-
-REMAP_INCOMPLETE
-
-REMAP_SIZE_MISMATCH
-```
-
-является **reserved for future rule extensions** — в identity-only v1 без concrete rule types эти коды недостижимы; bounds upstream Mapping/Hardware lookup в v1 возвращают `MAPPING_*` / `HARDWARE_*`, переданные без переименования (§15, §21). Коды группы используются только при появлении соответствующего утверждённого rule-type контракта.
-
-```text
-REMAP_UNSUPPORTED_RULE
-```
-
-— уже достижим в v1 при `rules.length > 0` (§3.1).
+Reserved-коды не генерируются v1; их использование требует соответствующего будущего утверждённого контракта. Порядок validation и приоритет активных ошибок определены в §3.1.
 
 ---
 
@@ -646,13 +648,20 @@ identity-remap не меняет hardware keys и reverse lookup результ�
 Обязательные проверки:
 
 ```text
-deep-frozen вход принимается
-mutable вход не замораживается
-последующая мутация входа не меняет результат
+deep-frozen ResolvedPixelMap, произведённый 7A, принимается
+mutable ResolveRemapInput wrapper принимается и не замораживается
+mutable empty rules array принимается и не замораживается
+result.rules не удерживает mutable input array
+изменение wrapper/rules после resolveRemap() не меняет RemappedPixelMap
+mutable/unfrozen mapping → REMAP_INVALID_VALUE
+shallow-frozen mapping с mutable вложенными данными → REMAP_INVALID_VALUE
+result глубоко immutable
 repeated calls детерминированы
 вход и результат не разделяют mutable references
-вход и результат могут разделять immutable references (§16)
+result.source MAY === input.mapping, поскольку mapping уже immutable (§16)
 ```
+
+Проверки порядка ошибок (§3.1, §20): нарушение input boundary возвращает `REMAP_INVALID_VALUE` даже при непустом `rules`; при корректном boundary любой непустой массив возвращает `REMAP_UNSUPPORTED_RULE`, включая элементы с отсутствующими или некорректными `id/version/type`. Тесты не требуют доказательства provenance или повторной semantic validation Mapping/Hardware topology.
 
 **Regression baseline для 7B — принятый набор 7A = `543` тестов** (425 — pre-7A regression baseline, покрыт внутри 543). Сохранение 543 PASS — обязательное требование gates 7B.
 

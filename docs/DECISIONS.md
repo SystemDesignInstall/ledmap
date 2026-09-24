@@ -155,7 +155,7 @@
 
 ## ADR-021: Separate Phase 7B logical Remap from final hardware remap
 
-- **Статус:** Accepted — принято пользователем 2026-09-24 вместе с docs-gate Phase 7B. Docs Gate 7B: PASS (формально зафиксирован по SHA).
+- **Статус:** Proposed — documentation contract under review. Docs Gate 7B ещё не принят; production-код 7B не разрешён.
 - **Контракт:** `docs/specs/LEDMAP-REMAP-001.md`.
 - **Связанные решения:** ADR-018, ADR-019, ADR-020.
 - **Production baseline Phase 7A:** `0071eeed001ed2e275e3efb827b216a1d49da1f8`.

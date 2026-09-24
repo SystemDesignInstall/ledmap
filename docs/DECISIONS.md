@@ -256,11 +256,27 @@ Phase 7B:
 
 Project Model и исходный `ResolvedPixelMap` не мутируются.
 
-Для пустого набора правил обязателен identity invariant:
+Для пустого набора правил обязателен semantic identity invariant:
 
 ```text
-Remap(mapping, []) == mapping
+remap = resolveRemap({ mapping, rules: [] })
+
+mapRemappedInputPixel(remap, P)
+==
+mapInputPixel(mapping, P)
 ```
+
+и
+
+```text
+unmapRemappedHardwarePixel(remap, K)
+==
+unmapHardwarePixel(mapping, K)
+```
+
+для каждого допустимого `P` и занятого `K`.
+
+Форма `Remap(mapping, []) == mapping` допустима только как семантический shorthand и **не означает literal object equality** между `ResolvedPixelMap` и `RemappedPixelMap` (см. `LEDMAP-REMAP-001` §5, §22).
 
 Phase 7B v1 вводит deterministic immutable remap infrastructure, но не вводит production rule types без отдельного утверждённого контракта.
 

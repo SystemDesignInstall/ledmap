@@ -120,6 +120,15 @@
 - **Отложено:** Hardware/Receiver/Port/Processor, addressing, Mapping/Remap, сериализация и Open/Save, экспорт, packaging, новые StartCorner и module/pixel ordering.
 - **Приёмка:** спецификация фиксирует сценарий Create Screen, допустимые настройки, ошибки/лимиты, интеграцию API и проверку реального Electron-окна. Обязательны test/typecheck/lint/build и smoke-приёмка. Перед production-кодом утверждённый контракт фиксируется отдельным documentation commit.
 
+## ADR-018: Phase 6A — явная Hardware topology и каноническая адресация
+
+- **Статус:** Accepted — одобрено пользователем 2026-09-24.
+- **Контракт:** [LEDMAP-HARDWARE-ENGINE-001](specs/LEDMAP-HARDWARE-ENGINE-001.md). Processor order явный, Port следует Port.index, Receiver order задаётся явным списком внутри Port и не использует Receiver.index; Cabinet следует Receiver.cabinets.
+- **Полнота:** каждый входной Cabinet назначен ровно одному Receiver; все ссылки и порядки проверены. Capacity ограничена существующими Processor.portCount и Port.receiverCapacity. Auto-allocation, новая Receiver capacity и partial assignments отложены в 6B.
+- **Адресация:** forward принимает CabinetId и cabinet-local pixel; reverse требует processor + port + dataIndex. Port сбрасывает dataIndex, Receiver не сбрасывает. globalRemapIndex — отдельный derived flatten, не поле PixelAddress и не hardware lookup key.
+- **Представление:** immutable компактные Port/Receiver/Cabinet spans и реальные pixel counts из Cabinet Engine; разные размеры Cabinet допустимы, все накопленные суммы проверяются как safe integers. PixelAddress вычисляется по запросу.
+- **Приёмка:** полный независимый sweep 196608 пикселей REF-001, оба round-trip, multi-processor с Port.index=0/dataIndex=0 на обоих Processor, variable cabinet sizes и вся существующая регрессия.
+
 ## Открытые вопросы для окончательной фиксации
 
 1. Multi-processor project ordering, scope Receiver.index и конфигурация Module/Pixel ordering вне ReferenceAddressingProfile-001 (см. спецификацию §16).

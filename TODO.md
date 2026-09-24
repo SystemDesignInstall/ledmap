@@ -7,7 +7,7 @@
 - [x] Phase 4E — обобщённая геометрия Cabinet pixel layout принята пользователем на `67fd975cf0e0036fd50c06d533a13a1bff871651`.
 - Cabinet Engine поддерживает Row/Column, LTR/RTL, TTB/BTT, независимый Snake, Top Left и прямоугольный module-first pixel layout с inverse mapping и safe integer validation. REF-001…004 служат регрессией Cabinet Engine; полная hardware/mapping-приёмка из Phase 5 ниже этим не объявляется завершённой.
 - Старые пункты Phase 0–5 ниже сохраняют исходный план и не являются актуальным отчётом о каждом реализованном файле.
-- Следующий утверждённый этап — **Early Alpha UI**, см. отдельный раздел ниже. Расширение StartCorner отложено.
+- Early Alpha UI принята пользователем на `88f110d15f06a86f7c277ef61979520218140720`. Следующий утверждённый этап — **Phase 6A**, [план](docs/specs/LEDMAP-HARDWARE-ENGINE-001.md), ADR-018. Расширение StartCorner отложено.
 
 ## Phase 0 — Environment & Repository
 - [ ] Установить Node.js 24 LTS через winget (в окружении отсутствует)
@@ -66,6 +66,9 @@
 - [x] Целевые тесты app, регрессия core, typecheck/lint/build, smoke-проверка реального Electron-окна и инструкция запуска. См. [отчёт Alpha](docs/alpha-ui-001-validation.md).
 
 ## Phase 6 — Hardware (Receiver/Processor/Port) Engine
+- [~] Phase 6A: явная полная topology, компактные spans, port-local dataIndex, forward/reverse и отдельный globalRemapIndex; план принят 2026-09-24.
+- [ ] Phase 6A: полный REF-001 sweep, multi-processor, variable sizes, валидация, регрессия и итоговый отчёт.
+- Phase 6B (пункты allocation/partial ниже) требует отдельного плана; в 6A не входит.
 - [ ] `hardware-engine/allocate.ts` (ёмкости, precedence Processor→Port→Receiver)
 - [ ] `hardware-engine/resolve.ts` (явные назначения + доводка)
 - [ ] Диагностики overflow / unused slot

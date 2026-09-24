@@ -1,17 +1,17 @@
 # Phase 7B — identity-only Remap validation
 
-Статус: production candidate для приёмки пользователем; этап ещё не закрыт.
+Статус: **ACCEPTED / CLOSED** — production Phase 7B принят пользователем на `2b589ac326ab6bc066d0a55cd295bae05e9fc380` после проверки diff относительно docs-gate `52395cb9bc2c7d1ae358e838c80a7136ef535dcd`. Блокирующих замечаний нет. 625/625 тестов и quality gates ниже — локальные результаты, без CI-подтверждения.
 
 ## Baseline и scope
 
 - Принятый docs-gate и непосредственная база production diff: `52395cb9bc2c7d1ae358e838c80a7136ef535dcd`.
 - Контракт: `docs/specs/LEDMAP-REMAP-001.md`, версия 1.0 Accepted; ADR-021.
 - Upstream production 7A: `0071eeed001ed2e275e3efb827b216a1d49da1f8`; regression baseline — 543 теста.
-- Candidate — коммит `feat(core): implement remap phase 7b`, содержащий этот отчёт. Его SHA сообщается отдельно после создания коммита.
+- Принятый production-коммит: `2b589ac326ab6bc066d0a55cd295bae05e9fc380` — `feat(core): implement remap phase 7b`.
 
 Изменения: пять файлов `packages/core/src/remap-engine/`, публичный экспорт в `packages/core/src/index.ts`, три файла `packages/core/test/remap-engine/` и этот отчёт. Всего 10 файлов. Прежние тесты и production-файлы Cabinet/Hardware/Mapping не изменены. Accepted spec, ADR и TODO не меняются этим production-коммитом.
 
-Не входят: concrete rules, Mapping transforms, hardware-final addressing, serialization, 7C validation, UI. Существующее локальное изменение `packages/app/package.json` (только dev-script) не включено в candidate; команды проверок его не используют.
+Не входят: concrete rules, Mapping transforms, hardware-final addressing, serialization, 7C validation, UI. Локальное изменение `packages/app/package.json` (только dev-script) не включено в принятый production-коммит; команды проверок его не использовали.
 
 ## Реализация
 
@@ -55,4 +55,4 @@ Forward/reverse напрямую делегируют в `mapInputPixel()` / `un
 | `npm run test:smoke` | PASS — создание экрана, 8 ordering modes, Canvas labels, rectangular layout, invalid input, limits, degenerate grids, resize, DPR=2 |
 | `git diff --check` | PASS; staged diff также проверен |
 
-Приёмка production Phase 7B остаётся отдельным решением пользователя после проверки SHA и diff относительно принятого docs-gate.
+Приёмка production Phase 7B выполнена пользователем. Настоящее docs-only closure фиксирует её результат; production-код и принятая семантика identity-only v1 не изменяются.

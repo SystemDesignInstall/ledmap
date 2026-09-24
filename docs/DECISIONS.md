@@ -155,7 +155,8 @@
 
 ## ADR-021: Separate Phase 7B logical Remap from final hardware remap
 
-- **Статус:** Accepted — план/docs-gate Phase 7B принят пользователем после corrective review `3a12ff1a4b661def0fb8b90d343b7268a62c3fb4`. Production-код 7B ожидает отдельного разрешения после проверки SHA acceptance-коммита.
+- **Статус:** Accepted — docs-gate Phase 7B принят на `52395cb9bc2c7d1ae358e838c80a7136ef535dcd`; production принят пользователем на `2b589ac326ab6bc066d0a55cd295bae05e9fc380` (`feat(core): implement remap phase 7b`). **Phase 7B ACCEPTED / CLOSED**.
+- **Приёмка реализации:** 625/625 тестов (543 baseline + 82 новых), typecheck/lint/build/Electron smoke/`git diff --check` — локальный PASS; CI-подтверждение не заявляется. Отчёт: [remap-engine-7b-validation.md](remap-engine-7b-validation.md).
 - **Контракт:** `docs/specs/LEDMAP-REMAP-001.md`.
 - **Связанные решения:** ADR-018, ADR-019, ADR-020.
 - **Production baseline Phase 7A:** `0071eeed001ed2e275e3efb827b216a1d49da1f8`.

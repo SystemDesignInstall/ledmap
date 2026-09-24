@@ -2,9 +2,17 @@ import tseslint from 'typescript-eslint'
 
 export default tseslint.config(
   {
-    ignores: ['**/dist/**', '**/node_modules/**', '**/coverage/**'],
+    ignores: ['**/dist/**', '**/out/**', '**/node_modules/**', '**/coverage/**'],
   },
   tseslint.configs.recommended,
+  {
+    files: ['packages/app/src/renderer/**/*.ts'],
+    rules: {
+      '@typescript-eslint/no-restricted-imports': ['error', {
+        patterns: ['node:*', 'electron', '@ledmap/core/*', '**/core/src/**'],
+      }],
+    },
+  },
   {
     files: ['packages/core/**/*.ts'],
     rules: {

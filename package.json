@@ -12,6 +12,8 @@
     "npm": ">=10"
   },
   "scripts": {
+    "dev": "npm run dev -w @ledmap/app",
+    "test:smoke": "npm run test:smoke -w @ledmap/app",
     "build": "npm run build --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "vitest run",

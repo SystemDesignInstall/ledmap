@@ -60,10 +60,10 @@
 
 - [x] Подготовить спецификацию, ADR-017 и согласованные изменения архитектурного плана/AGENTS.md.
 - [x] Получить одобрение плана реализации Early Alpha UI.
-- [ ] Подключить Electron/electron-vite и запуск `npm run dev`; сборка приложения через `npm run build`.
-- [ ] Create Screen: один Screen/Grid, настройки геометрии и ordering, readonly snapshot через существующий core, ошибки и лимиты preview.
-- [ ] Canvas: физические ID, отдельные логические номера, модульная сетка, направленный путь, fit-to-window и сводка размеров.
-- [ ] Целевые тесты app, регрессия core, typecheck/lint/build, smoke-проверка реального Electron-окна и инструкция запуска.
+- [x] Подключить Electron/electron-vite и запуск `npm run dev`; сборка приложения через `npm run build`.
+- [x] Create Screen: один Screen/Grid, настройки геометрии и ordering, readonly snapshot через существующий core, ошибки и лимиты preview.
+- [x] Canvas: физические ID, отдельные логические номера, модульная сетка, направленный путь, fit-to-window и сводка размеров.
+- [x] Целевые тесты app, регрессия core, typecheck/lint/build, smoke-проверка реального Electron-окна и инструкция запуска. См. [отчёт Alpha](docs/alpha-ui-001-validation.md).
 
 ## Phase 6 — Hardware (Receiver/Processor/Port) Engine
 - [ ] `hardware-engine/allocate.ts` (ёмкости, precedence Processor→Port→Receiver)

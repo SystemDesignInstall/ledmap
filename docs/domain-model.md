@@ -112,7 +112,7 @@ Logical Pixel Ordering ≠ Physical Panel Scan / Wiring. Cabinet Engine зада
 - `globalRemapIndex` — отдельный derived project-wide flattening Processor → Port → Receiver → Cabinet → Module → Pixel. В [REF-001](reference/LEDMAP-REF-001.md) C09 начинается с `dataIndex=0` на P01:02 и `globalRemapIndex=131072`. Это не поле HardwareAddress/PixelAddress и не persisted project data.
 - `PixelAddress → HardwareProfile.encode(...) → vendor-specific address` — будущая граница; интерфейс HardwareProfile сейчас не создаётся, TypeScript-модель не меняется.
 - `usedPixels` / `remainingPixels` / `assignedReceivers` — **derived allocation state**: вычисляются из ёмкостей и назначений, никогда не хранятся как независимые поля (нет возможности рассинхрона capacity ↔ usage). Аллокатор не реализован (Hardware Engine, Phase 6).
-- Global precedence задан ADR-006/015; конкретный порядок REF-001 указан явно. Хранение multi-processor порядка и scope Receiver.index остаются OPEN.
+- Global precedence задан ADR-006/015; конкретный порядок REF-001 указан явно. Явный `processorOrder` — обязательный вход resolved topology (ADR-018 / Hardware Engine, Phase 6A), но пока не часть утверждённой persisted `.ledmap` schema. Хранение/serialization `processorOrder` и scope Receiver.index остаются OPEN.
 - auto-allocation (ёмкости Port/Receiver/Processor) — **WORKING**.
 
 ## 7. Invariants (реализованы в фабриках)
@@ -134,7 +134,7 @@ Logical Pixel Ordering ≠ Physical Panel Scan / Wiring. Cabinet Engine зада
 1. Direction semantics (применение к оси нумерации; 4 токена) — ревизия по REF-002.
 2. Snake semantics — ревизия по REF-001/003.
 3. Конфигурация Module/Pixel Ordering вне нормативного ReferenceAddressingProfile-001 — будущий контракт и REF-002…004.
-4. Хранение multi-processor ordering и scope Receiver.index; hierarchy global flattening уже задана ADR-006/015.
+4. Хранение/serialization явного `processorOrder` (runtime-порядок задан ADR-018 / Phase 6A) и scope Receiver.index; hierarchy global flattening уже задана ADR-006/015.
 5. auto-allocation (полное/частичное заполнение) — Hardware Engine (Phase 6).
 6. Реализация addressing, reverse mapping и executable-приёмка по REF-001; port-local семантика `dataIndex` нормативно закрыта ADR-015.
 7. Rotation/flip — допустимые значения (90-градусная сетка?) и как влияют на module/pixel order.

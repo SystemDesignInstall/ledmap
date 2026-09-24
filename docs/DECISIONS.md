@@ -131,7 +131,7 @@
 
 ## Открытые вопросы для окончательной фиксации
 
-1. Multi-processor project ordering, scope Receiver.index и конфигурация Module/Pixel ordering вне ReferenceAddressingProfile-001 (см. спецификацию §16).
+1. Persistence/serialization of explicit `processorOrder` remains open; runtime ordering semantics are defined by ADR-018 / Phase 6A. Scope Receiver.index и конфигурация Module/Pixel ordering вне ReferenceAddressingProfile-001 (см. спецификацию §16).
 2. Точный формат `extensions` (свободный JSON vs схема).
 3. HardwareProfile/vendor encoding и экспортный формат производителей (отдельный контракт).
 4. Диагностики: типовой набор кодов валидации (перечень до UI-этапа).

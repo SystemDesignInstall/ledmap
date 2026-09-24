@@ -191,7 +191,7 @@ Cabinet/Hardware/Mapping/Remap Engines, address calculators, исполняем�
 
 ## 16. Open Questions
 
-- Хранение детерминированного порядка Processor в multi-processor проектах и scope/уникальность Receiver.index. REF-001 использует явные списки; порядок нельзя получать из случайного расположения сущностей.
+- Хранение/serialization явного `processorOrder` в persisted `.ledmap` проекте. Runtime-порядок Processor и его влияние только на project flattening зафиксированы Phase 6A / ADR-018; REF-001 использует явные списки, порядок нельзя получать из случайного расположения сущностей. Scope/уникальность Receiver.index остаётся отдельным открытым вопросом.
 - Модель явной конфигурации логического Module/Pixel ordering вне reference profile, семантика rotation/flip и остальных Direction/StartCorner/Numbering комбинаций.
 - Auto-allocation, capacity-модель Receiver (в текущем типе её нет), частичное заполнение и diagnostic codes для некорректных назначений.
 - API HardwareProfile, ограничения конкретных vendors и обратимость vendor encoding, отдельная от канонического reverse mapping.

@@ -2,8 +2,8 @@
 
 **Название:** Phase 7B — Logical Remap / Post-Processing Specification
 **Проект:** LedMAP
-**Версия:** 1.0 Draft
-**Статус:** Draft — documentation only
+**Версия:** 1.0
+**Статус:** Accepted — documentation only; production 7B ожидает отдельного разрешения после проверки SHA acceptance-коммита.
 **Phase:** 7B — Remap
 **Upstream contract:** `LEDMAP-MAPPING-001` (Phase 7A), ADR-020
 **Production baseline 7A:** `0071eeed001ed2e275e3efb827b216a1d49da1f8`

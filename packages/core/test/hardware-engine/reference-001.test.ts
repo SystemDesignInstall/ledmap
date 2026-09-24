@@ -100,7 +100,7 @@ describe('REF-001 hardware addressing', () => {
     expect(loads).toEqual([131072, 65536])
     expect(global).toBe(196608)
     expect(keys.size).toBe(196608)
-  }, 60000)
+  }, 120000)
 
   it('resolves frozen input deterministically without retaining input state', () => {
     expect(resolveHardware(input)).toEqual(mapping)

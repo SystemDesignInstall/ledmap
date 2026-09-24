@@ -5,6 +5,7 @@ export function brand<T extends string>(value: string): Brand<T> {
 }
 
 export type ScreenId = Brand<'ScreenId'>
+export type InputCanvasId = Brand<'InputCanvasId'>
 export type MappingRegionId = Brand<'MappingRegionId'>
 export type CabinetGridId = Brand<'CabinetGridId'>
 export type CabinetId = Brand<'CabinetId'>
@@ -15,6 +16,7 @@ export type ReceiverId = Brand<'ReceiverId'>
 export type SignalPathId = Brand<'SignalPathId'>
 
 export const asScreenId = (value: string): ScreenId => brand<'ScreenId'>(value)
+export const asInputCanvasId = (value: string): InputCanvasId => brand<'InputCanvasId'>(value)
 export const asMappingRegionId = (value: string): MappingRegionId => brand<'MappingRegionId'>(value)
 export const asCabinetGridId = (value: string): CabinetGridId => brand<'CabinetGridId'>(value)
 export const asCabinetId = (value: string): CabinetId => brand<'CabinetId'>(value)

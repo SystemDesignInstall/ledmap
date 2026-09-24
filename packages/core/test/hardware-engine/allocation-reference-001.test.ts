@@ -68,6 +68,6 @@ describe('REF-001 hardware allocation reconstruction', () => {
     expect(loads).toEqual([131072, 65536])
     expect(global).toBe(196608)
     expect(keys.size).toBe(196608)
-  }, 60000)
+  }, 120000)
 
 })

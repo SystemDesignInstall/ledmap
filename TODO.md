@@ -7,7 +7,7 @@
 - [x] Phase 4E — обобщённая геометрия Cabinet pixel layout принята пользователем на `67fd975cf0e0036fd50c06d533a13a1bff871651`.
 - Cabinet Engine поддерживает Row/Column, LTR/RTL, TTB/BTT, независимый Snake, Top Left и прямоугольный module-first pixel layout с inverse mapping и safe integer validation. REF-001…004 служат регрессией Cabinet Engine; полная hardware/mapping-приёмка из Phase 5 ниже этим не объявляется завершённой.
 - Старые пункты Phase 0–5 ниже сохраняют исходный план и не являются актуальным отчётом о каждом реализованном файле.
-- Early Alpha UI принята пользователем на `88f110d15f06a86f7c277ef61979520218140720`. Следующий утверждённый этап — **Phase 6A**, [план](docs/specs/LEDMAP-HARDWARE-ENGINE-001.md), ADR-018. Расширение StartCorner отложено.
+- Early Alpha UI принята пользователем на `88f110d15f06a86f7c277ef61979520218140720`, Phase 6A закрыта. **Phase 6B** реализована по [утверждённому плану](docs/specs/LEDMAP-HARDWARE-CAPACITY-001.md) и ADR-019, готова к приёмке; см. [отчёт](docs/hardware-engine-6b-validation.md). Расширение StartCorner отложено.
 
 ## Phase 0 — Environment & Repository
 - [ ] Установить Node.js 24 LTS через winget (в окружении отсутствует)
@@ -66,13 +66,13 @@
 - [x] Целевые тесты app, регрессия core, typecheck/lint/build, smoke-проверка реального Electron-окна и инструкция запуска. См. [отчёт Alpha](docs/alpha-ui-001-validation.md).
 
 ## Phase 6 — Hardware (Receiver/Processor/Port) Engine
-- [x] Phase 6A: явная полная topology, компактные spans, port-local dataIndex, forward/reverse и отдельный globalRemapIndex; план принят 2026-09-24, реализация готова к приёмке.
+- [x] Phase 6A: явная полная topology, компактные spans, port-local dataIndex, forward/reverse и отдельный globalRemapIndex; реализация принята пользователем, этап закрыт.
 - [x] Phase 6A: полный REF-001 sweep, multi-processor, variable sizes, валидация, регрессия и [итоговый отчёт](docs/hardware-engine-6a-validation.md). 336/336 тестов, typecheck/lint/build и Electron smoke проходят локально.
-- Phase 6B (allocation/capacity) — план принят 2026-09-24, см. [LEDMAP-HARDWARE-CAPACITY-001](docs/specs/LEDMAP-HARDWARE-CAPACITY-001.md) и ADR-019. Production-код только после docs-commit.
-- [ ] `hardware-engine/allocate.ts` → `allocateHardware()` (прецедент Processor→Port→Receiver, first-fit, опциональный `Receiver.pixelCapacity`)
-- [ ] `resolveHardware`: единственный аддитивный инвариант `receiverLoad ≤ pixelCapacity`; addressing/spans/order не меняются (доводка NOT in resolver — генератор explicit topology в `allocateHardware()`)
-- [ ] Диагностики unused-slot (unit: pixels/receivers/ports) / overflow
-- [ ] Тестовая матрица capacity/overflow/partial + REF-001 reconstruction (pixelCapacity=65536/Receiver)
+- Phase 6B (allocation/capacity) — план принят 2026-09-24, см. [LEDMAP-HARDWARE-CAPACITY-001](docs/specs/LEDMAP-HARDWARE-CAPACITY-001.md) и ADR-019; docs-commit `a8c6fb0` принят. Реализация готова к приёмке, пользовательская приёмка ещё не выполнена.
+- [x] `hardware-engine/allocate.ts` → `allocateHardware()` (порядок processorOrder→Port.index→receiverOrder, first-fit, опциональный `Receiver.pixelCapacity`)
+- [x] `resolveHardware`: единственный аддитивный инвариант `receiverLoad ≤ pixelCapacity`; addressing/spans/order не меняются (генератор explicit topology в `allocateHardware()`)
+- [x] Диагностики unused-slot (unit: pixels/receivers/ports) / overflow
+- [x] Тестовая матрица capacity/overflow/partial + REF-001 reconstruction (pixelCapacity=65536/Receiver); 425/425 тестов, typecheck/lint/build и Electron smoke проходят локально. См. [отчёт 6B](docs/hardware-engine-6b-validation.md).
 
 ## Phase 7 — Mapping, Remap, Validation, Serialization
 - [ ] `mapping-engine` (Input Canvas rect → логическая позиция → PixelMap компактно)

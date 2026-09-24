@@ -87,6 +87,10 @@ export function resolveHardware(input: HardwareTopologyInput): ResolvedHardwareM
           resolvedCabinets.push(Object.freeze({ cabinet, receiverBase: receiverLoad, portBase, ...geometry }))
           receiverLoad = safeAdd(`Receiver ${id} load`, receiverLoad, geometry.pixelCount)
         }
+        if (receiver.pixelCapacity !== undefined) {
+          assertSafeInteger(`Receiver ${id}.pixelCapacity`, receiver.pixelCapacity, 1)
+          if (receiverLoad > receiver.pixelCapacity) fail('CAPACITY_EXCEEDED', `Receiver ${id}: pixel load exceeds pixelCapacity`)
+        }
         resolvedReceivers.push(Object.freeze({
           receiver: id, portBase: portLoad, pixelCount: receiverLoad, cabinets: Object.freeze(resolvedCabinets),
         }))

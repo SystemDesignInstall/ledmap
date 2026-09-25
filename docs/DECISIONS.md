@@ -381,6 +381,17 @@ Final Hardware Remap answers:
 
 Эти три ответственности не должны объединяться в одном Engine или контракте.
 
+## ADR-022: Phase 7C Project Validation
+
+- **Статус:** Accepted — пользователь принял контракт после review Proposed-спецификации. Production 7C ожидает отдельного разрешения после проверки SHA docs-only acceptance-коммита.
+- **Контракт:** [LEDMAP-PROJECT-VALIDATION-001](specs/LEDMAP-PROJECT-VALIDATION-001.md), версия 1.0; upstream — ADR-020/021, закрытые 7A/7B. Regression baseline: 625 тестов.
+- **Вход:** `ValidateProjectInput` содержит исходный `ResolveMappingInput` и обязательный массив `rules`. Scope — один InputCanvas/Screen/Grid/Region с полной explicit topology; новая сущность `Project` не вводится.
+- **Pipeline:** shape check → `resolveMapping()` → `resolveRemap()`. Hardware проверяется внутри 7A; отдельный `resolveHardware()`, allocation и повторная реализация capacity/addressing/ordering не нужны.
+- **Отчёт:** immutable `ProjectValidationReport` с фактически обнаруженными diagnostics и тремя checks: `input`, `mapping`, `remap`; состояния `passed/failed/blocked`, для blocked указан `blockedBy`. `valid` означает структурную корректность и работоспособность текущего профиля 7A/7B, а не сертификат всех инвариантов будущего проекта, монтажа или export.
+- **Полнота:** shape check собирает независимые структурные ошибки; semantic stages останавливаются на первой ошибке движка, зависимые stages блокируются. Нет warning/info и обещания собрать все semantic defects.
+- **Диагностики:** собственный `PROJECT_INVALID_INPUT` для shape errors; upstream `DomainError.code/message` сохраняются буквально. Message не парсится для получения entity path; unexpected exceptions повторно выбрасываются. Input не мутируется; report, checks, diagnostics и paths глубоко immutable.
+- **Граница 7D:** canonical project schema, parsing, JSON/`.ledmap`, миграции и serialization остаются отдельным этапом. Production 7C не меняет математику Cabinet/Hardware/Mapping/Remap, UI или принятые scope 7A/7B.
+
 ## Открытые вопросы для окончательной фиксации
 
 1. Persistence/serialization of explicit `processorOrder` remains open; runtime ordering semantics are defined by ADR-018 / Phase 6A. Scope Receiver.index и конфигурация Module/Pixel ordering вне ReferenceAddressingProfile-001 (см. спецификацию §16).

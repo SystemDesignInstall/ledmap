@@ -9,7 +9,7 @@
     "@ledmap/core": "*"
   },
   "scripts": {
-    "dev": "electron-vite dev",
+    "dev": "electron-vite dev --ignoreConfigWarning",
     "build": "electron-vite build",
     "test:smoke": "node test/electron-smoke.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json"

@@ -4,60 +4,50 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' ws://localhost:* ws://127.0.0.1:*" />
-    <title>LedMAP — Cabinet Grid</title>
+    <title>LedMAP — Project Canvas</title>
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
     <header class="topbar">
       <div class="brand"><span class="brand-mark">▦</span> LedMAP <span class="badge">ALPHA</span></div>
+      <div class="toolbar">
+        <button id="toggle-mode" type="button">Active Screen</button>
+        <button id="fit-project" type="button">Fit to Project</button>
+        <button id="add-screen" type="button">+ Screen</button>
+      </div>
       <span class="session-note">In-memory session</span>
     </header>
     <main>
-      <aside>
-        <div class="panel-heading"><span class="eyebrow">WORKSPACE</span><h1>Cabinet Grid</h1><p>Build a screen. Explore its signal order.</p></div>
-        <button id="create-screen" type="button">+ Create Screen</button>
-        <form id="settings" novalidate>
-          <fieldset id="settings-fields" disabled>
-            <section><h2>01 <span>Physical grid</span></h2><div class="field-pair">
-              <label>Columns<input id="columns" type="number" min="1" step="1" value="4" aria-describedby="columns-error" /><small id="columns-error"></small></label>
-              <label>Rows<input id="rows" type="number" min="1" step="1" value="3" aria-describedby="rows-error" /><small id="rows-error"></small></label>
-            </div></section>
-            <section><h2>02 <span>Modules per cabinet</span></h2><div class="field-pair">
-              <label>Module columns<input id="moduleColumns" type="number" min="1" step="1" value="4" aria-describedby="moduleColumns-error" /><small id="moduleColumns-error"></small></label>
-              <label>Module rows<input id="moduleRows" type="number" min="1" step="1" value="4" aria-describedby="moduleRows-error" /><small id="moduleRows-error"></small></label>
-              <label>Module pixel width<input id="modulePixelWidth" type="number" min="1" step="1" value="32" aria-describedby="modulePixelWidth-error" /><small id="modulePixelWidth-error"></small></label>
-              <label>Module pixel height<input id="modulePixelHeight" type="number" min="1" step="1" value="32" aria-describedby="modulePixelHeight-error" /><small id="modulePixelHeight-error"></small></label>
-            </div></section>
-            <section><h2>03 <span>Signal order</span></h2>
-              <label>Numbering<select id="numbering"><option value="row">Row</option><option value="column">Column</option></select></label>
-              <label>Direction<select id="direction"><option value="left-to-right">Left → Right</option><option value="right-to-left">Right → Left</option></select></label>
-              <label class="checkbox"><input id="snake" type="checkbox" checked /> Snake <span>Alternate each line</span></label>
-              <div class="fixed-setting"><span>Start corner</span><strong>Top left</strong></div>
-              <p class="hint">Module and pixel order: Row Major · Top Left · Snake OFF.</p>
-            </section>
-          </fieldset>
-        </form>
-        <p class="limits">Preview limits: 1,024 cabinets · 65,536 modules</p>
+      <aside class="tree-panel">
+        <div class="panel-heading"><span class="eyebrow">PROJECT</span><h1>Layout</h1><p>One canvas, many screens.</p></div>
+        <div id="project-tree" role="tree" aria-label="Project screens"></div>
       </aside>
       <article>
-        <div class="preview-heading"><div><span class="eyebrow">CANVAS PREVIEW</span><h2 id="screen-title">No screen yet</h2></div><span id="preview-status" role="status">Ready to create</span></div>
-        <div id="error" role="alert" hidden></div>
-        <div id="viewport">
-          <div id="empty"><span class="empty-icon">▦</span><h2>Your screen starts here</h2><p>Create a screen to preview its cabinet grid.</p></div>
-          <canvas id="grid-canvas" role="img" aria-label="Cabinet grid preview" hidden></canvas>
+        <div class="preview-heading">
+          <div>
+            <span class="eyebrow">CANVAS — PROJECT LAYOUT</span>
+            <h2 id="canvas-title">All Screens</h2>
+          </div>
+          <span id="selection-chip" role="status">No selection</span>
         </div>
-        <div class="legend"><span><b>C01</b> Physical ID</span><span><b class="logical">#1</b> Logical order</span><span><b class="path-key">→</b> Signal path</span></div>
-        <p id="detail-note" class="hint" role="status"></p>
-        <dl id="summary">
-          <div><dt>Cabinets</dt><dd id="cabinet-count">—</dd></div>
-          <div><dt>Modules / cabinet</dt><dd id="module-count">—</dd></div>
-          <div><dt>Module size</dt><dd id="module-size">—</dd></div>
-          <div><dt>Cabinet size</dt><dd id="cabinet-size">—</dd></div>
-          <div><dt>Screen resolution</dt><dd id="screen-resolution">—</dd></div>
-          <div><dt>Total pixels</dt><dd id="pixel-count">—</dd></div>
-        </dl>
+        <div id="viewport">
+          <div id="empty" hidden><span class="empty-icon">▦</span><h2>No screens</h2><p>Add a screen to start laying out your LED project.</p></div>
+          <canvas id="project-canvas" role="img" aria-label="Project canvas. No screens."></canvas>
+        </div>
       </article>
+      <aside class="properties-panel">
+        <div class="panel-heading"><span class="eyebrow">PROPERTIES</span><h2 id="properties-title">Nothing selected</h2></div>
+        <div id="properties" class="properties-body">
+          <p class="hint">Select a Screen, a Cabinet Grid or a Cabinet on the canvas or in the project tree.</p>
+        </div>
+      </aside>
     </main>
+    <footer class="statusbar">
+      <span id="bounds" class="status-item">Project bounds · px</span>
+      <span id="zoom-indicator" class="status-item">—</span>
+      <span id="canvas-note" class="status-note"></span>
+      <span class="status-hints">Scroll: pan · Ctrl+Wheel: zoom · Middle / Space+drag: pan · Fit: all screens</span>
+    </footer>
     <script type="module" src="./index.ts"></script>
   </body>
 </html>

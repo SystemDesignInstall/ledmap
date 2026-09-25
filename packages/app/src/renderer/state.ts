@@ -1,6 +1,6 @@
 import {
   cabinetIndex, cabinetOrder, createCabinetGrid, createScreen, decomposeCabinetPixel,
-  DomainError, asScreenId, asCabinetGridId,
+  DomainError, asScreenId,
   type CabinetEngineConfig, type CabinetGrid, type Screen, type GridOrdering, type GridPosition,
 } from '@ledmap/core'
 
@@ -26,6 +26,19 @@ export interface AlphaState {
   readonly snapshot: Snapshot | null
   readonly errors: Readonly<Partial<Record<DimensionField | 'form', string>>>
 }
+export interface SnapshotIds {
+  readonly screenId: string
+  readonly gridId: string
+  readonly screenName: string
+  readonly gridName: string
+}
+
+export const defaultSnapshotIds: SnapshotIds = {
+  screenId: 'screen-1',
+  gridId: 'grid-1',
+  screenName: 'Screen 1',
+  gridName: 'Cabinet Grid',
+}
 
 export const initialDraft: Draft = {
   columns: '4', rows: '3', moduleColumns: '4', moduleRows: '4',
@@ -49,7 +62,7 @@ function safeProduct(label: string, ...values: number[]): number {
   return result
 }
 
-export function applyDraft(previous: Snapshot | null, draft: Draft): AlphaState {
+export function buildSnapshot(previous: Snapshot | null, draft: Draft, ids: SnapshotIds = defaultSnapshotIds): AlphaState {
   const errors: Partial<Record<DimensionField | 'form', string>> = {}
   const dimensions = {} as Record<DimensionField, number>
   for (const field of dimensionFields) {
@@ -74,11 +87,11 @@ export function applyDraft(previous: Snapshot | null, draft: Draft): AlphaState 
     if (cabinetCount > 1024) throw new Error('Preview supports up to 1024 cabinets. Reduce Columns or Rows.')
     if (totalModules > 65536) throw new Error('Preview supports up to 65,536 modules in total. Reduce the grid or module count.')
     const grid = createCabinetGrid({
-      id: 'grid-1', screen: asScreenId('screen-1'), name: 'Cabinet Grid',
+      id: ids.gridId, screen: asScreenId(ids.screenId), name: ids.gridName,
       columns: config.columns, rows: config.rows, cabinetWidth, cabinetHeight, ordering: config.ordering,
     })
     const screen = createScreen({
-      id: 'screen-1', name: 'Screen 1', resolution: { width, height }, cabinetGrids: [asCabinetGridId('grid-1')],
+      id: ids.screenId, name: ids.screenName, resolution: { width, height }, cabinetGrids: [grid.id],
     })
     const path = cabinetOrder(config)
     const cabinets: PreviewCabinet[] = []
@@ -94,4 +107,8 @@ export function applyDraft(previous: Snapshot | null, draft: Draft): AlphaState 
       : error instanceof Error ? error.message : 'Unable to update the preview.'
     return { snapshot: previous, errors }
   }
+}
+
+export function applyDraft(previous: Snapshot | null, draft: Draft): AlphaState {
+  return buildSnapshot(previous, draft)
 }

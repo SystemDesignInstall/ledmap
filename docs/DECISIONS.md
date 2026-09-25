@@ -71,6 +71,7 @@
 ## ADR-011: Канонические токены enums
 - **Статус:** Proposed
 - **Решение:** в `core` — enum-строки: `numbering: "row" | "column"`, `direction: "left-to-right" | "right-to-left"`, `snake: boolean`. Отображение в презентационные лейблы («Row», «Left → Right», «ON») — в `app` (ui-adapters), нормализация алиасов — на слое сериализации, не в движках.
+- **Amended by ADR-023:** историческое положение о нормализации алиасов на serialization layer заменено: `.ledmap` schema v1 принимает только canonical tokens, aliases отклоняются без silent normalization. `ADR-011 alias-normalization clause — superseded by ADR-023`. Остальные положения ADR-011 сохраняются.
 
 ## ADR-012: Reference Test 001 как приёмочный тест
 - **Статус:** Proposed
@@ -393,10 +394,24 @@ Final Hardware Remap answers:
 - **Диагностики:** собственный `PROJECT_INVALID_INPUT` для shape errors; upstream `DomainError.code/message` сохраняются буквально. Message не парсится для получения entity path; unexpected exceptions повторно выбрасываются. Input не мутируется; report, checks, diagnostics и paths глубоко immutable.
 - **Граница 7D:** canonical project schema, parsing, JSON/`.ledmap`, миграции и serialization остаются отдельным этапом. Production 7C не меняет математику Cabinet/Hardware/Mapping/Remap, UI или принятые scope 7A/7B.
 
+## ADR-023: Phase 7D Serialization
+
+- **Статус:** Accepted — documentation only; corrective review пройден, план/docs-gate 7D принят. Production 7D ожидает отдельного разрешения после проверки SHA docs-only acceptance-коммита.
+- **Контракт:** [LEDMAP-SERIALIZATION-001](specs/LEDMAP-SERIALIZATION-001.md), версия 1.0. Baseline — закрытая 7C, closure `33fef12908869ce7ac87d1b723aff2bee91f731b`; 827 тестов — существующий локальный regression baseline, без CI-подтверждения. Этот gate не заявляет результатов будущей реализации 7D.
+- **Wire schema v1:** closed `.ledmap` envelope `format: 'ledmap'`, `schemaVersion: 1`, `project`, `extensions`. Persisted DTO заданы явно, IDs/references — обычные строки; вложенные records и enum literals не зависят от изменяемых runtime domain interfaces. Runtime ↔ StoredV1 — явные materialization/reconstruction boundaries. Scope — один InputCanvas/Screen/Grid/Region с полной explicit topology, включая несколько Processor; универсальная domain Project model не вводится.
+- **Source vs derived:** сохраняются исходные entities, geometry, capacities, references и explicit assignments/orders. `processorOrder`, `receiverOrder` и `Receiver.cabinets` — persisted source-of-truth; порядок всех arrays сохраняется без сортировки. Resolved maps, pixel addresses/indices, spans, lookup tables, allocation/validation diagnostics и UI state не сериализуются. Module.localX/localY реконструируются из column × width / row × height; save сначала проверяет исходные runtime coordinates через 7C и не «лечит» их удалением.
+- **Extensions:** единственный обязательный root JSON object; opaque JSON metadata сохраняются по значению и не передаются в 7C. Вне extensions schema закрыта. Extensions не являются обходом запрета на сохранение core derived data или способом включить новые engine semantics.
+- **Strict tokens / amendment ADR-011:** `ADR-011 alias-normalization clause — superseded by ADR-023`. Parser v1 принимает только canonical tokens §4–5 спецификации; `Row`, `LTR`, `ON` и другие aliases отклоняются как `SERIALIZATION_INVALID_SCHEMA`, без silent normalization. Положения ADR-011 о canonical core tokens и presentation labels в app сохраняются.
+- **Parse ≠ load:** `parseProject()` проверяет syntax, schema и version и может вернуть schema-valid документ с semantic defects. `loadProject()` реконструирует runtime input и вызывает 7C; `serializeProject()` проверяет wire boundary и исходный runtime input через 7C до materialization. Успешные load/save требуют `validateProject().valid`; invalid drafts/recovery остаются отдельным контрактом. Более строгая JSON boundary не расширяет смысл 7C validity, semantic validation движков не дублируется.
+- **Canonical JSON:** schema field order фиксирован, два пробела, LF и один final LF; arrays не сортируются, keys extensions рекурсивно сортируются по UTF-16 code units, включая numeric-looking keys. Duplicate decoded JSON keys отклоняются. При schema validation сначала проверяются известные поля в schema order, затем unknown own string keys в UTF-16 lexical order. Round-trip сохраняет source values/orders с только нормативной normalization; повторный save даёт стабильный текст.
+- **Core / app:** parse/load/serialize и migration dispatch — pure core без I/O; fs, UTF-8 file bytes, пути, диалоги, atomic write и UI Open/Save остаются app и не реализуются этим этапом. Caller input не мутируется; результаты глубоко immutable, derived snapshots не сохраняются.
+- **Versioning:** только v1 identity path и explicit unsupported-version error; legacy v0, Alpha-файлы, implicit defaults и фиктивные migrations не поддерживаются. Будущие pure migrations требуют отдельного source/target schema contract и fixtures. Конкретные Remap rules, hardware-final addressing и serialization UI не входят в 7D.
+- **Docs-only gate:** commit `docs: accept phase 7d serialization contract` ограничен спецификацией, DECISIONS и TODO. Production остаётся незавершённым; после проверки SHA требуется отдельное разрешение пользователя.
+
 ## Открытые вопросы для окончательной фиксации
 
-1. Persistence/serialization of explicit `processorOrder` remains open; runtime ordering semantics are defined by ADR-018 / Phase 6A. Scope Receiver.index и конфигурация Module/Pixel ordering вне ReferenceAddressingProfile-001 (см. спецификацию §16).
-2. Точный формат `extensions` (свободный JSON vs схема).
+1. **Persistence закрыт ADR-023:** explicit `processorOrder`, `receiverOrder` и `Receiver.cabinets` сохраняются в schema v1 без сортировки; runtime ordering semantics ADR-018 / Phase 6A не меняются. Остаются открытыми Scope Receiver.index и конфигурация Module/Pixel ordering вне ReferenceAddressingProfile-001 (см. спецификацию §16).
+2. **Формат extensions закрыт ADR-023:** единственный root JSON object с opaque JSON metadata; schema остальных records закрыта, canonical key order и round-trip определены в LEDMAP-SERIALIZATION-001.
 3. HardwareProfile/vendor encoding и экспортный формат производителей (отдельный контракт).
 4. Диагностики: типовой набор кодов валидации (перечень до UI-этапа).
 5. Нужен ли отдельный headless CLI на базе `core` (опционально).

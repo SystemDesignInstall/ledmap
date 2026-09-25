@@ -41,7 +41,7 @@
 - Никакого production-кода без явного одобрения плана этапа.
 - Каждый этап завершается зелёными тестами и проверкой `typecheck` + `lint`.
 - Эталонные тесты (Reference Test Cases 001–004) — приёмные критерии математического ядра. Подробности см. `docs/ARCHITECTURE.md` и `docs/DECISIONS.md`.
-- Полный UI — финальный этап; UI является клиентом готового core, а не наоборот. Одобрено узкое исключение Early Alpha UI — Cabinet Grid Visualizer по `docs/specs/LEDMAP-ALPHA-UI-001.md` и ADR-017; план реализации явно одобрен пользователем 2026-09-23. Hardware, Mapping/Remap, сериализация и расширение математики в исключение не входят.
+- Полный UI — финальный этап; UI является клиентом готового core, а не наоборот. Одобрено узкое исключение Early Alpha UI — Cabinet Grid Visualizer по `docs/specs/LEDMAP-ALPHA-UI-001.md` и ADR-017; план реализации явно одобрен пользователем 2026-09-23. Вторая итерация — Project Canvas (мультискринный layout) по `docs/specs/LEDMAP-ALPHA-UI-002.md` и ADR-024; легализация одобрена пользователем 2026-09-25. Hardware, Mapping/Remap, сериализация и расширение математики в исключение не входят.
 
 ## Reference Test Case 001 (приёмный тест ядра)
 

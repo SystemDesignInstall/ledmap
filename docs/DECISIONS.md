@@ -408,6 +408,15 @@ Final Hardware Remap answers:
 - **Versioning:** только v1 identity path и explicit unsupported-version error; legacy v0, Alpha-файлы, implicit defaults и фиктивные migrations не поддерживаются. Будущие pure migrations требуют отдельного source/target schema contract и fixtures. Конкретные Remap rules, hardware-final addressing и serialization UI не входят в 7D.
 - **Docs-only gate:** commit `docs: accept phase 7d serialization contract` ограничен спецификацией, DECISIONS и TODO. Production остаётся незавершённым; после проверки SHA требуется отдельное разрешение пользователя.
 
+## ADR-024: Early Alpha UI — Project Canvas
+
+- **Статус:** Accepted — ретроактивная легализация одобrena пользователем 2026-09-25. Реализация существовала в working tree до формального gate; этим решением она оформляется контрактом [LEDMAP-ALPHA-UI-002](specs/LEDMAP-ALPHA-UI-002.md) и принимается отдельным documentation + production коммитами.
+- **Основание:** ADR-017 разрешил узкое исключение Early Alpha UI (один Screen/Grid). Практике компоновки LED-проектов нужен мультискринный layout до Phase 8; расширение оформляется как вторая итерация Alpha, а не как начало полного UI.
+- **Решение:** Early Alpha UI расширяется до Project Canvas: несколько Screen на общем 2D canvas, camera (pan/zoom/fit), selection (Screen/Grid/Cabinet), project tree, properties panel, drag-перемещение Screen, добавление Screen. Позиция Screen на canvas — презентационное состояние app, не доменное свойство и не часть будущей сериализации v1 (7D не изменяется).
+- **Границы:** production-код только в `packages/app`; `packages/core`, public API, математика и reference-тесты не меняются. Open/Save, привилегированный IPC/preload, сериализация, UI Hardware/Mapping/Remap/Validation, экспорт и packaging остаются Phase 8+. Форма создания Screen с редактором geometry/ordering временно заменена на «+ Screen» с настройками по умолчанию; ordering остаётся readonly, редактор возвращается в Phase 8. Диагностический hook `window.__ledmap` — read-only проекция состояния renderer для smoke-тестов, не API продукта.
+- **Инварианты:** перемещение/добавление Screen не меняет cabinet IDs, логический порядок и геометрию; REF-001 sweep сохраняется на Screen 1; лимиты preview ALPHA-UI-001 действуют на каждый Screen.
+- **Приёмка:** таблица [LEDMAP-ALPHA-UI-002 §6](specs/LEDMAP-ALPHA-UI-002.md): unit-тесты project-состояния, обновлённый Electron smoke в реальном окне, `npm test`/`typecheck`/`lint`/`build` — локальный PASS, без CI-подтверждения.
+
 ## Открытые вопросы для окончательной фиксации
 
 1. **Persistence закрыт ADR-023:** explicit `processorOrder`, `receiverOrder` и `Receiver.cabinets` сохраняются в schema v1 без сортировки; runtime ordering semantics ADR-018 / Phase 6A не меняются. Остаются открытыми Scope Receiver.index и конфигурация Module/Pixel ordering вне ReferenceAddressingProfile-001 (см. спецификацию §16).

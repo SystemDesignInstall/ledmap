@@ -7,7 +7,7 @@
 - [x] Phase 4E — обобщённая геометрия Cabinet pixel layout принята пользователем на `67fd975cf0e0036fd50c06d533a13a1bff871651`.
 - Cabinet Engine поддерживает Row/Column, LTR/RTL, TTB/BTT, независимый Snake, Top Left и прямоугольный module-first pixel layout с inverse mapping и safe integer validation. REF-001…004 служат регрессией Cabinet Engine; полная hardware/mapping-приёмка из Phase 5 ниже этим не объявляется завершённой.
 - Старые пункты Phase 0–5 ниже сохраняют исходный план и не являются актуальным отчётом о каждом реализованном файле.
-- Early Alpha UI принята пользователем на `88f110d15f06a86f7c277ef61979520218140720`, Phase 6A и 6B закрыты; 6B принята на `63f340a5e181f98b93713cafcdc2d56ebd37ce1f`. **Phase 7A принята/закрыта на `0071eeed001ed2e275e3efb827b216a1d49da1f8`** (`feat(core): implement mapping phase 7a`), применение протоколируется в ADR-020. Контракты: [LEDMAP-MAPPING-001](docs/specs/LEDMAP-MAPPING-001.md), [LEDMAP-HARDWARE-PROFILE-ADDRESSING-SPEC-001](docs/specs/LEDMAP-HARDWARE-PROFILE-ADDRESSING-SPEC-001.md), [LEDMAP-PHASE-7-ACCEPTANCE-001](docs/specs/LEDMAP-PHASE-7-ACCEPTANCE-001.md). **Phase 7B ACCEPTED / CLOSED** на `2b589ac326ab6bc066d0a55cd295bae05e9fc380`: identity-only Logical Remap v1 по [LEDMAP-REMAP-001](docs/specs/LEDMAP-REMAP-001.md) и ADR-021; 625/625 тестов — локальный результат, без CI-подтверждения. **Phase 7C ACCEPTED / CLOSED** на `d2f2aea60bde2e526f5a96fa00ed3d5d6b6f94d9`: [LEDMAP-PROJECT-VALIDATION-001](docs/specs/LEDMAP-PROJECT-VALIDATION-001.md), ADR-022; 827/827 = 625 baseline + 202 новых — локальный результат, без CI-подтверждения. План/docs-gate 7D Serialization принят: [LEDMAP-SERIALIZATION-001](docs/specs/LEDMAP-SERIALIZATION-001.md), версия 1.0 Accepted, ADR-023. Production 7D ожидает отдельного разрешения после проверки SHA docs-only acceptance-коммита. Расширение StartCorner отложено.
+- Early Alpha UI принята пользователем на `88f110d15f06a86f7c277ef61979520218140720`, Phase 6A и 6B закрыты; 6B принята на `63f340a5e181f98b93713cafcdc2d56ebd37ce1f`. **Phase 7A принята/закрыта на `0071eeed001ed2e275e3efb827b216a1d49da1f8`** (`feat(core): implement mapping phase 7a`), применение протоколируется в ADR-020. Контракты: [LEDMAP-MAPPING-001](docs/specs/LEDMAP-MAPPING-001.md), [LEDMAP-HARDWARE-PROFILE-ADDRESSING-SPEC-001](docs/specs/LEDMAP-HARDWARE-PROFILE-ADDRESSING-SPEC-001.md), [LEDMAP-PHASE-7-ACCEPTANCE-001](docs/specs/LEDMAP-PHASE-7-ACCEPTANCE-001.md). **Phase 7B ACCEPTED / CLOSED** на `2b589ac326ab6bc066d0a55cd295bae05e9fc380`: identity-only Logical Remap v1 по [LEDMAP-REMAP-001](docs/specs/LEDMAP-REMAP-001.md) и ADR-021; 625/625 тестов — локальный результат, без CI-подтверждения. **Phase 7C ACCEPTED / CLOSED** на `d2f2aea60bde2e526f5a96fa00ed3d5d6b6f94d9`: [LEDMAP-PROJECT-VALIDATION-001](docs/specs/LEDMAP-PROJECT-VALIDATION-001.md), ADR-022; 827/827 = 625 baseline + 202 новых — локальный результат, без CI-подтверждения. План/docs-gate 7D Serialization принят: [LEDMAP-SERIALIZATION-001](docs/specs/LEDMAP-SERIALIZATION-001.md), версия 1.0 Accepted, ADR-023. Production 7D ожидает отдельного разрешения после проверки SHA docs-only acceptance-коммита. Early Alpha UI расширен до Project Canvas (мультискринный layout): [LEDMAP-ALPHA-UI-002](docs/specs/LEDMAP-ALPHA-UI-002.md), ADR-024, легализация одобрена пользователем 2026-09-25. Расширение StartCorner отложено.
 
 ## Phase 0 — Environment & Repository
 - [ ] Установить Node.js 24 LTS через winget (в окружении отсутствует)
@@ -65,6 +65,15 @@
 - [x] Canvas: физические ID, отдельные логические номера, модульная сетка, направленный путь, fit-to-window и сводка размеров.
 - [x] Целевые тесты app, регрессия core, typecheck/lint/build, smoke-проверка реального Electron-окна и инструкция запуска. См. [отчёт Alpha](docs/alpha-ui-001-validation.md).
 
+### Вторая итерация — Project Canvas (мультискринный layout)
+
+Статус: **Accepted (ретроактивная легализация 2026-09-25)** — [LEDMAP-ALPHA-UI-002](docs/specs/LEDMAP-ALPHA-UI-002.md), ADR-024.
+
+- [x] Project Canvas: несколько Screen на общем canvas, camera pan/zoom/fit, selection Screen/Grid/Cabinet, project tree, properties panel, drag-перемещение, «+ Screen».
+- [x] Инварианты: REF-001 порядок и cabinet IDs не меняются при перемещении; лимиты preview на каждый Screen; core не изменяется.
+- [x] Unit-тесты project-состояния и обновлённый Electron smoke; test/typecheck/lint/build проходят локально.
+- [ ] Редактор geometry/ordering формы из ALPHA-UI-001 возвращается в Phase 8 (сейчас ordering readonly).
+
 ## Phase 6 — Hardware (Receiver/Processor/Port) Engine
 - [x] Phase 6A: явная полная topology, компактные spans, port-local dataIndex, forward/reverse и отдельный globalRemapIndex; реализация принята пользователем, этап закрыт.
 - [x] Phase 6A: полный REF-001 sweep, multi-processor, variable sizes, валидация, регрессия и [итоговый отчёт](docs/hardware-engine-6a-validation.md). 336/336 тестов, typecheck/lint/build и Electron smoke проходят локально.
@@ -97,7 +106,7 @@
 - [ ] Экспорт hardware-форматов производителей (отдельный контракт)
 
 ## Запреты на ближайших этапах (0–5)
-- UI — Phase 8; исключение только для Early Alpha UI по утверждённым LEDMAP-ALPHA-UI-001 / ADR-017
+- UI — Phase 8; исключение только для Early Alpha UI по утверждённым LEDMAP-ALPHA-UI-001 / ADR-017 и LEDMAP-ALPHA-UI-002 / ADR-024
 - Electron runtime — Phase 8; в одобренном Early Alpha разрешены окно и renderer, без привилегированного IPC
 - Без hardware драйверов/сетевых протоколов видеопроцессоров
 - Без экспортных форматов производителей

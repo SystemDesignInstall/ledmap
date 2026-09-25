@@ -2,7 +2,7 @@
 
 Статус: **целевой архитектурный контракт**, реализуемый по этапам. Cabinet Engine Phase 4E принят; наличие раздела в этом документе не означает готовность соответствующего движка.
 
-Утверждённое исключение из очередности UI: [Early Alpha UI — Cabinet Grid Visualizer](docs/specs/LEDMAP-ALPHA-UI-001.md), ADR-017 (Accepted, 2026-09-23). App может визуализировать готовый Cabinet Engine до Hardware/Mapping Engine: один Screen/Grid, настройки и Canvas. Полный pipeline и границы core/app сохраняются; Alpha не создаёт Input→Output mapping, hardware addressing или PixelMap. Полный UI остаётся Phase 8.
+Утверждённое исключение из очередности UI: [Early Alpha UI — Cabinet Grid Visualizer](docs/specs/LEDMAP-ALPHA-UI-001.md), ADR-017 (Accepted, 2026-09-23); вторая итерация — [Project Canvas](docs/specs/LEDMAP-ALPHA-UI-002.md), ADR-024 (Accepted, 2026-09-25). App может визуализировать готовый Cabinet Engine до Hardware/Mapping Engine: Screen/Grid, layout нескольких Screen на общем canvas, навигация и selection. Полный pipeline и границы core/app сохраняются; Alpha не создаёт Input→Output mapping, hardware addressing или PixelMap. Полный UI остаётся Phase 8.
 
 ## 1. Цель
 

@@ -1,17 +1,17 @@
 # Phase 7C — Project Validation report
 
-Статус: production candidate для приёмки пользователем; Phase 7C ещё не закрыта.
+Статус: **Phase 7C ACCEPTED / CLOSED** — production принят пользователем на `d2f2aea60bde2e526f5a96fa00ed3d5d6b6f94d9` после проверки diff относительно docs-gate `a795717a877130b3667420e89790186b876e0e35`. Блокирующих замечаний нет. 827/827 = 625 baseline + 202 новых теста и quality gates ниже — локальные результаты, без CI-подтверждения.
 
 ## Baseline и scope
 
 - Принятый docs-gate и непосредственная база production diff: `a795717a877130b3667420e89790186b876e0e35`.
 - Контракт: `docs/specs/LEDMAP-PROJECT-VALIDATION-001.md`, версия 1.0 Accepted; ADR-022.
 - Закрытая 7B: production `2b589ac326ab6bc066d0a55cd295bae05e9fc380`, closure `fb02d53101af1fdb6ceefe3ea162252221da64b8`.
-- Regression baseline: 625 тестов. Candidate — коммит `feat(core): implement project validation phase 7c`, содержащий этот отчёт; SHA сообщается после создания коммита.
+- Regression baseline: 625 тестов. Принятый production-коммит: `d2f2aea60bde2e526f5a96fa00ed3d5d6b6f94d9` — `feat(core): implement project validation phase 7c`.
 
-Изменения: четыре production-файла `packages/core/src/validation/{types,input,validate,index}.ts`, публичный export в `packages/core/src/index.ts`, четыре test-файла в `packages/core/test/validation/` и этот отчёт. Всего 10 файлов. Прежние tests, Cabinet/Hardware/Mapping/Remap, domain types, Accepted spec, ADR, TODO и app не изменяются этим коммитом.
+Изменения production-коммита: четыре файла `packages/core/src/validation/{types,input,validate,index}.ts`, публичный export в `packages/core/src/index.ts`, четыре test-файла в `packages/core/test/validation/` и этот отчёт. Всего 10 файлов. Прежние tests, Cabinet/Hardware/Mapping/Remap, domain types, Accepted spec, ADR, TODO и app этим production-коммитом не изменены.
 
-Реализация и все финальные проверки выполнены в отдельном worktree от принятого docs-gate. Независимые локальные изменения Alpha UI в основном рабочем дереве в candidate и проверки не включались. Worktree использует установленные npm dependencies через directory junctions; исходники и конфигурация проверялись из worktree.
+Реализация и все финальные проверки выполнены в отдельном worktree от принятого docs-gate. Независимые локальные изменения Alpha UI в основном рабочем дереве в принятый production-коммит и проверки не включались. Worktree использовал установленные npm dependencies через directory junctions; исходники и конфигурация проверялись из worktree.
 
 ## Реализация
 
@@ -61,4 +61,4 @@ Upstream code/message сохраняются буквально. Mapping errors 
 | `npm run test:smoke` | PASS — creation, 8 ordering modes, Canvas labels, rectangular layout, invalid input, limits, degenerate grids, resize, DPR=2 |
 | `git diff --check` | PASS; staged diff также проверен |
 
-Приёмка production Phase 7C остаётся отдельным решением пользователя после проверки SHA и diff относительно принятого docs-gate.
+Приёмка production Phase 7C выполнена пользователем. Настоящее docs-only closure фиксирует её результат без изменения production-кода и принятой семантики. Следующий этап — отдельный контракт 7D Serialization; production 7D пока не разрешён.

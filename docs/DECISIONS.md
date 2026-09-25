@@ -383,7 +383,8 @@ Final Hardware Remap answers:
 
 ## ADR-022: Phase 7C Project Validation
 
-- **Статус:** Accepted — пользователь принял контракт после review Proposed-спецификации. Production 7C ожидает отдельного разрешения после проверки SHA docs-only acceptance-коммита.
+- **Статус:** Accepted — docs-gate 7C принят на `a795717a877130b3667420e89790186b876e0e35`; production принят пользователем на `d2f2aea60bde2e526f5a96fa00ed3d5d6b6f94d9` (`feat(core): implement project validation phase 7c`). **Phase 7C ACCEPTED / CLOSED**.
+- **Приёмка реализации:** 827/827 = 625 baseline + 202 новых теста; typecheck/lint/build/Electron smoke/`git diff --check` — локальный PASS, без CI-подтверждения. Отчёт: [project-validation-7c-validation.md](project-validation-7c-validation.md). Следующий этап — отдельный контракт 7D Serialization; production 7D не разрешён.
 - **Контракт:** [LEDMAP-PROJECT-VALIDATION-001](specs/LEDMAP-PROJECT-VALIDATION-001.md), версия 1.0; upstream — ADR-020/021, закрытые 7A/7B. Regression baseline: 625 тестов.
 - **Вход:** `ValidateProjectInput` содержит исходный `ResolveMappingInput` и обязательный массив `rules`. Scope — один InputCanvas/Screen/Grid/Region с полной explicit topology; новая сущность `Project` не вводится.
 - **Pipeline:** shape check → `resolveMapping()` → `resolveRemap()`. Hardware проверяется внутри 7A; отдельный `resolveHardware()`, allocation и повторная реализация capacity/addressing/ordering не нужны.

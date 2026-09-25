@@ -1,6 +1,6 @@
 # LEDMAP-ALPHA-UI-002 — Early Alpha UI: Project Canvas (multi-screen layout)
 
-Статус: **Accepted — ретроактивная легализация реализованного этапа одобrena пользователем 2026-09-25**. Основание: расширение исключения [ADR-017](../DECISIONS.md#adr-017-early-alpha-ui--cabinet-grid-visualizer) решением [ADR-024](../DECISIONS.md#adr-024-early-alpha-ui--project-canvas). Базовый контракт [LEDMAP-ALPHA-UI-001](LEDMAP-ALPHA-UI-001.md) сохраняется в части границ core/app, интеграции и лимитов preview.
+Статус: **Accepted — ретроактивная легализация реализованного этапа одобрена пользователем 2026-09-25**; documentation gate `0c72dff`, production принят на `ab71ca2`. Основание: расширение исключения [ADR-017](../DECISIONS.md#adr-017-early-alpha-ui--cabinet-grid-visualizer) решением [ADR-024](../DECISIONS.md#adr-024-early-alpha-ui--project-canvas). Базовый контракт [LEDMAP-ALPHA-UI-001](LEDMAP-ALPHA-UI-001.md) сохраняется в части границ core/app, интеграции и лимитов preview.
 
 ## 1. Цель и границы
 

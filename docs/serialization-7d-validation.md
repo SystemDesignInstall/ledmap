@@ -1,14 +1,16 @@
 # Phase 7D — Serialization report
 
-Статус: **production 7D реализован** на `410ba7fcc830968b615058fe33b6bbea12fb2272` (`feat(core): implement serialization phase 7d`) относительно принятого docs-gate `2a3e08e8379191f3f2e73286361bf04ca6f05f7b` (`docs: accept phase 7d serialization contract`). Приёмка пользователем и docs-only closure ещё не выполнены. 1087/1087 = 836 baseline + 251 новых теста и quality gates ниже — локальные результаты, без CI-подтверждения.
+Статус: **Phase 7D ACCEPTED / CLOSED** — production принят пользователем на `410ba7fcc830968b615058fe33b6bbea12fb2272` (`feat(core): implement serialization phase 7d`) после независимого production review; implementation record — `48b82016703374542403b246fe9f7628bf310eaa`. Блокирующих замечаний нет. 1087/1087 = 836 baseline + 251 новых теста и quality gates ниже приняты как **reported local PASS**, без CI-подтверждения.
 
 ## Baseline и scope
 
-- Принятый docs-gate и непосредственная база production diff: `2a3e08e8379191f3f2e73286361bf04ca6f05f7b`.
+- Accepted semantic/docs baseline (docs-gate 7D): `2a3e08e8379191f3f2e73286361bf04ca6f05f7b` (`docs: accept phase 7d serialization contract`).
+- Immediate production parent: `49d17d7d5e9a805a7025d9784d4f0bf385fa8926` (`docs: close project canvas alpha ui iteration`) — closure полностью закрытой Project Canvas итерации.
 - Контракт: `docs/specs/LEDMAP-SERIALIZATION-001.md`, версия 1.0 Accepted; ADR-023 с amendment к ADR-011.
 - Закрытые этапы: 7A production `0071eeed001ed2e275e3efb827b216a1d49da1f8`, 7B `2b589ac326ab6bc066d0a55cd295bae05e9fc380`, 7C `d2f2aea60bde2e526f5a96fa00ed3d5d6b6f94d9`.
-- Между docs-gate 7D и этим production-коммитом закрыта легализованная Early Alpha UI итерация Project Canvas: docs-gate `0c72dff`, production `ab71ca2`, closure `49d17d7`. Она добавила 9 app-тестов, поэтому фактический regression baseline — 836 тестов вместо 827, указанных в §15.11 спецификации. Математика ядра этим не менялась.
-- Изменения production-коммита: девять файлов `packages/core/src/serialization/{types,errors,json,schema,migrate,canonical,reconstruct,api,index}.ts`, одна строка публичного export в `packages/core/src/index.ts`, десять test-файлов и `fixtures.ts` в `packages/core/test/serialization/` и этот отчёт. Всего 21 файл, +2932. Прежние tests, движки 6A/6B/7A/7B/7C, domain types, app, Accepted spec, ADR и TODO этим коммитом не изменены.
+- Между docs-gate 7D и production-коммитом закрыта легализованная Early Alpha UI итерация Project Canvas: docs-gate `0c72dff`, production `ab71ca2`, closure `49d17d7`. Она добавила 9 app-тестов без изменений core, поэтому фактический pre-production regression baseline — 836 тестов, тогда как 827 в §15.11 и строке Regression baseline спецификации остаётся историческим docs-gate baseline/floor. Разделение 827 (floor) и 836 (фактический baseline) сохраняется намеренно; математика ядра UI-итерацией не менялась, и `49d17d7 → 410ba7f` — ровно один чистый 7D production commit.
+- Состав production-коммита `410ba7f`: девять файлов `packages/core/src/serialization/{types,errors,json,schema,migrate,canonical,reconstruct,api,index}.ts`, одна строка публичного export в `packages/core/src/index.ts`, десять test-файлов и `fixtures.ts` в `packages/core/test/serialization/`. Всего 21 core source/test файл, +2932. Прежние tests, движки 6A/6B/7A/7B/7C, domain types, app, Accepted spec, ADR и TODO этим коммитом не изменены.
+- Настоящий отчёт не входит в production-коммит: он добавлен отдельным docs-коммитом `48b82016703374542403b246fe9f7628bf310eaa` и уточнён этим closure-коммитом.
 
 Вне scope: file I/O, app Open/Save и IPC, concrete remap rules, реальные migrations, derived-data persistence, hardware profiles/addressers, новая математика и изменения чистоты core (нет `node:*`, Electron, DOM, файловых операций и новых runtime-зависимостей).
 
@@ -40,7 +42,7 @@ Canonical output: два пробела, LF, ровно один финальн�
 | 8. Round-trip | `roundtrip.test.ts`: byte-identical повторные save, source equality с оговорённой normalization, неизменность caller input, deeply immutable loaded document/project/extensions/report, стабильная канонизация эквивалентного текста |
 | 9. Behavior reconstruction | `reference-001.test.ts`: REF-001 identity и offset после load, 11 anchors × 2 с forward/reverse сравнением против исходной конфигурации, полный sweep 196 608 pixels для каждого offset, C05/C08 receiver boundary, Port reset на `P01:02` и byte-identical второй save |
 | 10. Orders/scale | `orders.test.ts`: multi-processor orders, нетривиальный `Receiver.cabinets`, shuffled entity collections, отсутствие сортировки и allocation, MAX_SAFE_INTEGER capacity при компактном тексте |
-| 11. Regression/gates | 836 baseline тестов сохранены без редактирования; полный suite, typecheck, lint, build, Electron smoke и `git diff --check` — ниже |
+| 11. Regression/gates | 836 baseline тестов (827 docs-gate floor + 9 app-тестов Project Canvas) сохранены без редактирования; полный suite, typecheck, lint, build, Electron smoke и `git diff --check` — ниже |
 
 Новые tests не меняют expected math существующих этапов: файлы 6A/6B/7A/7B/7C не редактировались, их sweeps и anchors остаются в regression suite. Production не перебирает pixels — полный sweep выполняется только в test-файле 7D.
 
@@ -59,4 +61,4 @@ Canonical output: два пробела, LF, ровно один финальн�
 | `npm run test:smoke` | PASS — demo project, selection, properties edit, cabinet hit, drag, REF-001 safety, view modes, add screen, Escape clear |
 | `git diff --check` | PASS |
 
-Производный 7D не заявляет приёмки пользователя. Следующий шаг — пользовательская проверка diff относительно `2a3e08e` и отдельное решение о приёмке; после неё выполняется docs-only closure в TODO и ADR-023. File I/O и UI Open/Save остаются Phase 8.
+Phase 7D ACCEPTED / CLOSED: production `410ba7f` принят пользователем после независимого review, implementation record — `48b8201`; docs-only closure фиксирует приёмку в TODO, ADR-023 и этом отчёте и не изменяет нормативный контракт спецификации. File I/O и UI Open/Save остаются Phase 8.

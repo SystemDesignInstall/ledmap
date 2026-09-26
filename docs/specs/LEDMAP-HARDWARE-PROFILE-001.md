@@ -93,7 +93,8 @@ transport — адресуемые и передаваемые элементы,
 
 В 7E действуют явные правила:
 
-- `logical = physical` не предполагается и не проверяется движками; v1 профиля объявляет обе геометрии явно.
+- `HardwareProfile` v1 объявляет **только physical geometry**, используемую transport lookup (§6.3a). Logical geometry остаётся project-side source-of-truth в принятой модели 6A/7A и **не дублируется** в профиле.
+- Logical и physical домены остаются разными concept'ами; 7E **не утверждает**, что они равны, и не вводит проверку их равенства.
 - `transportPixelCount` — отдельная величина; `logical`, `physical` и `transport` количества пикселей не обязаны совпадать.
 - Домены не меняют 6A/7A: `mapInputPixel` / `unmapHardwarePixel` продолжают работать в принятой паре logical/physical.
 
@@ -239,7 +240,32 @@ absent / undeclared
 - `0` — валидный явно объявленный конечный предел и не эквивалентен отсутствию поля.
 - Согласовано с 6B: отсутствие `Receiver.pixelCapacity` означает отсутствие заданного LedMAP limit для allocator, а не утверждение, что устройство бесконечно.
 - **Explicit unbounded** (отдельное значение или capability «без ограничения») и **unknown constraint / profile confidence** (umbrella §49–§50) в 7E **не моделируются**: это отдельные значения и mechanism более поздних gate'ов. В 7E их отсутствие означает лишь undeclared, а не unbounded и не «неизвестно автору».
-- Если профиль не объявляет ни одного транспортного предела, это допустимо: bundle остаётся валидным, но 7E не проверяет по нему верхнюю границу. Ошибкой это не является.
+- Если профиль не объявляет ни одного транспортного предела, это допустимо: bundle остаявляется валидным, но 7E не проверяет по нему верхнюю границу. Ошибкой это не является.
+
+## 6.5 Numeric domains и zero semantics
+
+Числовые поля профиля имеют закрытые домены. Проверка выполняется по исходным полям, до вывода производных величин.
+
+| Поле | Домен |
+|---|---|
+| `ModuleProfile.physicalWidth`, `physicalHeight` | positive safe integer |
+| `ModuleProfile.moduleCountX`, `moduleCountY` | positive safe integer |
+| `PixelTransportProfile.transportPixelCountPerCabinet` | positive safe integer |
+| `ActivePixelMask.width`, `height` | positive safe integer |
+| `ActivePixelMask.activePixels[]` | non-negative safe integer в диапазоне `[0, width * height)`, unique, strictly increasing |
+| `ProcessorProfile.maxPorts` | non-negative safe integer |
+| `PortProfile.maxTransportPixels?`, `maxReceivers?` | non-negative safe integer |
+| `ReceiverProfile.maxTransportPixels?`, `maxCabinets?` | non-negative safe integer |
+| `AddressingProfile.addressWidthBits` | positive safe integer |
+| derived `physicalCabinetWidth`, `physicalCabinetHeight` (§6.3a) | positive safe integer |
+
+Правила:
+
+- Значение вне домена — `PROFILE_FIELD_INVALID`; объявленное, но недопустимое ограничение из §6.4 — `PROFILE_CAPACITY_INVALID`. Проверяется первым, независимо от dependent checks (§8).
+- **`0` в declared limits (`maxPorts`, `maxTransportPixels`, `maxReceivers`, `maxCabinets`) — валидный конечный предел**: он означает «ноль допустимых единиц» и не эквивалентен отсутствию поля (§6.4).
+- Отрицательные `physicalWidth`/`moduleCountX` и подобные пары исключены проверкой исходных полей, поэтому не могут дать положительное derived-произведение.
+- **Empty transport set не поддерживается в v1:** `transportPixelCountPerCabinet` — positive, то есть `≥ 1`, и `activePixelMask` (если присутствует) MUST содержать хотя бы один active pixel. Bundle с пустым transport set — ошибка (`PROFILE_TRANSPORT_INCONSISTENT`), а не вырожденный валидный профиль. Явного `unbounded`/пустого состояния в 7E нет.
+- Аргументы `resolveTransportPixel(x, y)` — non-negative integers в пределах derived geometry; значение вне диапазона даёт `active = false`, `transportIndex = null`. Не-целое значение — нарушение типизации вызывающего кода, а не ошибка данных.
 
 # 7. Transport lookup
 
@@ -299,8 +325,9 @@ interface HardwareProfileValidationCheck {
 - Вход — `unknown`; функция не бросает исключений для данных и не обращается к I/O, файловой системе, окружению или сети.
 - Report глубоко immutable; caller-owned input не мутируется и не замораживается.
 - Severity только `ERROR`; `valid === true` iff `checks` пуст. Ни `WARNING`, ни `INFO` не вводятся.
-- Детерминированный порядок: структурные проверки §6, затем referential integrity §6.3 и derived geometry §6.3a, затем capacity/constraint §6.2/§6.4, затем transport-инварианты §7, затем версия §5. В отчёт попадают **все** структурные нарушения в этом фиксированном порядке.
+- Детерминированный порядок: структурные проверки §6 (включая numeric domains §6.5), затем referential integrity §6.3 и derived geometry §6.3a, затем capacity/constraint §6.2/§6.4, затем transport-инварианты §7, затем версия §5. В отчёт попадают **все** структурные нарушения в этом фиксированном порядке.
 - Отличие от 7C сознательное: profile contract не является частью project pipeline, профиль — небольшой ограниченный документ, поэтому полный список нарушений полезнее staged first-failure. Это решение не меняет семантику 7C.
+- **Dependency / skip semantics.** Structural checks собирают **все** независимо проверяемые нарушения. Зависимая referential/consistency проверка MUST выполняться только тогда, когда **все** её prerequisites структурно присутствуют и type-valid (включая numeric domain §6.5). Если prerequisite структурно невалиден, зависимая проверка **пропускается** и каскадных синтетических диагностик не выдаётся: отсутствие `moduleProfileId` не порождает `PROFILE_REFERENCE_UNKNOWN`, невалидный `moduleProfiles` не порождает ошибок geometry/mask/transport, неразрешимый профиль не порождает `PROFILE_TRANSPORT_INCONSISTENT`. Это делает report детерминированным: две корректные реализации дают байт-в-байт одинаковый report.
 - Capacity-проверки применяются только к **объявленным** значениям: отсутствующее ограничение не порождает `PROFILE_CAPACITY_INVALID` и не создаёт искусственного upper bound (§6.4). `PROFILE_CAPACITY_INVALID` относится к объявленному, но недопустимому значению (отрицательное, дробное, не safe integer, `0` там, где ноль запрещён).
 - Коды v1 (closed enum): `PROFILE_SHAPE_INVALID`, `PROFILE_FIELD_MISSING`, `PROFILE_FIELD_INVALID`, `PROFILE_VERSION_INVALID`, `PROFILE_REFERENCE_UNKNOWN`, `PROFILE_DUPLICATE_ID`, `PROFILE_CAPACITY_INVALID`, `PROFILE_SPLIT_LEVEL_UNSUPPORTED`, `PROFILE_MASK_INVALID`, `PROFILE_TRANSPORT_INCONSISTENT`.
 - Проверки link/consistency (в том же фиксированном порядке): `addressingProfileId` против `bundle.addressingProfile.identity.id`; `moduleProfileId` против `moduleProfiles`; derived geometry §6.3a на positive safe integer; `activePixelMask.width/height` против derived geometry, монотонность и уникальность `activePixels`; `transportPixelCountPerCabinet` против числа активных пикселей. Нарушения — `PROFILE_REFERENCE_UNKNOWN`, `PROFILE_MASK_INVALID` или `PROFILE_TRANSPORT_INCONSISTENT` соответственно.
@@ -388,8 +415,8 @@ function unresolveTransportPixel(bundle, transportIndex): { x, y } | null
 Тестовые области (Vitest, `packages/core/test/hardware-profile/`):
 
 1. Shape и identity: bundle и все constituent profiles, `id`/`version` (включая `identity` у `AddressingProfile`), уникальность id, referential integrity, unknown references; `addressingProfileId` против `bundle.addressingProfile.identity.id`.
-2. Validation: коды §8, порядок checks, полнота списка, `valid === true` iff пустой список, deep immutability, отсутствие мутации входа, детерминированный повторный прогон.
-3. Capacity/constraints: объявленные finite limits (`maxTransportPixels`, `maxCabinets`, `maxReceivers`, `maxPorts`) проверяются; `0` отличается от отсутствия; **отсутствие поля не даёт `PROFILE_CAPACITY_INVALID` и не трактуется как unlimited** — валидатор не создаёт upper bound по необъявленному измерению; bundle без объявленных транспортных пределов остаётся `valid`; запрет подмены 6B `Receiver.pixelCapacity`.
+2. Validation: коды §8, порядок checks, полнота списка, `valid === true` iff пустой список, deep immutability, отсутствие мутации входа, детерминированный повторный прогон; **dependency/skip semantics** — malformed prerequisites (например, `moduleProfiles` неверного shape) дают только structural diagnostics, а dependent `PROFILE_REFERENCE_UNKNOWN` / geometry / mask / transport ошибки **не** выдаются (отсутствие cascade), и наоборот: при валидных prerequisites dependent проверки выполняются.
+3. Capacity/constraints: объявленные finite limits (`maxTransportPixels`, `maxCabinets`, `maxReceivers`, `maxPorts`) проверяются; `0` отличается от отсутствия; **отсутствие поля не даёт `PROFILE_CAPACITY_INVALID` и не трактуется как unlimited** — валидатор не создаёт upper bound по необъявленному измерению; bundle без объявленных транспортных пределов остаётся `valid`; запрет подмены 6B `Receiver.pixelCapacity`. Numeric domains §6.5 проверяются на границах: negative/fractional/unsafe значения в `physicalWidth`, `moduleCountX`, `transportPixelCountPerCabinet`, `activePixelMask.width/height`, `addressWidthBits` отклоняются, несмотря на положительное derived-произведение; `0` в declared limits принимается; `transportPixelCountPerCabinet: 0` и mask с пустым `activePixels` отклоняются (empty transport set не поддерживается).
 4. Geometry selection: `moduleProfileId` разрешается ровно в один `ModuleProfile`; derived `physicalCabinetWidth/Height` = `physicalWidth × moduleCountX` / `physicalHeight × moduleCountY`; positive safe integer; bundle с несколькими `moduleProfiles` использует ровно профиль из `moduleProfileId`; неразрешимая ссылка и переполнение геометрии → соответствующие коды.
 5. Transport forward/inverse: identity sweep всего Cabinet REF-001 (16384 px) для `ROW_MAJOR` и `COLUMN_MAJOR`, bijektivность, round-trip всех индексов, out-of-range → `null`, `active = false` → `null`, детерминированный порядок.
 6. Active mask × scanMode: одна masked fixture прогоняется **и для `ROW_MAJOR`, и для `COLUMN_MAJOR`** и MUST доказать, что оба дают корректные bijektivные mappings, но **разные** порядки (mask задаёт membership, scanMode — ordering); membership-set канонический row-major, уникальный и строго возрастающий; round-trip в обоих режимах; `mask.width/height` ≠ derived geometry → `PROFILE_MASK_INVALID`; `transportPixelCountPerCabinet` ≠ числа активных пикселей → `PROFILE_TRANSPORT_INCONSISTENT`.

@@ -169,6 +169,7 @@ interface ModuleProfile {
 }
 
 interface PixelTransportProfile {
+  readonly moduleProfileId: string
   readonly transportPixelCountPerCabinet: number
   readonly scanMode: TransportScanMode
   readonly activePixelMask?: ActivePixelMask
@@ -185,6 +186,7 @@ interface ActivePixelMask {
 }
 
 interface AddressingProfile {
+  readonly identity: ProfileIdentity
   readonly receiverBaseAddressMode: 'RESERVED_CAPACITY' | 'PACKED_USED'
   readonly portAddressingMode: PortAddressingMode
   readonly addressWidthBits: number
@@ -195,15 +197,32 @@ interface AddressingProfile {
 
 `AddressingProfile` в 7E — **конфигурация без вычислений**: mode-флаги и ширина адреса. В нём нет и не будет функций address computation, base/port address derivation или vendor encoding — это Address Encoder gate. Значения mode-флагов в 7E проверяются только на допустимость enum, без вычисления адресов.
 
+`AddressingProfile` — такой же идентифицированный профиль, как остальные constituent profiles: он несёт `identity: ProfileIdentity`, а bundle содержит ровно один `addressingProfile`. Поэтому ссылка `ProcessorProfile.addressingProfileId` разрешается и MUST совпадать с `bundle.addressingProfile.identity.id`; это делает referential integrity §6.3 исполнимым, а не декларативным.
+
 ## 6.2 Терминология ёмкости
 
 Профильные ёмкости выражаются в **transport pixels** и называются `maxTransportPixels`, чтобы их нельзя было спутать с 6B `Receiver.pixelCapacity`. Поле `maxPixels` umbrella §7 в 7E не используется. Все профильные ёмкости опциональны: объявленное значение — конечный предел, отсутствие — undeclared/not enforced (§6.4).
 
 ## 6.3 Ссылочная целостность
 
-- `portProfileIds`, `receiverProfileIds`, `portProfileId`, `addressingProfileId` MUST разрешаться в bundle; отсутствующая ссылка — ошибка валидации.
+- `portProfileIds`, `receiverProfileIds`, `portProfileId`, `addressingProfileId` и `PixelTransportProfile.moduleProfileId` MUST разрешаться в bundle; отсутствующая ссылка — ошибка валидации.
+- `addressingProfileId` MUST совпадать с `bundle.addressingProfile.identity.id`: bundle содержит ровно один `AddressingProfile`, отдельного массива addressing-профилей нет.
+- `moduleProfileId` MUST разрешаться **ровно в один** `ModuleProfile`. Массив `moduleProfiles` может содержать несколько профилей, но transport lookup в 7E определяется единственным профилем, на который ссылается `PixelTransportProfile`; остальные профили в 7E не используются (зарезервированы для будущего per-cabinet/per-module выбора).
 - Каждый `id` внутри bundle уникален в пределах своего массива профилей и не должен совпадать с `identity.id` bundle.
 - Порядок массивов профилей сохраняется и не используется для семантики; lookup по `id` — единственный разрешающий механизм.
+
+## 6.3a Derived physical cabinet geometry
+
+Transport lookup работает в физических координатах Cabinet, поэтому геометрия выводится из `ModuleProfile`, разрешённого по `moduleProfileId`:
+
+```text
+physicalCabinetWidth  = ModuleProfile.physicalWidth  × ModuleProfile.moduleCountX
+physicalCabinetHeight = ModuleProfile.physicalHeight × ModuleProfile.moduleCountY
+```
+
+- Обе величины MUST быть positive safe integers; переполнение или не-целое произведение — ошибка валидации (`PROFILE_TRANSPORT_INCONSISTENT`).
+- Эти размеры — **profile-уровень** Cabinet-геометрии для transport-домена. Они не переопределяют и не подменяют геометрию 6A/7A: расчёты Cabinet Engine остаются источником истины для проекта (§3.3).
+- Производные величины пересчитываются движком и в профиле не хранятся.
 
 ## 6.4 Undeclared constraints: absence ≠ unlimited
 
@@ -246,11 +265,15 @@ function unresolveTransportPixel(
 
 Правила:
 
-- `activePixelMask` отсутствует → identity transport: для пикселя с physical-координатами `(x, y)` внутри `physicalWidth × physicalHeight` Cabinet: `active = true`, `transportIndex = y * physicalWidth + x`; вне границ → `active = false`, `transportIndex = null`.
-- `activePixelMask` присутствует: `activePixels` — строго возрастающий список physical linear indices (`y * width + x`) активных пикселей. `resolveTransportPixel` возвращает `transportIndex` = позиция пикселя в этом списке; неактивный пиксель → `active = false`, `transportIndex = null`.
-- `scanMode` v1: `ROW_MAJOR` (linear index `y * width + x`) и `COLUMN_MAJOR` (linear index `x * height + y`). `ROW_MAJOR` — default для `LEDMAP-GENERIC-REF001`.
-- `unresolveTransportPixel` — обратная функция: активный `transportIndex` в диапазоне `[0, transportPixelCountPerCabinet)` всегда разрешается в координаты; неактивный или out-of-range index → `null` (без исключения).
-- Инварианты, проверяемые тестами: `0 ≤ transportIndex < transportPixelCountPerCabinet`; bijektivность между активными physical пикселями и индексами `[0, N)`; полное покрытие — каждый index разрешается обратно; детерминированный порядок не зависит от порядка массивов bundle.
+- **Геометрия.** Все координаты — physical-координаты Cabinet в размерах §6.3a (`physicalCabinetWidth × physicalCabinetHeight`), выведенных из `moduleProfileId`. Координаты вне этих границ → `active = false`, `transportIndex = null`.
+- **Разделение ответственности.** `activePixelMask` = **membership** (какие physical пиксели участвуют в transport stream), `scanMode` = **transport ordering** (в каком порядке активные пиксели получают индексы). Это два независимых измерения, и mask не отменяет `scanMode`.
+- **Membership.** `activePixelMask.activePixels` — канонический membership-set: unique, strictly increasing **row-major** physical linear indices (`y * width + x`), каждый в `[0, width * height)`. `width` и `height` маски MUST совпадать с `physicalCabinetWidth`/`physicalCabinetHeight` §6.3a, иначе `PROFILE_MASK_INVALID`. Mask отсутствует → membership = все пиксели Cabinet.
+- **Ordering.** Активные пиксели обходятся в порядке `scanMode`: `ROW_MAJOR` — по возрастанию row-major linear index (`y * width + x`); `COLUMN_MAJOR` — по возрастанию column-major linear index (`x * height + y`). `ROW_MAJOR` — default для `LEDMAP-GENERIC-REF001`.
+- **Transport index.** `transportIndex` = ordinal данного активного пикселя в указанном выше упорядоченном active set, то есть число активных пикселей, предшествующих ему в порядке `scanMode`. Membership-set в маске всегда хранится row-major, поэтому `ROW_MAJOR` и `COLUMN_MAJOR` дают **разные** порядки и разные bijektivные mappings.
+- **Без маски** это вырождается в identity transport: `ROW_MAJOR` → `transportIndex = y * width + x`, `COLUMN_MAJOR` → `transportIndex = x * height + y`.
+- **Неактивный пиксель** → `active = false`, `transportIndex = null`.
+- **Обратный lookup.** `unresolveTransportPixel` проходит тот же упорядоченный active set в том же порядке `scanMode`: активный `transportIndex` в диапазоне `[0, transportPixelCountPerCabinet)` всегда разрешается в координаты; неактивный или out-of-range index → `null` (без исключения). Round-trip `resolveTransportPixel ∘ unresolveTransportPixel` тождественен на всех активных индексах.
+- Инварианты, проверяемые тестами: `0 ≤ transportIndex < transportPixelCountPerCabinet`; bijektivность между активными physical пикселями и индексами `[0, N)`; полное покрытие — каждый index разрешается обратно; `transportPixelCountPerCabinet` MUST равняться числу активных пикселей (`PROFILE_TRANSPORT_INCONSISTENT` иначе); детерминированный порядок не зависит от порядка массивов bundle.
 - Custom lookup (umbrella §15 `customLookup`) в 7E не поддерживается и не является допустимым значением.
 - `SplitLevel` v1 (`CABINET`): lookup определён **per Cabinet**; разбиение Cabinet на модули как allocation unit не моделируется; модульная геометрия остаётся свойством 6A.
 
@@ -276,10 +299,11 @@ interface HardwareProfileValidationCheck {
 - Вход — `unknown`; функция не бросает исключений для данных и не обращается к I/O, файловой системе, окружению или сети.
 - Report глубоко immutable; caller-owned input не мутируется и не замораживается.
 - Severity только `ERROR`; `valid === true` iff `checks` пуст. Ни `WARNING`, ни `INFO` не вводятся.
-- Детерминированный порядок: структурные проверки §6, затем referential integrity §6.3, затем capacity/constraint §6.2/§6.4, затем transport-инварианты §7, затем версия §5. В отчёт попадают **все** структурные нарушения в этом фиксированном порядке.
+- Детерминированный порядок: структурные проверки §6, затем referential integrity §6.3 и derived geometry §6.3a, затем capacity/constraint §6.2/§6.4, затем transport-инварианты §7, затем версия §5. В отчёт попадают **все** структурные нарушения в этом фиксированном порядке.
 - Отличие от 7C сознательное: profile contract не является частью project pipeline, профиль — небольшой ограниченный документ, поэтому полный список нарушений полезнее staged first-failure. Это решение не меняет семантику 7C.
 - Capacity-проверки применяются только к **объявленным** значениям: отсутствующее ограничение не порождает `PROFILE_CAPACITY_INVALID` и не создаёт искусственного upper bound (§6.4). `PROFILE_CAPACITY_INVALID` относится к объявленному, но недопустимому значению (отрицательное, дробное, не safe integer, `0` там, где ноль запрещён).
 - Коды v1 (closed enum): `PROFILE_SHAPE_INVALID`, `PROFILE_FIELD_MISSING`, `PROFILE_FIELD_INVALID`, `PROFILE_VERSION_INVALID`, `PROFILE_REFERENCE_UNKNOWN`, `PROFILE_DUPLICATE_ID`, `PROFILE_CAPACITY_INVALID`, `PROFILE_SPLIT_LEVEL_UNSUPPORTED`, `PROFILE_MASK_INVALID`, `PROFILE_TRANSPORT_INCONSISTENT`.
+- Проверки link/consistency (в том же фиксированном порядке): `addressingProfileId` против `bundle.addressingProfile.identity.id`; `moduleProfileId` против `moduleProfiles`; derived geometry §6.3a на positive safe integer; `activePixelMask.width/height` против derived geometry, монотонность и уникальность `activePixels`; `transportPixelCountPerCabinet` против числа активных пикселей. Нарушения — `PROFILE_REFERENCE_UNKNOWN`, `PROFILE_MASK_INVALID` или `PROFILE_TRANSPORT_INCONSISTENT` соответственно.
 
 # 9. `LEDMAP-GENERIC-REF001`
 
@@ -290,13 +314,17 @@ bundle identity      : id "ledmap.generic.ref001", version "1.0.0"
 manufacturer/family/model : "ledmap" / "generic" / "ref001"
 
 PixelTransportProfile:
+  moduleProfileId                 : "ledmap.generic.ref001.module"
   transportPixelCountPerCabinet : 16384      (128 × 128, transport == physical)
   scanMode                      : ROW_MAJOR
   activePixelMask               : отсутствует  (identity transport)
 
 ModuleProfile:
+  identity.id                    : "ledmap.generic.ref001.module"
+  identity.version               : "1.0.0"
   physicalWidth/Height          : 32 / 32
   moduleCountX / moduleCountY   : 4 / 4
+  derived physicalCabinetWidth/Height : 128 / 128   (§6.3a, вычисляется, не хранится)
 
 ReceiverProfile:
   maxTransportPixels            : 65536       (4 × 16384)
@@ -315,6 +343,8 @@ ProcessorProfile:
   addressingProfileId           : "ledmap.generic.ref001.addressing"
 
 AddressingProfile:
+  identity.id                    : "ledmap.generic.ref001.addressing"
+  identity.version               : "1.0.0"
   receiverBaseAddressMode       : RESERVED_CAPACITY
   portAddressingMode            : CONTINUOUS
   addressWidthBits              : 23           (≥ 196608, с запасом)
@@ -357,16 +387,17 @@ function unresolveTransportPixel(bundle, transportIndex): { x, y } | null
 
 Тестовые области (Vitest, `packages/core/test/hardware-profile/`):
 
-1. Shape и identity: bundle и все constituent profiles, `id`/`version`, уникальность id, referential integrity, unknown references.
+1. Shape и identity: bundle и все constituent profiles, `id`/`version` (включая `identity` у `AddressingProfile`), уникальность id, referential integrity, unknown references; `addressingProfileId` против `bundle.addressingProfile.identity.id`.
 2. Validation: коды §8, порядок checks, полнота списка, `valid === true` iff пустой список, deep immutability, отсутствие мутации входа, детерминированный повторный прогон.
 3. Capacity/constraints: объявленные finite limits (`maxTransportPixels`, `maxCabinets`, `maxReceivers`, `maxPorts`) проверяются; `0` отличается от отсутствия; **отсутствие поля не даёт `PROFILE_CAPACITY_INVALID` и не трактуется как unlimited** — валидатор не создаёт upper bound по необъявленному измерению; bundle без объявленных транспортных пределов остаётся `valid`; запрет подмены 6B `Receiver.pixelCapacity`.
-4. Transport forward/inverse: identity sweep всего Cabinet REF-001 (16384 px) для `ROW_MAJOR` и `COLUMN_MAJOR`, bijektivность, round-trip всех индексов, out-of-range → `null`, `active = false` → `null`, детерминированный порядок.
-5. Active mask: построение mask, разрежение индексов, неактивные пиксели, полное покрытие, `PROFILE_MASK_INVALID`.
-6. `LEDMAP-GENERIC-REF001`: константы профиля, полный sweep 196608 px по всем 12 Cabinet в logical- и physical-доменах, совпадение с принятой 7A/6A математикой без изменений engines, детерминированные ёмкости.
-7. Split narrowing: `SplitLevel` содержит только `CABINET`; `MODULE` / `PIXEL_BLOCK` и `CABINET → несколько Receiver` отклоняются явным кодом или отсутствуют в типе; тест фиксирует запрет.
-8. Границы: `validateProject` (7C) не принимает профиль и не вызывает `validateHardwareProfile`; `.ledmap` v1 loader отвергает `profileId`/`profileVersion` как unknown fields; в `extensions` profile identity игнорируется; 7D/6B/7A/7B публичные API и поведение не изменены.
-9. Regression: 1087 baseline-тестов (41 core-файл / 1051 core-only) остаются зелёными без правок; REF-001 sweeps 6A/6B/7A/7B/7D не редактируются.
-10. Gates: `npm run test:core`, `npm run typecheck -w @ledmap/core`, `npm run build -w @ledmap/core`, `npx eslint packages/core`, `npm test`, `npm run test:smoke`, `git diff --check` — локальный PASS, без CI-подтверждения.
+4. Geometry selection: `moduleProfileId` разрешается ровно в один `ModuleProfile`; derived `physicalCabinetWidth/Height` = `physicalWidth × moduleCountX` / `physicalHeight × moduleCountY`; positive safe integer; bundle с несколькими `moduleProfiles` использует ровно профиль из `moduleProfileId`; неразрешимая ссылка и переполнение геометрии → соответствующие коды.
+5. Transport forward/inverse: identity sweep всего Cabinet REF-001 (16384 px) для `ROW_MAJOR` и `COLUMN_MAJOR`, bijektivность, round-trip всех индексов, out-of-range → `null`, `active = false` → `null`, детерминированный порядок.
+6. Active mask × scanMode: одна masked fixture прогоняется **и для `ROW_MAJOR`, и для `COLUMN_MAJOR`** и MUST доказать, что оба дают корректные bijektivные mappings, но **разные** порядки (mask задаёт membership, scanMode — ordering); membership-set канонический row-major, уникальный и строго возрастающий; round-trip в обоих режимах; `mask.width/height` ≠ derived geometry → `PROFILE_MASK_INVALID`; `transportPixelCountPerCabinet` ≠ числа активных пикселей → `PROFILE_TRANSPORT_INCONSISTENT`.
+7. `LEDMAP-GENERIC-REF001`: константы профиля (включая identity всех профилей и derived geometry 128 × 128), полный sweep 196608 px по всем 12 Cabinet в logical- и physical-доменах, совпадение с принятой 7A/6A математикой без изменений engines, детерминированные ёмкости.
+8. Split narrowing: `SplitLevel` содержит только `CABINET`; `MODULE` / `PIXEL_BLOCK` и `CABINET → несколько Receiver` отклоняются явным кодом или отсутствуют в типе; тест фиксирует запрет.
+9. Границы: `validateProject` (7C) не принимает профиль и не вызывает `validateHardwareProfile`; `.ledmap` v1 loader отвергает `profileId`/`profileVersion` как unknown fields; в `extensions` profile identity игнорируется; 7D/6B/7A/7B публичные API и поведение не изменены.
+10. Regression: 1087 baseline-тестов (41 core-файл / 1051 core-only) остаются зелёными без правок; REF-001 sweeps 6A/6B/7A/7B/7D не редактируются.
+11. Gates: `npm run test:core`, `npm run typecheck -w @ledmap/core`, `npm run build -w @ledmap/core`, `npx eslint packages/core`, `npm test`, `npm run test:smoke`, `git diff --check` — локальный PASS, без CI-подтверждения.
 
 # 13. Out of scope 7E
 

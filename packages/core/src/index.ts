@@ -5,6 +5,7 @@ export * from './mapping-engine/index.js'
 export * from './remap-engine/index.js'
 export * from './validation/index.js'
 export * from './serialization/index.js'
+export * from './hardware-profile/index.js'
 
 export const packageName = '@ledmap/core'
 export const packageVersion = '0.1.0'

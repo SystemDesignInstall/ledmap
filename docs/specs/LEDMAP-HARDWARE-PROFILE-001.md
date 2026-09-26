@@ -118,7 +118,6 @@ interface HardwareProfileRef {
 - Семантика версий: MAJOR — несовместимое изменение shape или semantics; MINOR — новое обратносуместимое правило; PATCH — редакция описания без влияния на вычисления.
 - Ссылка на неизвестную `profileId`/`profileVersion` — явная ошибка, а не fallback и не «ближайшая известная версия».
 - Профиль v1 **не** содержит поля `confidence` и не выражает «профиль описан частично» (umbrella §50) — см. §6.4.
-
 # 6. Состав bundle
 
 Профили ссылаются друг на друга по `id` (модель umbrella §4–§8), что даёт проверяемую referential integrity.
@@ -148,7 +147,7 @@ interface ProcessorProfile {
 
 interface PortProfile {
   readonly identity: ProfileIdentity
-  readonly maxTransportPixels: number
+  readonly maxTransportPixels?: number
   readonly maxReceivers?: number
   readonly receiverProfileIds: readonly string[]
   readonly addressingMode: PortAddressingMode
@@ -156,8 +155,8 @@ interface PortProfile {
 
 interface ReceiverProfile {
   readonly identity: ProfileIdentity
-  readonly maxTransportPixels: number
-  readonly maxCabinets: number
+  readonly maxTransportPixels?: number
+  readonly maxCabinets?: number
   readonly portProfileId: string
 }
 
@@ -198,7 +197,7 @@ interface AddressingProfile {
 
 ## 6.2 Терминология ёмкости
 
-Профильные ёмкости выражаются в **transport pixels** и называются `maxTransportPixels`, чтобы их нельзя было спутать с 6B `Receiver.pixelCapacity`. Поле `maxPixels` umbrella §7 в 7E не используется.
+Профильные ёмкости выражаются в **transport pixels** и называются `maxTransportPixels`, чтобы их нельзя было спутать с 6B `Receiver.pixelCapacity`. Поле `maxPixels` umbrella §7 в 7E не используется. Все профильные ёмкости опциональны: объявленное значение — конечный предел, отсутствие — undeclared/not enforced (§6.4).
 
 ## 6.3 Ссылочная целостность
 
@@ -206,14 +205,22 @@ interface AddressingProfile {
 - Каждый `id` внутри bundle уникален в пределах своего массива профилей и не должен совпадать с `identity.id` bundle.
 - Порядок массивов профилей сохраняется и не используется для семантики; lookup по `id` — единственный разрешающий механизм.
 
-## 6.4 Unknown vs unlimited — явная семантика
+## 6.4 Undeclared constraints: absence ≠ unlimited
 
-В 7E отсутствие опционального ограничения имеет **ровно одно** значение: ограничение не объявлено, то есть **не ограничивает** (unlimited).
+Опциональное ограничение в 7E имеет **ровно два** состояния: объявленный конечный предел и отсутствие объявления.
 
-- `maxReceivers` отсутствует → unlimited, а не «неизвестно».
-- `0` — валидное явно заданное ограничение (нулевая ёмкость) и не эквивалентно отсутствию поля.
-- «Ограничение неизвестно автору профиля» в 7E **не выражается**: создание bundle с неполными данными — ошибка валидации, а не «мягкий» профиль. Mechanism уровня umbrella §49/§50 (unknown constraints, confidence) отложен и в 7E не моделируется.
-- Смешивать unlimited и unknown нельзя, потому что unknown в 7E отсутствует как значение.
+```text
+finite declared limit
+absent / undeclared
+```
+
+- **Отсутствие поля** означает: constraint **не объявлен** этим Hardware Profile и потому **не проверяется (not enforced)** на этом измерении в 7E.
+- Отсутствие MUST NOT интерпретироваться как утверждение, что физическое оборудование имеет неограниченную ёмкость. В модели, в отчётах и в будущем UI такое значение **не называется unlimited**.
+- Операционный смысл отсутствия — «no enforced bound»: валидатор не выдаёт upper-bound ошибку по этому измерению. Это не утверждение о физике устройства.
+- `0` — валидный явно объявленный конечный предел и не эквивалентен отсутствию поля.
+- Согласовано с 6B: отсутствие `Receiver.pixelCapacity` означает отсутствие заданного LedMAP limit для allocator, а не утверждение, что устройство бесконечно.
+- **Explicit unbounded** (отдельное значение или capability «без ограничения») и **unknown constraint / profile confidence** (umbrella §49–§50) в 7E **не моделируются**: это отдельные значения и mechanism более поздних gate'ов. В 7E их отсутствие означает лишь undeclared, а не unbounded и не «неизвестно автору».
+- Если профиль не объявляет ни одного транспортного предела, это допустимо: bundle остаётся валидным, но 7E не проверяет по нему верхнюю границу. Ошибкой это не является.
 
 # 7. Transport lookup
 
@@ -271,6 +278,7 @@ interface HardwareProfileValidationCheck {
 - Severity только `ERROR`; `valid === true` iff `checks` пуст. Ни `WARNING`, ни `INFO` не вводятся.
 - Детерминированный порядок: структурные проверки §6, затем referential integrity §6.3, затем capacity/constraint §6.2/§6.4, затем transport-инварианты §7, затем версия §5. В отчёт попадают **все** структурные нарушения в этом фиксированном порядке.
 - Отличие от 7C сознательное: profile contract не является частью project pipeline, профиль — небольшой ограниченный документ, поэтому полный список нарушений полезнее staged first-failure. Это решение не меняет семантику 7C.
+- Capacity-проверки применяются только к **объявленным** значениям: отсутствующее ограничение не порождает `PROFILE_CAPACITY_INVALID` и не создаёт искусственного upper bound (§6.4). `PROFILE_CAPACITY_INVALID` относится к объявленному, но недопустимому значению (отрицательное, дробное, не safe integer, `0` там, где ноль запрещён).
 - Коды v1 (closed enum): `PROFILE_SHAPE_INVALID`, `PROFILE_FIELD_MISSING`, `PROFILE_FIELD_INVALID`, `PROFILE_VERSION_INVALID`, `PROFILE_REFERENCE_UNKNOWN`, `PROFILE_DUPLICATE_ID`, `PROFILE_CAPACITY_INVALID`, `PROFILE_SPLIT_LEVEL_UNSUPPORTED`, `PROFILE_MASK_INVALID`, `PROFILE_TRANSPORT_INCONSISTENT`.
 
 # 9. `LEDMAP-GENERIC-REF001`
@@ -312,7 +320,7 @@ AddressingProfile:
   addressWidthBits              : 23           (≥ 196608, с запасом)
 ```
 
-Ограничения: профиль **не** вычисляет ни port index, ни base address, ни hardware address; ёмкости только объявляют верхние границы. Profile не используется для переопределения 6B (см. §3.3).
+Ограничения: профиль **не** вычисляет ни port index, ни base address, ни hardware address; объявленные ёмкости только задают верхние границы, которые 7E проверяет как declared limits. Profile не используется для переопределения 6B (см. §3.3).
 
 # 10. Public API v1 (предлагаемые имена)
 
@@ -351,7 +359,7 @@ function unresolveTransportPixel(bundle, transportIndex): { x, y } | null
 
 1. Shape и identity: bundle и все constituent profiles, `id`/`version`, уникальность id, referential integrity, unknown references.
 2. Validation: коды §8, порядок checks, полнота списка, `valid === true` iff пустой список, deep immutability, отсутствие мутации входа, детерминированный повторный прогон.
-3. Capacity/constraints: `maxTransportPixels`, `maxCabinets`, `maxReceivers`, `0` vs отсутствие (unlimited), `maxPorts`; запрет подмены 6B `Receiver.pixelCapacity`.
+3. Capacity/constraints: объявленные finite limits (`maxTransportPixels`, `maxCabinets`, `maxReceivers`, `maxPorts`) проверяются; `0` отличается от отсутствия; **отсутствие поля не даёт `PROFILE_CAPACITY_INVALID` и не трактуется как unlimited** — валидатор не создаёт upper bound по необъявленному измерению; bundle без объявленных транспортных пределов остаётся `valid`; запрет подмены 6B `Receiver.pixelCapacity`.
 4. Transport forward/inverse: identity sweep всего Cabinet REF-001 (16384 px) для `ROW_MAJOR` и `COLUMN_MAJOR`, bijektivность, round-trip всех индексов, out-of-range → `null`, `active = false` → `null`, детерминированный порядок.
 5. Active mask: построение mask, разрежение индексов, неактивные пиксели, полное покрытие, `PROFILE_MASK_INVALID`.
 6. `LEDMAP-GENERIC-REF001`: константы профиля, полный sweep 196608 px по всем 12 Cabinet в logical- и physical-доменах, совпадение с принятой 7A/6A математикой без изменений engines, детерминированные ёмкости.
@@ -362,7 +370,7 @@ function unresolveTransportPixel(bundle, transportIndex): { x, y } | null
 
 # 13. Out of scope 7E
 
-`AddressEncoder`, `HardwareAddress` и vendor encoding; Final Remap и ReverseIndex; `SplitLevel` ниже `CABINET`; Cabinet → несколько Receiver; интеграция профиля в 7C/6B; persistence профиля и изменение `.ledmap`; profile catalog, загрузка и версионирование профилей на диске; unknown-constraint/confidence semantics; warning/info severity; UI, file I/O, IPC; изменения принятой математики движков.
+`AddressEncoder`, `HardwareAddress` и vendor encoding; Final Remap и ReverseIndex; `SplitLevel` ниже `CABINET`; Cabinet → несколько Receiver; интеграция профиля в 7C/6B; persistence профиля и изменение `.ledmap`; profile catalog, загрузка и версионирование профилей на диске; explicit-unbounded значения, unknown-constraint и profile-confidence semantics (7E моделирует только finite declared limit и absent/undeclared — §6.4); warning/info severity; UI, file I/O, IPC; изменения принятой математики движков.
 
 # 14. Backward compatibility
 

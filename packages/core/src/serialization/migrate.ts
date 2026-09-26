@@ -1,7 +1,7 @@
 import { SerializationError, type SerializationPath } from './errors.js'
 import { compareUtf16, deepFreeze, isPlainRecord } from './json.js'
-import { assertOwnDataProperties, checkExtensionsPayload, checkProjectPayload } from './schema.js'
-import type { JsonObject, ProjectDocumentV1, StoredProjectV1 } from './types.js'
+import { assertOwnDataProperties, checkExtensionsPayload, checkProjectPayload, checkProjectPayloadV1 } from './schema.js'
+import type { JsonObject, ProjectDocument, StoredProjectV1, StoredProjectV2 } from './types.js'
 
 const rootPath: SerializationPath = []
 
@@ -20,7 +20,7 @@ function readRootField(value: Record<string, unknown>, key: string): { present: 
   return { present: true, value: descriptor.value }
 }
 
-export function migrateProjectDocument(value: unknown): ProjectDocumentV1 {
+export function migrateProjectDocument(value: unknown): ProjectDocument {
   if (value === undefined || typeof value === 'function' || typeof value === 'symbol' || typeof value === 'bigint') {
     inputFail(rootPath, 'a JSON document; functions, symbols, bigint and undefined are not representable')
   }
@@ -41,14 +41,16 @@ export function migrateProjectDocument(value: unknown): ProjectDocumentV1 {
   if (typeof version !== 'number') schemaFail(['schemaVersion'], 'a numeric schemaVersion')
   if (!Number.isFinite(version)) inputFail(['schemaVersion'], 'finite JSON numbers; NaN and Infinity are not representable')
   if (!Number.isSafeInteger(version) || version < 0) schemaFail(['schemaVersion'], 'schemaVersion to be a non-negative safe integer')
-  if (version !== 1) {
+  if (version !== 1 && version !== 2) {
     throw new SerializationError('SERIALIZATION_UNSUPPORTED_VERSION', `schemaVersion ${version} has no approved schema or migration path`, ['schemaVersion'])
   }
 
   const projectField = readRootField(value, 'project')
   if (!projectField.present) schemaFail(['project'], 'a required project field')
   if (projectField.value === undefined) inputFail(['project'], 'a defined project value')
-  const project: StoredProjectV1 = checkProjectPayload(projectField.value, ['project'], 'document')
+  const project = version === 1
+    ? migrateProjectV1(checkProjectPayloadV1(projectField.value, ['project'], 'document'))
+    : checkProjectPayload(projectField.value, ['project'], 'document')
 
   const extensionsField = readRootField(value, 'extensions')
   if (!extensionsField.present) schemaFail(['extensions'], 'a required extensions field')
@@ -59,5 +61,21 @@ export function migrateProjectDocument(value: unknown): ProjectDocumentV1 {
   const unknown = Object.getOwnPropertyNames(value).filter(key => !known.has(key)).sort(compareUtf16)
   for (const key of unknown) schemaFail([key], `no unknown fields; found ${key}`)
 
-  return deepFreeze({ format: 'ledmap', schemaVersion: 1, project, extensions })
+  return deepFreeze({ format: 'ledmap', schemaVersion: 2, project, extensions })
+}
+
+function migrateProjectV1(project: StoredProjectV1): StoredProjectV2 {
+  const { position, size, ...references } = project.mapping.region
+  return {
+    ...project,
+    mapping: {
+      ...project.mapping,
+      region: {
+        ...references,
+        inputRect: { x: position.x, y: position.y, width: size.width, height: size.height },
+        screenRect: { x: 0, y: 0, width: size.width, height: size.height },
+        transform: { inputRotation: 0, screenRotation: 0, flipX: false, flipY: false },
+      },
+    },
+  }
 }

@@ -14,6 +14,8 @@ export type ProcessorId = Brand<'ProcessorId'>
 export type PortId = Brand<'PortId'>
 export type ReceiverId = Brand<'ReceiverId'>
 export type SignalPathId = Brand<'SignalPathId'>
+export type OutputSurfaceId = Brand<'OutputSurfaceId'>
+export type SliceId = Brand<'SliceId'>
 
 export const asScreenId = (value: string): ScreenId => brand<'ScreenId'>(value)
 export const asInputCanvasId = (value: string): InputCanvasId => brand<'InputCanvasId'>(value)
@@ -25,3 +27,5 @@ export const asProcessorId = (value: string): ProcessorId => brand<'ProcessorId'
 export const asPortId = (value: string): PortId => brand<'PortId'>(value)
 export const asReceiverId = (value: string): ReceiverId => brand<'ReceiverId'>(value)
 export const asSignalPathId = (value: string): SignalPathId => brand<'SignalPathId'>(value)
+export const asOutputSurfaceId = (value: string): OutputSurfaceId => brand<'OutputSurfaceId'>(value)
+export const asSliceId = (value: string): SliceId => brand<'SliceId'>(value)

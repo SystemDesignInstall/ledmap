@@ -56,6 +56,31 @@ export interface RegionV1 {
   readonly size: SizeV1
 }
 
+export interface PixelRectV2 extends XYV1, SizeV1 {}
+
+export interface PolygonMaskV2 {
+  readonly enabled: boolean
+  readonly points: readonly XYV1[]
+}
+
+export interface MappingTransformV2 {
+  readonly inputRotation: 0 | 90 | 180 | 270
+  readonly screenRotation: 0 | 90 | 180 | 270
+  readonly flipX: boolean
+  readonly flipY: boolean
+  readonly mask?: PolygonMaskV2
+}
+
+export interface RegionV2 {
+  readonly id: string
+  readonly inputCanvas: string
+  readonly screen: string
+  readonly grid: string
+  readonly inputRect: PixelRectV2
+  readonly screenRect: PixelRectV2
+  readonly transform: MappingTransformV2
+}
+
 export interface ProcessorV1 {
   readonly id: string
   readonly name: string
@@ -134,12 +159,29 @@ export interface StoredProjectV1 {
   readonly rules: readonly JsonValue[]
 }
 
+export interface StoredMappingInputV2 extends Omit<StoredMappingInputV1, 'region'> {
+  readonly region: RegionV2
+}
+
+export interface StoredProjectV2 extends Omit<StoredProjectV1, 'mapping'> {
+  readonly mapping: StoredMappingInputV2
+}
+
 export interface ProjectDocumentV1 {
   readonly format: 'ledmap'
   readonly schemaVersion: 1
   readonly project: StoredProjectV1
   readonly extensions: JsonObject
 }
+
+export interface ProjectDocumentV2 {
+  readonly format: 'ledmap'
+  readonly schemaVersion: 2
+  readonly project: StoredProjectV2
+  readonly extensions: JsonObject
+}
+
+export type ProjectDocument = ProjectDocumentV2
 
 export interface SerializeProjectInput {
   readonly project: ValidateProjectInput

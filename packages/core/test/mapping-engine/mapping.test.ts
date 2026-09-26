@@ -180,8 +180,8 @@ describe('Mapping immutable compact snapshot', () => {
     input.screen.mappingRegions.length = 0
     input.grid.ordering.snake = true
     input.grid.columns = 99
-    input.region.position.x = 999
-    input.region.size.width = 999
+    input.region.inputRect.x = 999
+    input.region.inputRect.width = 999
     input.hardwareTopology.cabinets[0]!.column = 99
     input.hardwareTopology.cabinets[0]!.origin.x = 999
     input.hardwareTopology.modules[0]!.id = asModuleId('changed')
@@ -203,7 +203,11 @@ describe('Mapping immutable compact snapshot', () => {
     const input: ResolveMappingInput = {
       ...base, inputCanvas: { ...base.inputCanvas, resolution: { width, height: 1 } },
       screen: { ...base.screen, resolution: { width, height: 1 } },
-      region: { ...base.region, position: { x: 0, y: 0 }, size: { width, height: 1 } },
+      region: {
+        ...base.region,
+        inputRect: { x: 0, y: 0, width, height: 1 },
+        screenRect: { x: 0, y: 0, width, height: 1 },
+      },
       hardwareTopology: {
         ...base.hardwareTopology, cabinets: base.hardwareTopology.cabinets.map(c => ({ ...c, pixelWidth: width })),
         modules: base.hardwareTopology.modules.map(m => ({ ...m, pixelWidth: width })),

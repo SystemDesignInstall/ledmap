@@ -186,7 +186,11 @@ describe('Remap identity, ownership and determinism', () => {
     const mapping = resolveMapping({
       ...base, inputCanvas: { ...base.inputCanvas, resolution: { width, height: 1 } },
       screen: { ...base.screen, resolution: { width, height: 1 } },
-      region: { ...base.region, position: { x: 0, y: 0 }, size: { width, height: 1 } },
+      region: {
+        ...base.region,
+        inputRect: { x: 0, y: 0, width, height: 1 },
+        screenRect: { x: 0, y: 0, width, height: 1 },
+      },
       hardwareTopology: {
         ...base.hardwareTopology, cabinets: base.hardwareTopology.cabinets.map(c => ({ ...c, pixelWidth: width })),
         modules: base.hardwareTopology.modules.map(m => ({ ...m, pixelWidth: width })),

@@ -16,23 +16,24 @@ const cases: readonly { name: string; code: string; change: Change }[] = [
   { name: 'missing Screen grid', code: 'INCOMPLETE', change: i => ({ ...i, screen: { ...i.screen, cabinetGrids: [] } }) },
   { name: 'wrong Screen region', code: 'UNKNOWN_REFERENCE', change: i => ({ ...i, screen: { ...i.screen, mappingRegions: [asMappingRegionId('other')] } }) },
   { name: 'wrong Screen grid', code: 'UNKNOWN_REFERENCE', change: i => ({ ...i, screen: { ...i.screen, cabinetGrids: [asCabinetGridId('other')] } }) },
-  { name: 'extra Screen region', code: 'UNSUPPORTED_PROFILE', change: i => ({ ...i, screen: { ...i.screen, mappingRegions: [...i.screen.mappingRegions, asMappingRegionId('other')] } }) },
-  { name: 'extra Screen grid', code: 'UNSUPPORTED_PROFILE', change: i => ({ ...i, screen: { ...i.screen, cabinetGrids: [...i.screen.cabinetGrids, asCabinetGridId('other')] } }) },
   { name: 'two different Cabinets in one cell', code: 'DUPLICATE', change: i => ({ ...i, hardwareTopology: { ...i.hardwareTopology, cabinets: i.hardwareTopology.cabinets.map(c => ({ ...c, column: 0, row: 0 })) } }) },
   { name: 'column outside Grid', code: 'OUT_OF_RANGE', change: i => ({ ...i, hardwareTopology: { ...i.hardwareTopology, cabinets: i.hardwareTopology.cabinets.map(c => ({ ...c, column: i.grid.columns })) } }) },
   { name: 'row outside Grid', code: 'OUT_OF_RANGE', change: i => ({ ...i, hardwareTopology: { ...i.hardwareTopology, cabinets: i.hardwareTopology.cabinets.map(c => ({ ...c, row: i.grid.rows })) } }) },
-  { name: 'source outside canvas right', code: 'OUT_OF_RANGE', change: i => ({ ...i, region: { ...i.region, position: { ...i.region.position, x: i.region.position.x + 1 } } }) },
-  { name: 'source outside canvas bottom', code: 'OUT_OF_RANGE', change: i => ({ ...i, region: { ...i.region, position: { ...i.region.position, y: i.region.position.y + 1 } } }) },
-  { name: 'region width mismatch', code: 'SIZE_MISMATCH', change: i => ({ ...i, region: { ...i.region, size: { ...i.region.size, width: i.region.size.width - 1 } } }) },
-  { name: 'region height mismatch', code: 'SIZE_MISMATCH', change: i => ({ ...i, region: { ...i.region, size: { ...i.region.size, height: i.region.size.height - 1 } } }) },
-  { name: 'Screen width mismatch', code: 'SIZE_MISMATCH', change: i => ({ ...i, screen: { ...i.screen, resolution: { ...i.screen.resolution, width: 1 } } }) },
-  { name: 'Screen height mismatch', code: 'SIZE_MISMATCH', change: i => ({ ...i, screen: { ...i.screen, resolution: { ...i.screen.resolution, height: 1 } } }) },
+  { name: 'source outside canvas right', code: 'OUT_OF_RANGE', change: i => ({ ...i, region: { ...i.region, inputRect: { ...i.region.inputRect, x: i.region.inputRect.x + 1 } } }) },
+  { name: 'source outside canvas bottom', code: 'OUT_OF_RANGE', change: i => ({ ...i, region: { ...i.region, inputRect: { ...i.region.inputRect, y: i.region.inputRect.y + 1 } } }) },
+  { name: 'destination outside Screen right', code: 'OUT_OF_RANGE', change: i => ({ ...i, region: { ...i.region, screenRect: { ...i.region.screenRect, x: i.region.screenRect.x + 1 } } }) },
+  { name: 'destination outside Screen bottom', code: 'OUT_OF_RANGE', change: i => ({ ...i, region: { ...i.region, screenRect: { ...i.region.screenRect, y: i.region.screenRect.y + 1 } } }) },
+  { name: 'input width mismatch', code: 'SIZE_MISMATCH', change: i => ({ ...i, region: { ...i.region, inputRect: { ...i.region.inputRect, width: i.region.inputRect.width - 1 } } }) },
+  { name: 'input height mismatch', code: 'SIZE_MISMATCH', change: i => ({ ...i, region: { ...i.region, inputRect: { ...i.region.inputRect, height: i.region.inputRect.height - 1 } } }) },
+  { name: 'screen width mismatch', code: 'SIZE_MISMATCH', change: i => ({ ...i, region: { ...i.region, screenRect: { ...i.region.screenRect, width: i.region.screenRect.width - 1 } } }) },
+  { name: 'screen height mismatch', code: 'SIZE_MISMATCH', change: i => ({ ...i, region: { ...i.region, screenRect: { ...i.region.screenRect, height: i.region.screenRect.height - 1 } } }) },
   { name: 'Grid cell count overflow', code: 'OVERFLOW', change: i => ({ ...i, grid: { ...i.grid, columns: Number.MAX_SAFE_INTEGER, rows: 2 } }) },
   { name: 'Grid pixel width overflow', code: 'OVERFLOW', change: i => ({ ...i, grid: { ...i.grid, columns: Math.floor(Number.MAX_SAFE_INTEGER / 15) + 1, rows: 1 } }) },
   { name: 'Grid pixel height overflow', code: 'OVERFLOW', change: i => ({ ...i, grid: { ...i.grid, columns: 1, rows: Math.floor(Number.MAX_SAFE_INTEGER / 14) + 1 } }) },
   { name: 'Grid pixel count overflow', code: 'OVERFLOW', change: i => ({ ...i, grid: { ...i.grid, columns: Math.floor(Number.MAX_SAFE_INTEGER / 15), rows: 1 } }) },
-  { name: 'source right sum overflow', code: 'OVERFLOW', change: i => ({ ...i, region: { ...i.region, position: { ...i.region.position, x: Number.MAX_SAFE_INTEGER } } }) },
-  { name: 'source bottom sum overflow', code: 'OVERFLOW', change: i => ({ ...i, region: { ...i.region, position: { ...i.region.position, y: Number.MAX_SAFE_INTEGER } } }) },
+  { name: 'source right sum overflow', code: 'OVERFLOW', change: i => ({ ...i, region: { ...i.region, inputRect: { ...i.region.inputRect, x: Number.MAX_SAFE_INTEGER } } }) },
+  { name: 'source bottom sum overflow', code: 'OVERFLOW', change: i => ({ ...i, region: { ...i.region, inputRect: { ...i.region.inputRect, y: Number.MAX_SAFE_INTEGER } } }) },
+  { name: 'destination right sum overflow', code: 'OVERFLOW', change: i => ({ ...i, region: { ...i.region, screenRect: { ...i.region.screenRect, x: Number.MAX_SAFE_INTEGER } } }) },
 ]
 
 describe('Mapping validation', () => {
@@ -86,7 +87,8 @@ describe('Mapping validation', () => {
       for (const change of [
         { inputCanvas: { ...input.inputCanvas, resolution: { ...input.inputCanvas.resolution, [field]: value } } },
         { screen: { ...input.screen, resolution: { ...input.screen.resolution, [field]: value } } },
-        { region: { ...input.region, size: { ...input.region.size, [field]: value } } },
+        { region: { ...input.region, inputRect: { ...input.region.inputRect, [field]: value } } },
+        { region: { ...input.region, screenRect: { ...input.region.screenRect, [field]: value } } },
       ]) expect(() => resolveMapping({ ...input, ...change })).toThrowError(/MAPPING_INVALID_VALUE/)
     }
     for (const field of ['columns', 'rows'] as const) {
@@ -98,8 +100,9 @@ describe('Mapping validation', () => {
     const input = smallMapping()
     const mapping = resolveMapping(input)
     for (const axis of ['x', 'y'] as const) {
-      expect(() => resolveMapping({ ...input, region: { ...input.region, position: { ...input.region.position, [axis]: value } } })).toThrowError(/MAPPING_INVALID_VALUE/)
-      expect(() => mapInputPixel(mapping, { inputCanvas: input.inputCanvas.id, inputCoordinate: { ...input.region.position, [axis]: value } })).toThrowError(/MAPPING_INVALID_VALUE/)
+      expect(() => resolveMapping({ ...input, region: { ...input.region, inputRect: { ...input.region.inputRect, [axis]: value } } })).toThrowError(/MAPPING_INVALID_VALUE/)
+      expect(() => resolveMapping({ ...input, region: { ...input.region, screenRect: { ...input.region.screenRect, [axis]: value } } })).toThrowError(/MAPPING_INVALID_VALUE/)
+      expect(() => mapInputPixel(mapping, { inputCanvas: input.inputCanvas.id, inputCoordinate: { x: value, y: 0 } })).toThrowError(/MAPPING_INVALID_VALUE/)
     }
     for (const field of ['column', 'row'] as const) {
       expect(() => resolveMapping({ ...input, hardwareTopology: {
@@ -132,5 +135,33 @@ describe('Mapping lookup bounds', () => {
   ])('preserves hardware error for $processor/$port/$dataIndex', ({ processor, port, dataIndex, code }) => {
     expect(() => unmapHardwarePixel(mapping, { processor: asProcessorId(processor), port: asPortId(port), dataIndex }))
       .toThrowError(new RegExp(`HARDWARE_${code}`))
+  })
+})
+
+describe('Mapping transform validation', () => {
+  it.each([45, -90, 360, 0.5, NaN, Infinity])('rejects unsupported rotation %s', rotation => {
+    const input = smallMapping()
+    expect(() => resolveMapping({
+      ...input,
+      region: { ...input.region, transform: { ...input.region.transform, inputRotation: rotation as 90 } },
+    })).toThrowError(/MAPPING_INVALID_VALUE/)
+  })
+
+  it('rejects invalid or out-of-bounds enabled masks', () => {
+    const input = smallMapping()
+    expect(() => resolveMapping({
+      ...input,
+      region: { ...input.region, transform: { ...input.region.transform, mask: { enabled: true, points: [] } } },
+    })).toThrowError(/MAPPING_INVALID_VALUE/)
+    expect(() => resolveMapping({
+      ...input,
+      region: {
+        ...input.region,
+        transform: {
+          ...input.region.transform,
+          mask: { enabled: true, points: [{ x: 0, y: 0 }, { x: input.region.inputRect.width + 1, y: 0 }, { x: 0, y: 1 }] },
+        },
+      },
+    })).toThrowError(/MAPPING_OUT_OF_RANGE/)
   })
 })

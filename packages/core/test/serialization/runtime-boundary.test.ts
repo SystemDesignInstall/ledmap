@@ -117,8 +117,8 @@ describe('7D save boundary', () => {
     ['negative infinity', Number.NEGATIVE_INFINITY],
   ])('rejects %s as a wire number in project geometry', (_label, value) => {
     const project = minimalProject()
-    mutable(project.mapping.region.position).x = value
-    expectInputError(wrapper(project), ['project', 'mapping', 'region', 'position', 'x'])
+    mutable(project.mapping.region.inputRect).x = value
+    expectInputError(wrapper(project), ['project', 'mapping', 'region', 'inputRect', 'x'])
   })
 
   it('rejects non-finite receiver capacity without changing validation semantics', () => {

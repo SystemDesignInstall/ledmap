@@ -43,7 +43,7 @@ describe('Project input structure', () => {
     { path: ['mapping'], value: [] },
     { path: ['mapping', 'screen'], value: new Map() },
     { path: ['mapping', 'grid'], value: new (class Grid {})() },
-    { path: ['mapping', 'region', 'size'], value: null },
+    { path: ['mapping', 'region', 'inputRect'], value: null },
     { path: ['mapping', 'inputCanvas', 'id'], value: 42 },
     { path: ['mapping', 'grid', 'rows'], value: '1' },
     { path: ['mapping', 'grid', 'ordering', 'snake'], value: 0 },
@@ -75,13 +75,13 @@ describe('Project input structure', () => {
     const input = projectFixture()
     setAt(input, ['rules'], null)
     setAt(input, ['mapping', 'hardwareTopology', 'modules', 0, 'pixelWidth'], 'bad')
-    setAt(input, ['mapping', 'region', 'size'], undefined)
+    setAt(input, ['mapping', 'region', 'inputRect'], undefined)
     setAt(input, ['mapping', 'inputCanvas', 'resolution', 'height'], null)
     setAt(input, ['mapping', 'inputCanvas', 'resolution', 'width'], null)
     expectShapeError(input, [
       ['mapping', 'inputCanvas', 'resolution', 'width'],
       ['mapping', 'inputCanvas', 'resolution', 'height'],
-      ['mapping', 'region', 'size'],
+      ['mapping', 'region', 'inputRect'],
       ['mapping', 'hardwareTopology', 'modules', 0, 'pixelWidth'],
       ['rules'],
     ])
@@ -93,7 +93,7 @@ describe('Project input structure', () => {
   })
 
   it.each([
-    ['mapping'], ['rules'], ['mapping', 'inputCanvas', 'id'], ['mapping', 'region', 'size'],
+    ['mapping'], ['rules'], ['mapping', 'inputCanvas', 'id'], ['mapping', 'region', 'inputRect'],
     ['mapping', 'hardwareTopology', 'modules', 0], ['mapping', 'hardwareTopology', 'processorOrder', 0],
     ['mapping', 'hardwareTopology', 'receivers', 0, 'pixelCapacity'],
   ])('does not invoke an accessor at %j', (...path) => {
@@ -108,7 +108,7 @@ describe('Project input structure', () => {
   it('does not use inherited required properties', () => {
     const input = projectFixture()
     const fake = Object.create({ width: 2, height: 3 }) as object
-    expectShapeError(setAt(input, ['mapping', 'region', 'size'], fake), [['mapping', 'region', 'size']])
+    expectShapeError(setAt(input, ['mapping', 'region', 'inputRect'], fake), [['mapping', 'region', 'inputRect']])
   })
 
   it('accepts own non-enumerable data fields on the wrapper and null-prototype records', () => {

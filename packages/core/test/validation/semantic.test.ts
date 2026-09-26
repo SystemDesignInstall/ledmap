@@ -15,9 +15,9 @@ const semanticCases = [
   { name: 'unknown InputCanvas reference', path: ['region', 'inputCanvas'], value: 'missing', code: 'MAPPING_UNKNOWN_REFERENCE' },
   { name: 'unknown Grid parent', path: ['grid', 'screen'], value: 'missing', code: 'MAPPING_UNKNOWN_REFERENCE' },
   { name: 'missing Screen membership', path: ['screen', 'mappingRegions'], value: [], code: 'MAPPING_INCOMPLETE' },
-  { name: 'extra Screen membership', path: ['screen', 'cabinetGrids'], value: ['grid', 'other'], code: 'MAPPING_UNSUPPORTED_PROFILE' },
-  { name: 'source bounds', path: ['region', 'position', 'x'], value: 999, code: 'MAPPING_OUT_OF_RANGE' },
-  { name: 'size mismatch', path: ['screen', 'resolution', 'width'], value: 1, code: 'MAPPING_SIZE_MISMATCH' },
+  { name: 'missing selected Grid membership', path: ['screen', 'cabinetGrids'], value: ['other'], code: 'MAPPING_UNKNOWN_REFERENCE' },
+  { name: 'source bounds', path: ['region', 'inputRect', 'x'], value: 999, code: 'MAPPING_OUT_OF_RANGE' },
+  { name: 'destination bounds', path: ['region', 'screenRect', 'x'], value: 999, code: 'MAPPING_OUT_OF_RANGE' },
   { name: 'unsafe arithmetic', path: ['grid', 'columns'], value: Number.MAX_SAFE_INTEGER, code: 'MAPPING_OVERFLOW' },
   { name: 'missing cell', path: ['grid', 'columns'], value: 2, code: 'MAPPING_INCOMPLETE' },
   { name: 'cell outside Grid', path: ['hardwareTopology', 'cabinets', 0, 'column'], value: 1, code: 'MAPPING_OUT_OF_RANGE' },
@@ -137,7 +137,7 @@ describe('Project stage dependencies and unexpected exceptions', () => {
   it('blocks both engines on shape defects even with semantic and rule defects', () => {
     const input = projectFixture()
     setAt(input, ['rules'], [{}])
-    setAt(input, ['mapping', 'region', 'position', 'x'], 999)
+    setAt(input, ['mapping', 'region', 'inputRect', 'x'], 999)
     setAt(input, ['mapping', 'screen', 'name'], null)
     const mapping = vi.spyOn(mappingEngine, 'resolveMapping')
     const remap = vi.spyOn(remapEngine, 'resolveRemap')
@@ -152,7 +152,7 @@ describe('Project stage dependencies and unexpected exceptions', () => {
   it('returns only the first upstream semantic failure and blocks nonempty Remap rules', () => {
     const input = projectFixture()
     setAt(input, ['rules'], [{}])
-    setAt(input, ['mapping', 'region', 'position', 'x'], 999)
+    setAt(input, ['mapping', 'region', 'inputRect', 'x'], 999)
     setAt(input, ['mapping', 'hardwareTopology', 'receivers', 0, 'pixelCapacity'], 1)
     expectMappingFailure(input, 'MAPPING_OUT_OF_RANGE')
   })

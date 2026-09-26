@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { migrateProjectDocument, parseProject } from '../../src/index.js'
 import { assertFrozen } from '../mapping-engine/fixtures.js'
-import { cloneDocument, expectSerializationError, minimalDocument, minimalGoldenText, setPath } from './fixtures.js'
+import { cloneDocument, expectSerializationError, minimalDocument, minimalDocumentV1, minimalGoldenText, setPath } from './fixtures.js'
 
 function documentWith(path: readonly (string | number)[], value: unknown): Record<string, unknown> {
   const document = cloneDocument(minimalDocument())
@@ -10,7 +10,7 @@ function documentWith(path: readonly (string | number)[], value: unknown): Recor
 }
 
 describe('7D envelope discriminator and version dispatch', () => {
-  it('accepts the current version and returns a detached immutable document', () => {
+  it('accepts current v2 and returns a detached immutable document', () => {
     const document = cloneDocument(minimalDocument())
     const migrated = migrateProjectDocument(document)
     expect(migrated).toEqual(document)
@@ -20,6 +20,19 @@ describe('7D envelope discriminator and version dispatch', () => {
     expect(Object.isFrozen(document)).toBe(false)
     setPath(document, 'mutated', 'project', 'mapping', 'grid', 'name')
     expect(migrated.project.mapping.grid.name).toBe('Grid')
+  })
+
+  it('migrates v1 position and size into the v2 spatial mapping contract', () => {
+    const legacy = minimalDocumentV1()
+    const migrated = migrateProjectDocument(legacy)
+    expect(migrated.schemaVersion).toBe(2)
+    expect(migrated.project.mapping.region).toEqual({
+      id: 'region', inputCanvas: 'input', screen: 'screen', grid: 'grid',
+      inputRect: { x: 0, y: 0, width: 2, height: 3 },
+      screenRect: { x: 0, y: 0, width: 2, height: 3 },
+      transform: { inputRotation: 0, screenRotation: 0, flipX: false, flipY: false },
+    })
+    expect(loadableLegacy(legacy)).toEqual(minimalDocument())
   })
 
   it.each([
@@ -62,19 +75,19 @@ describe('7D envelope discriminator and version dispatch', () => {
 
   it('rejects a parsed overflow version', () => {
     expectSerializationError(
-      () => parseProject(minimalGoldenText.replace('"schemaVersion": 1,', '"schemaVersion": 1e400,')),
+      () => parseProject(minimalGoldenText.replace('"schemaVersion": 2,', '"schemaVersion": 1e400,')),
       'SERIALIZATION_INVALID_SCHEMA', ['schemaVersion'],
     )
   })
 
-  it.each([0, 2, 3, 99, Number.MAX_SAFE_INTEGER])('rejects unsupported schemaVersion %s', version => {
+  it.each([0, 3, 99, Number.MAX_SAFE_INTEGER])('rejects unsupported schemaVersion %s', version => {
     const document = documentWith(['schemaVersion'], version)
     expectSerializationError(() => migrateProjectDocument(document), 'SERIALIZATION_UNSUPPORTED_VERSION', ['schemaVersion'])
     expectSerializationError(() => parseProject(JSON.stringify(document)), 'SERIALIZATION_UNSUPPORTED_VERSION', ['schemaVersion'])
   })
 
   it('does not interpret a project payload of an unsupported version', () => {
-    const document = documentWith(['schemaVersion'], 2)
+    const document = documentWith(['schemaVersion'], 3)
     setPath(document, null, 'project')
     setPath(document, 'not an object', 'extensions')
     expectSerializationError(() => migrateProjectDocument(document), 'SERIALIZATION_UNSUPPORTED_VERSION', ['schemaVersion'])
@@ -82,10 +95,10 @@ describe('7D envelope discriminator and version dispatch', () => {
 
   it('checks the format before the version and the version before the payload', () => {
     const badFormat = documentWith(['format'], 'other')
-    setPath(badFormat, 2, 'schemaVersion')
+    setPath(badFormat, 3, 'schemaVersion')
     expectSerializationError(() => migrateProjectDocument(badFormat), 'SERIALIZATION_INVALID_SCHEMA', ['format'])
 
-    const badVersion = documentWith(['schemaVersion'], 2)
+    const badVersion = documentWith(['schemaVersion'], 3)
     setPath(badVersion, 'not a project', 'project')
     expectSerializationError(() => migrateProjectDocument(badVersion), 'SERIALIZATION_UNSUPPORTED_VERSION', ['schemaVersion'])
   })
@@ -107,11 +120,11 @@ describe('7D envelope discriminator and version dispatch', () => {
 
   it('rejects a non-finite runtime number in the payload as invalid input', () => {
     for (const value of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
-      const document = documentWith(['project', 'mapping', 'region', 'position', 'x'], value)
+      const document = documentWith(['project', 'mapping', 'region', 'inputRect', 'x'], value)
       expectSerializationError(
         () => migrateProjectDocument(document),
         'SERIALIZATION_INVALID_INPUT',
-        ['project', 'mapping', 'region', 'position', 'x'],
+        ['project', 'mapping', 'region', 'inputRect', 'x'],
       )
     }
   })
@@ -142,3 +155,7 @@ describe('7D envelope discriminator and version dispatch', () => {
     expect(hardware['processorOrder']).toEqual(['P-second', 'P-first'])
   })
 })
+
+function loadableLegacy(document: Record<string, unknown>): unknown {
+  return migrateProjectDocument(JSON.parse(JSON.stringify(document)) as unknown)
+}

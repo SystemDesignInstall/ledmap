@@ -21,7 +21,7 @@ function withoutPixelCapacity(): ValidateProjectInput {
 }
 
 describe('7D canonical golden document', () => {
-  it('serializes the minimal v1 project to the exact canonical text', () => {
+  it('serializes the minimal v2 project to the exact canonical text', () => {
     expect(serializeProject({ project: minimalProject() })).toBe(minimalGoldenText)
   })
 
@@ -61,9 +61,10 @@ describe('7D canonical golden document', () => {
     expect(Object.keys(mapping.screen)).toEqual(['id', 'name', 'resolution', 'mappingRegions', 'cabinetGrids'])
     expect(Object.keys(mapping.grid)).toEqual(['id', 'screen', 'name', 'columns', 'rows', 'cabinetWidth', 'cabinetHeight', 'ordering'])
     expect(Object.keys(mapping.grid.ordering)).toEqual(['numbering', 'startCorner', 'direction', 'snake'])
-    expect(Object.keys(mapping.region)).toEqual(['id', 'inputCanvas', 'screen', 'grid', 'position', 'size'])
-    expect(Object.keys(mapping.region.position)).toEqual(['x', 'y'])
-    expect(Object.keys(mapping.region.size)).toEqual(['width', 'height'])
+    expect(Object.keys(mapping.region)).toEqual(['id', 'inputCanvas', 'screen', 'grid', 'inputRect', 'screenRect', 'transform'])
+    expect(Object.keys(mapping.region.inputRect)).toEqual(['x', 'y', 'width', 'height'])
+    expect(Object.keys(mapping.region.screenRect)).toEqual(['x', 'y', 'width', 'height'])
+    expect(Object.keys(mapping.region.transform)).toEqual(['inputRotation', 'screenRotation', 'flipX', 'flipY'])
 
     const topology = mapping.hardwareTopology
     expect(Object.keys(topology)).toEqual([

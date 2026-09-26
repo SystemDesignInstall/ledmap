@@ -1,6 +1,6 @@
 import { SerializationError, type SerializationPath } from './errors.js'
 import { canonicalArrayIndex, cloneJsonValue, compareUtf16, isPlainRecord } from './json.js'
-import type { JsonObject, JsonValue, StoredProjectV1 } from './types.js'
+import type { JsonObject, JsonValue, StoredProjectV1, StoredProjectV2 } from './types.js'
 
 export type SchemaMode = 'document' | 'runtime'
 
@@ -14,6 +14,7 @@ interface NumberField {
   readonly name: string
   readonly type: 'number'
   readonly optional?: boolean
+  readonly values?: readonly number[]
 }
 
 interface BooleanField {
@@ -31,6 +32,7 @@ interface RecordField {
   readonly name: string
   readonly type: 'record'
   readonly fields: readonly FieldSpec[]
+  readonly optional?: boolean
 }
 
 interface ArrayField {
@@ -99,13 +101,38 @@ const gridFields: readonly FieldSpec[] = [
   { name: 'ordering', type: 'record', fields: orderingFields },
 ]
 
-const regionFields: readonly FieldSpec[] = [
+const regionFieldsV1: readonly FieldSpec[] = [
   { name: 'id', type: 'string' },
   { name: 'inputCanvas', type: 'string' },
   { name: 'screen', type: 'string' },
   { name: 'grid', type: 'string' },
   { name: 'position', type: 'record', fields: xyFields },
   { name: 'size', type: 'record', fields: sizeFields },
+]
+
+const rectFields: readonly FieldSpec[] = [...xyFields, ...sizeFields]
+
+const maskFields: readonly FieldSpec[] = [
+  { name: 'enabled', type: 'boolean' },
+  { name: 'points', type: 'array', items: { kind: 'record', fields: xyFields } },
+]
+
+const transformFields: readonly FieldSpec[] = [
+  { name: 'inputRotation', type: 'number', values: [0, 90, 180, 270] },
+  { name: 'screenRotation', type: 'number', values: [0, 90, 180, 270] },
+  { name: 'flipX', type: 'boolean' },
+  { name: 'flipY', type: 'boolean' },
+  { name: 'mask', type: 'record', fields: maskFields, optional: true },
+]
+
+const regionFieldsV2: readonly FieldSpec[] = [
+  { name: 'id', type: 'string' },
+  { name: 'inputCanvas', type: 'string' },
+  { name: 'screen', type: 'string' },
+  { name: 'grid', type: 'string' },
+  { name: 'inputRect', type: 'record', fields: rectFields },
+  { name: 'screenRect', type: 'record', fields: rectFields },
+  { name: 'transform', type: 'record', fields: transformFields },
 ]
 
 const processorFields: readonly FieldSpec[] = [
@@ -186,16 +213,29 @@ const topologyFields: readonly FieldSpec[] = [
   { name: 'receiverOrder', type: 'array', items: { kind: 'record', fields: receiverOrderFields } },
 ]
 
-const mappingFields: readonly FieldSpec[] = [
+const mappingFieldsV1: readonly FieldSpec[] = [
   { name: 'inputCanvas', type: 'record', fields: inputCanvasFields },
   { name: 'screen', type: 'record', fields: screenFields },
   { name: 'grid', type: 'record', fields: gridFields },
-  { name: 'region', type: 'record', fields: regionFields },
+  { name: 'region', type: 'record', fields: regionFieldsV1 },
   { name: 'hardwareTopology', type: 'record', fields: topologyFields },
 ]
 
-const projectFields: readonly FieldSpec[] = [
-  { name: 'mapping', type: 'record', fields: mappingFields },
+const mappingFieldsV2: readonly FieldSpec[] = [
+  { name: 'inputCanvas', type: 'record', fields: inputCanvasFields },
+  { name: 'screen', type: 'record', fields: screenFields },
+  { name: 'grid', type: 'record', fields: gridFields },
+  { name: 'region', type: 'record', fields: regionFieldsV2 },
+  { name: 'hardwareTopology', type: 'record', fields: topologyFields },
+]
+
+const projectFieldsV1: readonly FieldSpec[] = [
+  { name: 'mapping', type: 'record', fields: mappingFieldsV1 },
+  { name: 'rules', type: 'array', items: { kind: 'json' } },
+]
+
+const projectFieldsV2: readonly FieldSpec[] = [
+  { name: 'mapping', type: 'record', fields: mappingFieldsV2 },
   { name: 'rules', type: 'array', items: { kind: 'json' } },
 ]
 
@@ -257,7 +297,11 @@ function checkFieldValue(field: FieldSpec, value: unknown, path: SerializationPa
     if (typeof value !== 'string') fail(mode, path, 'a string')
     return value
   }
-  if (field.type === 'number') return checkNumber(value, path, mode)
+  if (field.type === 'number') {
+    const checked = checkNumber(value, path, mode)
+    if (field.values !== undefined && !field.values.includes(checked)) fail(mode, path, `one of: ${field.values.join(', ')}`)
+    return checked
+  }
   if (field.type === 'boolean') {
     if (typeof value !== 'boolean') fail(mode, path, 'a boolean')
     return value
@@ -292,7 +336,7 @@ function checkRecordFields(value: unknown, fields: readonly FieldSpec[], path: S
     const fieldValue: unknown = descriptor.value
     if (fieldValue === undefined) {
       if ('optional' in field && field.optional && mode === 'runtime') continue
-      boundaryFail(fieldPath, 'a defined value; undefined is only allowed for receiver pixelCapacity at save')
+      boundaryFail(fieldPath, 'a defined value; undefined is only allowed for optional fields at save')
     }
     output[field.name] = checkFieldValue(field, fieldValue, fieldPath, mode)
   }
@@ -301,8 +345,12 @@ function checkRecordFields(value: unknown, fields: readonly FieldSpec[], path: S
   return output
 }
 
-export function checkProjectPayload(value: unknown, path: SerializationPath, mode: SchemaMode): StoredProjectV1 {
-  return checkRecordFields(value, projectFields, path, mode) as unknown as StoredProjectV1
+export function checkProjectPayloadV1(value: unknown, path: SerializationPath, mode: SchemaMode): StoredProjectV1 {
+  return checkRecordFields(value, projectFieldsV1, path, mode) as unknown as StoredProjectV1
+}
+
+export function checkProjectPayload(value: unknown, path: SerializationPath, mode: SchemaMode): StoredProjectV2 {
+  return checkRecordFields(value, projectFieldsV2, path, mode) as unknown as StoredProjectV2
 }
 
 export function checkExtensionsPayload(value: unknown, path: SerializationPath, mode: SchemaMode): JsonObject {

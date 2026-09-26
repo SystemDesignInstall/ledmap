@@ -14,6 +14,8 @@ export interface Size {
   readonly height: number
 }
 
+export interface PixelRect extends PixelCoordinate, Size {}
+
 export interface GridPosition {
   readonly column: number
   readonly row: number
@@ -47,6 +49,18 @@ export function createPixelCoordinate(x: number, y: number): PixelCoordinate {
   assertNonNegativeInteger('x', x)
   assertNonNegativeInteger('y', y)
   return { x, y }
+}
+
+export function createPixelRect(x: number, y: number, width: number, height: number): PixelRect {
+  const coordinate = createPixelCoordinate(x, y)
+  const size = createSize(width, height)
+  if (!Number.isSafeInteger(coordinate.x) || !Number.isSafeInteger(coordinate.y)) {
+    throw new DomainError('INVALID_COORDINATE', 'PixelRect coordinates must use safe integers')
+  }
+  if (!Number.isSafeInteger(size.width) || !Number.isSafeInteger(size.height)) {
+    throw new DomainError('INVALID_DIMENSION', 'PixelRect dimensions must use safe integers')
+  }
+  return { ...coordinate, ...size }
 }
 
 export function createGridPosition(column: number, row: number): GridPosition {

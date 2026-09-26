@@ -34,8 +34,9 @@ const unknownFieldCases: readonly (readonly [readonly Segment[], string])[] = [
   [['project', 'mapping', 'grid'], 'extra'],
   [['project', 'mapping', 'grid', 'ordering'], 'extra'],
   [['project', 'mapping', 'region'], 'extra'],
-  [['project', 'mapping', 'region', 'position'], 'extra'],
-  [['project', 'mapping', 'region', 'size'], 'extra'],
+  [['project', 'mapping', 'region', 'inputRect'], 'extra'],
+  [['project', 'mapping', 'region', 'screenRect'], 'extra'],
+  [['project', 'mapping', 'region', 'transform'], 'extra'],
   [topologyPath('processors'), 'unused'],
   [topologyPath('ports'), 'unused'],
   [topologyPath('receivers'), 'unused'],
@@ -52,7 +53,8 @@ const wrongKindCases: readonly (readonly [readonly Segment[], unknown])[] = [
   [['project', 'mapping', 'screen', 'mappingRegions', 0], 1],
   [['project', 'mapping', 'grid', 'ordering', 'snake'], 'true'],
   [['project', 'mapping', 'grid', 'ordering', 'snake'], 1],
-  [['project', 'mapping', 'region', 'position', 'x'], '0'],
+  [['project', 'mapping', 'region', 'inputRect', 'x'], '0'],
+  [['project', 'mapping', 'region', 'transform', 'flipX'], 0],
   [['project', 'mapping', 'hardwareTopology', 'processors', 0, 'portCount'], '1'],
   [['project', 'mapping', 'hardwareTopology', 'receivers', 0, 'cabinets', 0], 1],
   [['project', 'mapping', 'hardwareTopology', 'cabinets', 0, 'flipH'], 0],
@@ -75,6 +77,8 @@ const enumCases: readonly (readonly [readonly Segment[], unknown])[] = [
   [['project', 'mapping', 'grid', 'ordering', 'direction'], 'left_to_right'],
   [['project', 'mapping', 'grid', 'ordering', 'startCorner'], 'Top Left'],
   [['project', 'mapping', 'grid', 'ordering', 'startCorner'], 'topLeft'],
+  [['project', 'mapping', 'region', 'transform', 'inputRotation'], 45],
+  [['project', 'mapping', 'region', 'transform', 'screenRotation'], 360],
 ]
 
 const requiredFieldPaths: readonly (readonly Segment[])[] = [
@@ -93,7 +97,9 @@ const requiredFieldPaths: readonly (readonly Segment[])[] = [
   ['project', 'mapping', 'grid', 'ordering'],
   ['project', 'mapping', 'grid', 'ordering', 'numbering'],
   ['project', 'mapping', 'region'],
-  ['project', 'mapping', 'region', 'size'],
+  ['project', 'mapping', 'region', 'inputRect'],
+  ['project', 'mapping', 'region', 'screenRect'],
+  ['project', 'mapping', 'region', 'transform'],
   ['project', 'mapping', 'hardwareTopology'],
   ['project', 'mapping', 'hardwareTopology', 'processors'],
   ['project', 'mapping', 'hardwareTopology', 'processors', 0, 'name'],
@@ -110,7 +116,7 @@ const requiredFieldPaths: readonly (readonly Segment[])[] = [
   ['project', 'rules'],
 ]
 
-describe('7D closed v1 schema', () => {
+describe('closed v2 schema', () => {
   it('accepts the minimal document and returns an equal value', () => {
     const document = freshDocument()
     expect(migrateProjectDocument(document)).toEqual(document)

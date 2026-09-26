@@ -101,8 +101,8 @@ describe('Project validation acceptance', () => {
 describe('Project report ownership and compactness', () => {
   it.each(['valid', 'input', 'mapping', 'remap'] as const)('returns deeply immutable %s report without mutating input', stage => {
     const input = projectFixture()
-    if (stage === 'input') setAt(input, ['mapping', 'region', 'size'], null)
-    if (stage === 'mapping') setAt(input, ['mapping', 'region', 'position', 'x'], 999)
+    if (stage === 'input') setAt(input, ['mapping', 'region', 'inputRect'], null)
+    if (stage === 'mapping') setAt(input, ['mapping', 'region', 'inputRect', 'x'], 999)
     if (stage === 'remap') setAt(input, ['rules'], [{}])
     const before = copy(input)
     const report = validateProject(input)
@@ -132,7 +132,11 @@ describe('Project report ownership and compactness', () => {
       ...tiny.mapping,
       inputCanvas: { ...tiny.mapping.inputCanvas, resolution: { width, height: 1 } },
       screen: { ...tiny.mapping.screen, resolution: { width, height: 1 } },
-      region: { ...tiny.mapping.region, position: { x: 0, y: 0 }, size: { width, height: 1 } },
+      region: {
+        ...tiny.mapping.region,
+        inputRect: { x: 0, y: 0, width, height: 1 },
+        screenRect: { x: 0, y: 0, width, height: 1 },
+      },
       hardwareTopology: {
         ...tiny.mapping.hardwareTopology,
         cabinets: tiny.mapping.hardwareTopology.cabinets.map(c => ({ ...c, pixelWidth: width, pixelHeight: 1 })),

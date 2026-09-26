@@ -5,9 +5,9 @@ import {
 import type { RemapRuleDescriptor } from '../remap-engine/index.js'
 import type { ValidateProjectInput } from '../validation/index.js'
 import { deepFreeze } from './json.js'
-import type { ProjectDocumentV1 } from './types.js'
+import type { ProjectDocument } from './types.js'
 
-export function reconstructProject(document: ProjectDocumentV1): ValidateProjectInput {
+export function reconstructProject(document: ProjectDocument): ValidateProjectInput {
   const { mapping, rules } = document.project
   const topology = mapping.hardwareTopology
   const project: ValidateProjectInput = {
@@ -43,8 +43,20 @@ export function reconstructProject(document: ProjectDocumentV1): ValidateProject
         inputCanvas: asInputCanvasId(mapping.region.inputCanvas),
         screen: asScreenId(mapping.region.screen),
         grid: asCabinetGridId(mapping.region.grid),
-        position: { x: mapping.region.position.x, y: mapping.region.position.y },
-        size: { width: mapping.region.size.width, height: mapping.region.size.height },
+        inputRect: { ...mapping.region.inputRect },
+        screenRect: { ...mapping.region.screenRect },
+        transform: {
+          inputRotation: mapping.region.transform.inputRotation,
+          screenRotation: mapping.region.transform.screenRotation,
+          flipX: mapping.region.transform.flipX,
+          flipY: mapping.region.transform.flipY,
+          ...(mapping.region.transform.mask === undefined ? {} : {
+            mask: {
+              enabled: mapping.region.transform.mask.enabled,
+              points: mapping.region.transform.mask.points.map(point => ({ ...point })),
+            },
+          }),
+        },
       },
       hardwareTopology: {
         processors: topology.processors.map(processor => ({

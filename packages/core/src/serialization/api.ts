@@ -6,9 +6,9 @@ import { compareUtf16, isPlainRecord, parseJsonText } from './json.js'
 import { migrateProjectDocument } from './migrate.js'
 import { reconstructProject } from './reconstruct.js'
 import { assertOwnDataProperties, checkExtensionsPayload, checkProjectPayload } from './schema.js'
-import type { JsonObject, LoadedProject, ProjectDocumentV1, SerializeProjectInput } from './types.js'
+import type { JsonObject, LoadedProject, ProjectDocument, SerializeProjectInput } from './types.js'
 
-export function parseProject(text: string): ProjectDocumentV1 {
+export function parseProject(text: string): ProjectDocument {
   if (typeof text !== 'string') {
     throw new SerializationError('SERIALIZATION_INVALID_INPUT', 'parseProject requires JSON text as a string', [])
   }
@@ -60,5 +60,5 @@ export function serializeProject(input: SerializeProjectInput): string {
   if (!validation.valid) {
     throw new SerializationError('SERIALIZATION_PROJECT_INVALID', 'Project failed validation before save', ['project'], validation)
   }
-  return writeDocument({ format: 'ledmap', schemaVersion: 1, project: storedProject, extensions })
+  return writeDocument({ format: 'ledmap', schemaVersion: 2, project: storedProject, extensions })
 }

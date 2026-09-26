@@ -9,6 +9,7 @@ type Shape =
 
 const size: Shape = { kind: 'record', fields: [['width', 'number'], ['height', 'number']] }
 const xy: Shape = { kind: 'record', fields: [['x', 'number'], ['y', 'number']] }
+const rect: Shape = { kind: 'record', fields: [['x', 'number'], ['y', 'number'], ['width', 'number'], ['height', 'number']] }
 const strings: Shape = { kind: 'array', item: 'string' }
 const ordering: Shape = { kind: 'record', fields: [
   ['numbering', { kind: 'enum', values: ['row', 'column'] }],
@@ -53,7 +54,14 @@ const mapping: Shape = { kind: 'record', fields: [
     ['cabinetWidth', 'number'], ['cabinetHeight', 'number'], ['ordering', ordering],
   ] }],
   ['region', { kind: 'record', fields: [
-    ['id', 'string'], ['inputCanvas', 'string'], ['screen', 'string'], ['grid', 'string'], ['position', xy], ['size', size],
+    ['id', 'string'], ['inputCanvas', 'string'], ['screen', 'string'], ['grid', 'string'],
+    ['inputRect', rect], ['screenRect', rect],
+    ['transform', { kind: 'record', fields: [
+      ['inputRotation', 'number'], ['screenRotation', 'number'], ['flipX', 'boolean'], ['flipY', 'boolean'],
+      ['mask', { kind: 'optional', value: { kind: 'record', fields: [
+        ['enabled', 'boolean'], ['points', { kind: 'array', item: xy }],
+      ] } }],
+    ] }],
   ] }],
   ['hardwareTopology', topology],
 ] }

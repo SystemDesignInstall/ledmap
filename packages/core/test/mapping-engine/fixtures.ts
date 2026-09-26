@@ -13,7 +13,11 @@ export function mappingInput(hardwareTopology: HardwareTopologyInput, columns: n
     mappingRegions: [asMappingRegionId('region')], cabinetGrids: [asCabinetGridId('grid')],
   })
   const grid = createCabinetGrid({ id: 'grid', screen: screen.id, name: 'Grid', columns, rows, cabinetWidth: cw, cabinetHeight: ch })
-  const region = createMappingRegion({ id: 'region', inputCanvas: inputCanvas.id, screen: screen.id, grid: grid.id, position: { x, y }, size: screen.resolution })
+  const region = createMappingRegion({
+    id: 'region', inputCanvas: inputCanvas.id, screen: screen.id, grid: grid.id,
+    inputRect: { x, y, ...screen.resolution }, screenRect: { x: 0, y: 0, ...screen.resolution },
+    transform: { inputRotation: 0, screenRotation: 0, flipX: false, flipY: false },
+  })
   return { inputCanvas, screen, grid, region, hardwareTopology }
 }
 

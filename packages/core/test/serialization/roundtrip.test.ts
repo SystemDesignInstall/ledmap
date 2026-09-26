@@ -39,12 +39,12 @@ describe('7D round-trip invariants', () => {
 
   it('normalizes negative zero to zero without changing geometry', () => {
     const project = minimalProject()
-    mutable(project.mapping.region.position).x = -0
+    mutable(project.mapping.region.inputRect).x = -0
     const text = serializeProject({ project })
     expect(text).toContain('"x": 0')
     expect(text).not.toContain('-0')
     const loaded = loadProject(text)
-    expect(Object.is(loaded.project.mapping.region.position.x, 0)).toBe(true)
+    expect(Object.is(loaded.project.mapping.region.inputRect.x, 0)).toBe(true)
     expect(loaded.validation.valid).toBe(true)
   })
 
@@ -67,7 +67,7 @@ describe('7D round-trip invariants', () => {
     expect(Object.isFrozen(parseProject(minimalGoldenText))).toBe(true)
   })
 
-  it('canonicalizes any equivalent v1 text to the same bytes', () => {
+  it('canonicalizes any equivalent v2 text to the same bytes', () => {
     const compact = JSON.stringify(minimalDocument())
     const loaded = loadProject(compact)
     expect(serializeProject({ project: loaded.project, extensions: loaded.extensions })).toBe(minimalGoldenText)
@@ -95,6 +95,33 @@ describe('7D round-trip invariants', () => {
     expect(text).not.toContain('pixelCapacity')
     const loaded = loadProject(text)
     expect(loaded.project.mapping.hardwareTopology.receivers[0]!.pixelCapacity).toBeUndefined()
+    expect(serializeProject({ project: loaded.project, extensions: loaded.extensions })).toBe(text)
+  })
+
+  it('preserves spatial transforms and polygon masks semantically', () => {
+    const base = minimalProject()
+    const project: ValidateProjectInput = {
+      ...base,
+      mapping: {
+        ...base.mapping,
+        region: {
+          ...base.mapping.region,
+          transform: {
+            inputRotation: 180,
+            screenRotation: 180,
+            flipX: true,
+            flipY: true,
+            mask: {
+              enabled: true,
+              points: [{ x: 0, y: 0 }, { x: 2, y: 0 }, { x: 2, y: 3 }, { x: 0, y: 3 }],
+            },
+          },
+        },
+      },
+    }
+    const text = serializeProject({ project })
+    const loaded = loadProject(text)
+    expect(loaded.project).toEqual(project)
     expect(serializeProject({ project: loaded.project, extensions: loaded.extensions })).toBe(text)
   })
 })

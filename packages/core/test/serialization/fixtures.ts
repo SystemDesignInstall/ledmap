@@ -45,7 +45,10 @@ export function minimalProject(): ValidateProjectInput {
       },
       region: {
         id: asMappingRegionId('region'), inputCanvas: asInputCanvasId('input'), screen: asScreenId('screen'),
-        grid: asCabinetGridId('grid'), position: { x: 0, y: 0 }, size: { width: 2, height: 3 },
+        grid: asCabinetGridId('grid'),
+        inputRect: { x: 0, y: 0, width: 2, height: 3 },
+        screenRect: { x: 0, y: 0, width: 2, height: 3 },
+        transform: { inputRotation: 0, screenRotation: 0, flipX: false, flipY: false },
       },
       hardwareTopology: {
         processors: [{ id: asProcessorId('P'), name: 'Processor', portCount: 1 }],
@@ -74,7 +77,7 @@ export function minimalProject(): ValidateProjectInput {
 export function minimalDocument(): Record<string, unknown> {
   return {
     format: 'ledmap',
-    schemaVersion: 1,
+    schemaVersion: 2,
     project: {
       mapping: {
         inputCanvas: { id: 'input', resolution: { width: 2, height: 3 } },
@@ -83,7 +86,12 @@ export function minimalDocument(): Record<string, unknown> {
           id: 'grid', screen: 'screen', name: 'Grid', columns: 1, rows: 1, cabinetWidth: 100, cabinetHeight: 100,
           ordering: { numbering: 'row', startCorner: 'top-left', direction: 'left-to-right', snake: false },
         },
-        region: { id: 'region', inputCanvas: 'input', screen: 'screen', grid: 'grid', position: { x: 0, y: 0 }, size: { width: 2, height: 3 } },
+        region: {
+          id: 'region', inputCanvas: 'input', screen: 'screen', grid: 'grid',
+          inputRect: { x: 0, y: 0, width: 2, height: 3 },
+          screenRect: { x: 0, y: 0, width: 2, height: 3 },
+          transform: { inputRotation: 0, screenRotation: 0, flipX: false, flipY: false },
+        },
         hardwareTopology: {
           processors: [{ id: 'P', name: 'Processor', portCount: 1 }],
           ports: [{ id: 'P:0', processor: 'P', index: 0, receiverCapacity: 1 }],
@@ -103,9 +111,21 @@ export function minimalDocument(): Record<string, unknown> {
   }
 }
 
+export function minimalDocumentV1(): Record<string, unknown> {
+  const document = minimalDocument()
+  document['schemaVersion'] = 1
+  const project = document['project'] as Record<string, unknown>
+  const mapping = project['mapping'] as Record<string, unknown>
+  mapping['region'] = {
+    id: 'region', inputCanvas: 'input', screen: 'screen', grid: 'grid',
+    position: { x: 0, y: 0 }, size: { width: 2, height: 3 },
+  }
+  return document
+}
+
 export const minimalGoldenText = `{
   "format": "ledmap",
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "project": {
     "mapping": {
       "inputCanvas": {
@@ -149,13 +169,23 @@ export const minimalGoldenText = `{
         "inputCanvas": "input",
         "screen": "screen",
         "grid": "grid",
-        "position": {
+        "inputRect": {
           "x": 0,
-          "y": 0
-        },
-        "size": {
+          "y": 0,
           "width": 2,
           "height": 3
+        },
+        "screenRect": {
+          "x": 0,
+          "y": 0,
+          "width": 2,
+          "height": 3
+        },
+        "transform": {
+          "inputRotation": 0,
+          "screenRotation": 0,
+          "flipX": false,
+          "flipY": false
         }
       },
       "hardwareTopology": {
@@ -253,7 +283,10 @@ export function multiProcessorProject(): ValidateProjectInput {
       },
       region: {
         id: asMappingRegionId('region'), inputCanvas: asInputCanvasId('input'), screen: asScreenId('screen'),
-        grid: asCabinetGridId('grid'), position: { x: 0, y: 0 }, size: { width: 4, height: 2 },
+        grid: asCabinetGridId('grid'),
+        inputRect: { x: 0, y: 0, width: 4, height: 2 },
+        screenRect: { x: 0, y: 0, width: 4, height: 2 },
+        transform: { inputRotation: 0, screenRotation: 0, flipX: false, flipY: false },
       },
       hardwareTopology: {
         processors: [

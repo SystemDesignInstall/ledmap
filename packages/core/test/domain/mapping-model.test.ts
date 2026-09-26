@@ -3,7 +3,9 @@ import { asCabinetGridId, asInputCanvasId, asScreenId, createInputCanvas, create
 
 const region = {
   id: 'region', inputCanvas: asInputCanvasId('input'), screen: asScreenId('screen'), grid: asCabinetGridId('grid'),
-  position: { x: 100, y: 50 }, size: { width: 512, height: 384 },
+  inputRect: { x: 100, y: 50, width: 512, height: 384 },
+  screenRect: { x: 10, y: 20, width: 512, height: 384 },
+  transform: { inputRotation: 0, screenRotation: 0, flipX: false, flipY: false } as const,
 }
 
 describe('Mapping domain model', () => {
@@ -14,21 +16,24 @@ describe('Mapping domain model', () => {
     expect(canvas.resolution).not.toBe(resolution)
     const value = createMappingRegion(region)
     expect(value).toEqual(region)
-    expect(value.position).not.toBe(region.position)
-    expect(value.size).not.toBe(region.size)
+    expect(value.inputRect).not.toBe(region.inputRect)
+    expect(value.screenRect).not.toBe(region.screenRect)
+    expect(value.transform).not.toBe(region.transform)
     expect(createInputCanvas({ id: 'large', resolution: { width: Number.MAX_SAFE_INTEGER, height: 1 } }).resolution.width).toBe(Number.MAX_SAFE_INTEGER)
   })
 
   it.each([0, -1, 0.5, NaN, Infinity, -Infinity, Number.MAX_SAFE_INTEGER + 1])('rejects invalid dimensions %s', value => {
     for (const axis of ['width', 'height'] as const) {
       expect(() => createInputCanvas({ id: 'input', resolution: { width: 1, height: 1, [axis]: value } })).toThrowError(/INVALID_DIMENSION/)
-      expect(() => createMappingRegion({ ...region, size: { ...region.size, [axis]: value } })).toThrowError(/INVALID_DIMENSION/)
+      expect(() => createMappingRegion({ ...region, inputRect: { ...region.inputRect, [axis]: value } })).toThrowError(/INVALID_DIMENSION/)
+      expect(() => createMappingRegion({ ...region, screenRect: { ...region.screenRect, [axis]: value } })).toThrowError(/INVALID_DIMENSION/)
     }
   })
 
   it.each([-1, 0.5, NaN, Infinity, -Infinity, Number.MAX_SAFE_INTEGER + 1])('rejects invalid source positions %s', value => {
     for (const axis of ['x', 'y'] as const) {
-      expect(() => createMappingRegion({ ...region, position: { ...region.position, [axis]: value } })).toThrowError(/INVALID_COORDINATE/)
+      expect(() => createMappingRegion({ ...region, inputRect: { ...region.inputRect, [axis]: value } })).toThrowError(/INVALID_COORDINATE/)
+      expect(() => createMappingRegion({ ...region, screenRect: { ...region.screenRect, [axis]: value } })).toThrowError(/INVALID_COORDINATE/)
     }
   })
 })

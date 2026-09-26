@@ -1,14 +1,16 @@
 import { asMappingRegionId, type CabinetGridId, type InputCanvasId, type MappingRegionId, type ScreenId } from './ids.js'
-import { createPixelCoordinate, createSize, type PixelCoordinate, type Size } from './coordinates.js'
+import { createPixelRect, type PixelRect } from './coordinates.js'
 import { DomainError } from './errors.js'
+import { createMappingTransform, type MappingTransform } from './mapping-transform.js'
 
 export interface MappingRegion {
   readonly id: MappingRegionId
   readonly inputCanvas: InputCanvasId
   readonly screen: ScreenId
   readonly grid: CabinetGridId
-  readonly position: PixelCoordinate
-  readonly size: Size
+  readonly inputRect: PixelRect
+  readonly screenRect: PixelRect
+  readonly transform: MappingTransform
 }
 
 export interface CreateMappingRegionInput {
@@ -16,25 +18,31 @@ export interface CreateMappingRegionInput {
   inputCanvas: InputCanvasId
   screen: ScreenId
   grid: CabinetGridId
-  position: PixelCoordinate
-  size: Size
+  inputRect: PixelRect
+  screenRect: PixelRect
+  transform: MappingTransform
 }
 
 export function createMappingRegion(input: CreateMappingRegionInput): MappingRegion {
-  const position = createPixelCoordinate(input.position.x, input.position.y)
-  const size = createSize(input.size.width, input.size.height)
-  if (!Number.isSafeInteger(position.x) || !Number.isSafeInteger(position.y)) {
-    throw new DomainError('INVALID_COORDINATE', 'MappingRegion position must use safe integers')
-  }
-  if (!Number.isSafeInteger(size.width) || !Number.isSafeInteger(size.height)) {
-    throw new DomainError('INVALID_DIMENSION', 'MappingRegion size must use safe integers')
-  }
+  const inputRect = createPixelRect(input.inputRect.x, input.inputRect.y, input.inputRect.width, input.inputRect.height)
+  const screenRect = createPixelRect(input.screenRect.x, input.screenRect.y, input.screenRect.width, input.screenRect.height)
+  const transform = createMappingTransform(input.transform)
+  validateMaskBounds(transform, inputRect)
   return {
     id: asMappingRegionId(input.id),
     inputCanvas: input.inputCanvas,
     screen: input.screen,
     grid: input.grid,
-    position,
-    size,
+    inputRect,
+    screenRect,
+    transform,
+  }
+}
+
+function validateMaskBounds(transform: MappingTransform, inputRect: PixelRect): void {
+  for (const point of transform.mask?.points ?? []) {
+    if (point.x > inputRect.width || point.y > inputRect.height) {
+      throw new DomainError('INVALID_MASK', 'PolygonMask points must be inside the input-local rectangle bounds')
+    }
   }
 }

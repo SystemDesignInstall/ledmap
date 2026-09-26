@@ -13,6 +13,10 @@ function codes(value: unknown): string[] {
   return validateHardwareProfile(value).checks.map(check => check.code)
 }
 
+function report(value: unknown) {
+  return validateHardwareProfile(value)
+}
+
 function paths(value: unknown, code: string): unknown[][] {
   return validateHardwareProfile(value).checks.filter(check => check.code === code).map(check => [...check.path])
 }
@@ -114,6 +118,38 @@ describe('7E identity contract', () => {
     const colliding = mutableBundle()
     section(entry(colliding, 'moduleProfiles'), 'identity')['id'] = 'ledmap.test.bundle'
     expect(paths(colliding, 'PROFILE_DUPLICATE_ID')).toEqual([['moduleProfiles', 0, 'identity', 'id']])
+  })
+
+  it('rejects a collision between the addressing profile id and the bundle id', () => {
+    const bundle = mutableBundle()
+    section(section(bundle, 'addressingProfile'), 'identity')['id'] = 'ledmap.test.bundle'
+    expect(paths(bundle, 'PROFILE_DUPLICATE_ID')).toEqual([['addressingProfile', 'identity', 'id']])
+  })
+
+  it('keeps the collision, the unresolvable reference and the version check in the fixed phase order', () => {
+    const bundle = mutableBundle()
+    section(section(bundle, 'addressingProfile'), 'identity')['id'] = 'ledmap.test.bundle'
+    section(section(bundle, 'addressingProfile'), 'identity')['version'] = 'bad'
+    expect(report(bundle).checks).toEqual([
+      expect.objectContaining({ code: 'PROFILE_DUPLICATE_ID', path: ['addressingProfile', 'identity', 'id'] }),
+      expect.objectContaining({ code: 'PROFILE_REFERENCE_UNKNOWN', path: ['processorProfiles', 0, 'addressingProfileId'] }),
+      expect.objectContaining({ code: 'PROFILE_VERSION_INVALID', path: ['addressingProfile', 'identity', 'version'] }),
+    ])
+  })
+
+  it('reports every collision with the bundle id in one report', () => {
+    const bundle = mutableBundle()
+    for (const holder of identityHolders) {
+      if (holder.name === 'bundle') continue
+      holder.pick(bundle)['id'] = 'ledmap.test.bundle'
+    }
+    expect(paths(bundle, 'PROFILE_DUPLICATE_ID')).toEqual([
+      ['processorProfiles', 0, 'identity', 'id'],
+      ['portProfiles', 0, 'identity', 'id'],
+      ['receiverProfiles', 0, 'identity', 'id'],
+      ['moduleProfiles', 0, 'identity', 'id'],
+      ['addressingProfile', 'identity', 'id'],
+    ])
   })
 
   it('allows the same id in different profile arrays and resolves references array-locally', () => {

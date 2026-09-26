@@ -500,6 +500,15 @@ function checkDuplicateIds(
   }
 }
 
+function checkAddressingIdentityCollision(
+  checks: MutableCheck[],
+  bundleId: string | null,
+  addressingId: string | null,
+): void {
+  if (bundleId === null || addressingId === null || addressingId !== bundleId) return
+  add(checks, 'PROFILE_DUPLICATE_ID', ['addressingProfile', 'identity', 'id'], `profile id ${addressingId} collides with the bundle identity id`)
+}
+
 function isFullyReadable(entries: readonly { readonly id: string | null }[] | null): boolean {
   return entries !== null && entries.every(entry => entry.id !== null)
 }
@@ -664,6 +673,7 @@ export function validateHardwareProfile(input: unknown): HardwareProfileValidati
     { path: 'receiverProfiles', entries: receivers },
     { path: 'moduleProfiles', entries: modules },
   ])
+  checkAddressingIdentityCollision(checks, bundleIdentity.id, addressing.id)
   checkReferences(checks, transport, modules, processors, ports, receivers, addressing.id)
   const geometry = checkDerivedGeometry(checks, transport, modules)
   checkDeclaredCapacity(checks, processors, ports)

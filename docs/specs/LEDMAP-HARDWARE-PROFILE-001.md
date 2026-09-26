@@ -123,6 +123,22 @@ interface HardwareProfileRef {
 
 Профили ссылаются друг на друга по `id` (модель umbrella §4–§8), что даёт проверяемую referential integrity.
 
+**Кто несёт `identity`, а кто нет:**
+
+```text
+Identity-bearing constituent profiles:
+  ProcessorProfile
+  PortProfile
+  ReceiverProfile
+  ModuleProfile
+  AddressingProfile
+
+Embedded bundle configuration (identity НЕ несёт):
+  PixelTransportProfile
+```
+
+`PixelTransportProfile` — встроенная конфигурация transport внутри bundle, а не отдельный идентифицируемый профиль: в 7E у неё нет собственного `ProfileIdentity`, а её версия определяется `HardwareProfileBundle.identity.version`. Bundle содержит ровно один `PixelTransportProfile`, поэтому ссылаться на него по `id` не требуется; связь с `ModuleProfile` задаётся `moduleProfileId` (§6.3, §6.3a).
+
 ```ts
 interface HardwareProfileBundle {
   readonly identity: ProfileIdentity
@@ -354,17 +370,23 @@ ModuleProfile:
   derived physicalCabinetWidth/Height : 128 / 128   (§6.3a, вычисляется, не хранится)
 
 ReceiverProfile:
+  identity.id                    : "ledmap.generic.ref001.receiver"
+  identity.version               : "1.0.0"
   maxTransportPixels            : 65536       (4 × 16384)
   maxCabinets                   : 4
   portProfileId                 : "ledmap.generic.ref001.port"
 
 PortProfile:
+  identity.id                    : "ledmap.generic.ref001.port"
+  identity.version               : "1.0.0"
   maxTransportPixels            : 131072      (2 × 65536)
   maxReceivers                  : 2
   receiverProfileIds            : ["ledmap.generic.ref001.receiver"]
   addressingMode                : CONTINUOUS
 
 ProcessorProfile:
+  identity.id                    : "ledmap.generic.ref001.processor"
+  identity.version               : "1.0.0"
   maxPorts                      : 4
   portProfileIds                : ["ledmap.generic.ref001.port"] × 4
   addressingProfileId           : "ledmap.generic.ref001.addressing"
@@ -414,13 +436,13 @@ function unresolveTransportPixel(bundle, transportIndex): { x, y } | null
 
 Тестовые области (Vitest, `packages/core/test/hardware-profile/`):
 
-1. Shape и identity: bundle и все constituent profiles, `id`/`version` (включая `identity` у `AddressingProfile`), уникальность id, referential integrity, unknown references; `addressingProfileId` против `bundle.addressingProfile.identity.id`.
+1. Shape и identity: bundle и все constituent profiles, `id`/`version` у **bundle + всех identity-bearing constituent profiles** (`ProcessorProfile`, `PortProfile`, `ReceiverProfile`, `ModuleProfile`, `AddressingProfile`), уникальность id, referential integrity, unknown references; `addressingProfileId` против `bundle.addressingProfile.identity.id`; `PixelTransportProfile` identity не несёт и проверяется как embedded-конфигурация.
 2. Validation: коды §8, порядок checks, полнота списка, `valid === true` iff пустой список, deep immutability, отсутствие мутации входа, детерминированный повторный прогон; **dependency/skip semantics** — malformed prerequisites (например, `moduleProfiles` неверного shape) дают только structural diagnostics, а dependent `PROFILE_REFERENCE_UNKNOWN` / geometry / mask / transport ошибки **не** выдаются (отсутствие cascade), и наоборот: при валидных prerequisites dependent проверки выполняются.
 3. Capacity/constraints: объявленные finite limits (`maxTransportPixels`, `maxCabinets`, `maxReceivers`, `maxPorts`) проверяются; `0` отличается от отсутствия; **отсутствие поля не даёт `PROFILE_CAPACITY_INVALID` и не трактуется как unlimited** — валидатор не создаёт upper bound по необъявленному измерению; bundle без объявленных транспортных пределов остаётся `valid`; запрет подмены 6B `Receiver.pixelCapacity`. Numeric domains §6.5 проверяются на границах: negative/fractional/unsafe значения в `physicalWidth`, `moduleCountX`, `transportPixelCountPerCabinet`, `activePixelMask.width/height`, `addressWidthBits` отклоняются, несмотря на положительное derived-произведение; `0` в declared limits принимается; `transportPixelCountPerCabinet: 0` и mask с пустым `activePixels` отклоняются (empty transport set не поддерживается).
 4. Geometry selection: `moduleProfileId` разрешается ровно в один `ModuleProfile`; derived `physicalCabinetWidth/Height` = `physicalWidth × moduleCountX` / `physicalHeight × moduleCountY`; positive safe integer; bundle с несколькими `moduleProfiles` использует ровно профиль из `moduleProfileId`; неразрешимая ссылка и переполнение геометрии → соответствующие коды.
 5. Transport forward/inverse: identity sweep всего Cabinet REF-001 (16384 px) для `ROW_MAJOR` и `COLUMN_MAJOR`, bijektivность, round-trip всех индексов, out-of-range → `null`, `active = false` → `null`, детерминированный порядок.
 6. Active mask × scanMode: одна masked fixture прогоняется **и для `ROW_MAJOR`, и для `COLUMN_MAJOR`** и MUST доказать, что оба дают корректные bijektivные mappings, но **разные** порядки (mask задаёт membership, scanMode — ordering); membership-set канонический row-major, уникальный и строго возрастающий; round-trip в обоих режимах; `mask.width/height` ≠ derived geometry → `PROFILE_MASK_INVALID`; `transportPixelCountPerCabinet` ≠ числа активных пикселей → `PROFILE_TRANSPORT_INCONSISTENT`.
-7. `LEDMAP-GENERIC-REF001`: константы профиля (включая identity всех профилей и derived geometry 128 × 128), полный sweep 196608 px по всем 12 Cabinet в logical- и physical-доменах, совпадение с принятой 7A/6A математикой без изменений engines, детерминированные ёмкости.
+7. `LEDMAP-GENERIC-REF001`: константы профиля (identity bundle и всех identity-bearing constituent profiles, включая `processor` / `port` / `receiver` / `module` / `addressing`, плюс derived geometry 128 × 128), полный sweep 196608 px по всем 12 Cabinet в logical- и physical-доменах, совпадение с принятой 7A/6A математикой без изменений engines, детерминированные ёмкости.
 8. Split narrowing: `SplitLevel` содержит только `CABINET`; `MODULE` / `PIXEL_BLOCK` и `CABINET → несколько Receiver` отклоняются явным кодом или отсутствуют в типе; тест фиксирует запрет.
 9. Границы: `validateProject` (7C) не принимает профиль и не вызывает `validateHardwareProfile`; `.ledmap` v1 loader отвергает `profileId`/`profileVersion` как unknown fields; в `extensions` profile identity игнорируется; 7D/6B/7A/7B публичные API и поведение не изменены.
 10. Regression: 1087 baseline-тестов (41 core-файл / 1051 core-only) остаются зелёными без правок; REF-001 sweeps 6A/6B/7A/7B/7D не редактируются.

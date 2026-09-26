@@ -9,6 +9,30 @@
 
 ---
 
+# 0. Staged implementation (обязательно к прочтению)
+
+Этот документ — **architecture umbrella**, а не исполняемый production contract целиком. После закрытия Phase 7 (6A–7D) он разделён на три gate'а с явной последовательностью:
+
+```text
+Phase 7 CLOSED (6A/6B/7A/7B/7C/7D)
+      ↓
+7E Hardware Profile v1        — normative: LEDMAP-HARDWARE-PROFILE-001 (Accepted, docs-only)
+      ↓
+Address Encoder               — отдельный следующий gate, ещё не написан
+      ↓
+Final Remap / ReverseIndex    — отдельный contract LEDMAP-FINAL-REMAP-REVERSEINDEX-SPEC-001
+```
+
+- **Normative для production 7E:** только [LEDMAP-HARDWARE-PROFILE-001](LEDMAP-HARDWARE-PROFILE-001.md) — bundle, identity, pixel domains, `PixelTransportProfile`, transport lookup, capacity/constraint semantics, profile validation, `LEDMAP-GENERIC-REF001`.
+- **Не normative для 7E:** §24–§27 (Hardware Address, vendor encoding, AddressEncoder, Encoder Context), §29–§32 (forward/reverse address resolution, round-trip, transport round-trip), §34–§36 (capacity validation, severity, duplicate/missing address), §39–§40 (project-state integration, invalidation), §46 (Addressing REF-001), §50 (profile confidence), §54–§56. Они остаются архитектурным обоснованием будущих gate'ов и не реализуются в 7E.
+- **Расхождения в пользу принятых контрактов:** там, где этот документ описывает project-level topology или ёмкость (в частности §18 в части project capacity, §20, §38), действует принятая математика 6B/7C. Изменение `Receiver.pixelCapacity` или `resolveHardware()` под profile transport capacity не входит ни в один текущий gate.
+- **Persistence профиля не определён:** `.ledmap` v1 не содержит `profileId`/`profileVersion` (7D), `extensions` не являются обходом. Первое решение о persistence профиля — отдельный versioning/serialization contract.
+- **Assignment unit:** в 7E assignment unit — целый Cabinet; `SplitLevel` ниже `CABINET` (§9 `MODULE`, §9 `PIXEL_BLOCK`) и Cabinet → несколько Receiver отклоняются.
+
+Umbrella остаётся 1.0 Draft: он не понижается и не переписывается, его роль теперь — обоснование и верхнеуровневая схема для трёх последовательных gate'ов.
+
+---
+
 # 1. Назначение
 
 Этот документ определяет формальный контракт между:

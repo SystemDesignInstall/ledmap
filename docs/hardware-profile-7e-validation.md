@@ -6,7 +6,7 @@
 
 Новый модуль `packages/core/src/hardware-profile`, экспортированный через `packages/core/src/index.js` аддитивно.
 
-Типы: `HardwareProfileRef`, `ProfileIdentity`, `HardwareProfileBundle`, `ProcessorProfile`, `PortProfile`, `ReceiverProfile`, `ModuleProfile`, `PixelTransportProfile`, `ActivePixelMask`, `AddressingProfile`, `TransportScanMode`, `PortAddressingMode`, `ReceiverBaseAddressMode`, `SplitLevel`, `HardwareProfileValidationCode`, `HardwareProfileCheck`, `HardwareProfileValidationReport`, `TransportPixelResolution`, `TransportPixelCoordinate`.
+Типы: `HardwareProfileRef`, `ProfileIdentity`, `HardwareProfileBundle`, `ProcessorProfile`, `PortProfile`, `ReceiverProfile`, `ModuleProfile`, `PixelTransportProfile`, `ActivePixelMask`, `AddressingProfile`, `TransportScanMode`, `PortAddressingMode`, `ReceiverBaseAddressMode`, `SplitLevel`, `HardwareProfileValidationCode`, `HardwareProfileValidationCheck`, `HardwareProfileValidationReport`, `CabinetPhysicalGeometry`, `TransportPixelResolution`, `TransportPixelCoordinate`.
 
 Функции: `validateHardwareProfile(input: unknown): HardwareProfileValidationReport`, `resolveTransportPixel(bundle, x, y): TransportPixelResolution`, `unresolveTransportPixel(bundle, transportIndex): TransportPixelCoordinate | null`, константа `LEDMAP_GENERIC_REF001`.
 
@@ -26,7 +26,7 @@
 
 Unknown fields: `Object.keys` сравнивается с закрытым набором, сортировка ключей по UTF-16 → byte-identical отчёт для двух равных, но независимо построенных bundle. `splitLevel: 'CABINET'` — единственное допустимое значение, остальные известные значения дают `PROFILE_SPLIT_LEVEL_UNSUPPORTED` и исключаются из unknown-field проверки.
 
-Identity: bundle, Processor, Port, Receiver, ModuleProfile и AddressingProfile несут `ProfileIdentity`; `PixelTransportProfile` — встроенная конфигурация bundle без собственной identity, `identity` там является unknown field. Версии — `MAJOR.MINOR.PATCH` без ведущих нулей, проверяются последней фазой для всех шести носителей. Duplicate id проверяется внутри каждой коллекции и против bundle id; один и тот же id в разных коллекциях допустим, ссылки разрешаются строго внутри своей коллекции.
+Identity: bundle, Processor, Port, Receiver, ModuleProfile и AddressingProfile несут `ProfileIdentity`; `PixelTransportProfile` — встроенная конфигурация bundle без собственной identity, `identity` там является unknown field. Версии — `MAJOR.MINOR.PATCH` без ведущих нулей, проверяются последней фазой для всех шести носителей. Duplicate id проверяется внутри каждой коллекции и против bundle id — для `processorProfiles`, `portProfiles`, `receiverProfiles`, `moduleProfiles` и для единственного `addressingProfile`; один и тот же id в разных коллекциях допустим, ссылки разрешаются строго внутри своей коллекции.
 
 Numeric domains: positive safe integers для `physicalWidth`, `physicalHeight`, `moduleCountX`, `moduleCountY`, `addressWidthBits`, `transportPixelCountPerCabinet`, `activePixelMask.width`, `activePixelMask.height` и derived `physicalCabinetWidth`/`physicalCabinetHeight`; optional declared limits `maxTransportPixels`, `maxReceivers`, `maxCabinets` — non-negative safe integers, где `0` — валидное конечное значение, отличное от отсутствия поля; `ProcessorProfile.maxPorts` обязателен и при отсутствии даёт `PROFILE_FIELD_MISSING`; derived geometry вне safe-integer диапазона даёт `PROFILE_TRANSPORT_INCONSISTENT`. Пустой transport set запрещён: `activePixels: []` даёт `PROFILE_TRANSPORT_INCONSISTENT`. `activePixels` должны быть в границах маски, уникальны и строго возрастают.
 
@@ -48,18 +48,24 @@ Derived geometry вычисляется из ModuleProfile, на который 
 
 | Проверка | Результат |
 |---|---|
-| `npm run test:core` | PASS, 50 test files, 1199/1199; прежние 1051 сохранены без правок, добавлено 148 |
+| `npm run test:core` | PASS, 50 test files, 1202/1202; прежние 1051 сохранены без правок, добавлено 151 |
 | `npm run typecheck -w @ledmap/core` | PASS |
 | `npm run build -w @ledmap/core` | PASS |
 | `npx eslint packages/core` | PASS |
 | `npx eslint .` | PASS |
-| `npm test` | PASS, 52 test files, 1235/1235; прежние 1087 сохранены без правок |
+| `npm test` | PASS, 52 test files, 1238/1238; прежние 1087 сохранены без правок |
 | `npm run test:smoke` | PASS, существующий Electron smoke без изменений |
 | `git diff --check` | PASS |
 
 Сборка app сообщает существующее предупреждение `preload config is missing`; Electron smoke проходит. Все результаты локальные, подтверждение CI не заявляется.
 
-Новые тесты: identity (32), validation (24), numeric (22), capacity (15), geometry (7), transport (11), mask (11), reference-001 (4), boundaries (22) — 148 тестов. Покрыты identity и ссылочная целостность, все коды и их порядок, dependency skip, numeric boundaries и optional limits, derived geometry и перестановка ModuleProfile, masked и unmasked `ROW_MAJOR`/`COLUMN_MAJOR` bijection, sweeps 16 384 и 196 608, детерминизм и deep freeze, prototype-pollution и non-object входы.
+Новые тесты: identity (35), validation (24), numeric (22), capacity (15), geometry (7), transport (11), mask (11), reference-001 (4), boundaries (22) — 151 тест. Покрыты identity и ссылочная целостность, включая collision `AddressingProfile.identity.id` с `identity.id` bundle и агрегирование всех collision в одном отчёте, все коды и их порядок, dependency skip, numeric boundaries и optional limits, derived geometry и перестановка ModuleProfile, masked и unmasked `ROW_MAJOR`/`COLUMN_MAJOR` bijection, sweeps 16 384 и 196 608, детерминизм и deep freeze, prototype-pollution и non-object входы.
+
+## Corrective после remote review
+
+`1fe2516` — collision `AddressingProfile.identity.id` = `HardwareProfileBundle.identity.id` больше не проходит: §6.3 требует, чтобы каждый id внутри bundle отличался от `identity.id` bundle, а первая проверка это требование выполняла только для четырёх массивов constituent profiles. Добавлена `PROFILE_DUPLICATE_ID` с path `["addressingProfile", "identity", "id"]` в фазе duplicate ids, сразу после массивов и до referential integrity. Public API и остальные semantics не изменены.
+
+`§6.2` спецификации приведён к принятой production трактовке: `ProcessorProfile.maxPorts` обязателен, опциональны только `PortProfile.maxTransportPixels?`, `PortProfile.maxReceivers?`, `ReceiverProfile.maxTransportPixels?`, `ReceiverProfile.maxCabinets?`.
 
 ## Границы diff
 

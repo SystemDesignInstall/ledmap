@@ -218,7 +218,7 @@ interface AddressingProfile {
 
 ## 6.2 Терминология ёмкости
 
-Профильные ёмкости выражаются в **transport pixels** и называются `maxTransportPixels`, чтобы их нельзя было спутать с 6B `Receiver.pixelCapacity`. Поле `maxPixels` umbrella §7 в 7E не используется. Все профильные ёмкости опциональны: объявленное значение — конечный предел, отсутствие — undeclared/not enforced (§6.4).
+Профильные ёмкости выражаются в **transport pixels** и называются `maxTransportPixels`, чтобы их нельзя было спутать с 6B `Receiver.pixelCapacity`. Поле `maxPixels` umbrella §7 в 7E не используется. `ProcessorProfile.maxPorts` обязателен; опциональны только `PortProfile.maxTransportPixels?`, `PortProfile.maxReceivers?`, `ReceiverProfile.maxTransportPixels?` и `ReceiverProfile.maxCabinets?`. Для опционального поля объявленное значение — конечный предел, отсутствие — undeclared/not enforced (§6.4).
 
 ## 6.3 Ссылочная целостность
 

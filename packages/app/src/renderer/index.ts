@@ -342,13 +342,13 @@ function renderScreenProperties(screen: ScreenView): void {
       screen.grid.columns,
       'Screen Columns',
       value => commitResize(screen.screen.id, value, screen.grid.rows),
-      gridValidator('Columns', value => maxColumnsForRows(screen, value)),
+      gridValidator('Columns', () => maxColumnsForRows(screen, screen.grid.rows)),
     )),
     propertyRow('Rows', numberField(
       screen.grid.rows,
       'Screen Rows',
       value => commitResize(screen.screen.id, screen.grid.columns, value),
-      gridValidator('Rows', value => maxRowsForColumns(screen, value)),
+      gridValidator('Rows', () => maxRowsForColumns(screen, screen.grid.columns)),
     )),
   )
   container.append(group('Cabinet Grid', gridBox))
@@ -389,17 +389,39 @@ function renderGridProperties(screen: ScreenView): void {
   element<HTMLHeadingElement>('properties-title').textContent = 'Cabinet Grid'
   const container = document.createElement('div')
   container.className = 'properties-body'
-  const box = document.createElement('div')
-  box.append(
+
+  const identityBox = document.createElement('div')
+  identityBox.append(
     propertyRow('Name', valueNode(screen.grid.name)),
     propertyRow('Screen', valueNode(screen.screen.name)),
-    propertyRow('Columns', valueNode(format.format(screen.grid.columns))),
-    propertyRow('Rows', valueNode(format.format(screen.grid.rows))),
+  )
+  container.append(group('Grid', identityBox))
+
+  const dimensionsBox = document.createElement('div')
+  dimensionsBox.append(
+    propertyRow('Columns', numberField(
+      screen.grid.columns,
+      'Cabinet Grid Columns',
+      value => commitResize(screen.screen.id, value, screen.grid.rows),
+      gridValidator('Columns', () => maxColumnsForRows(screen, screen.grid.rows)),
+    )),
+    propertyRow('Rows', numberField(
+      screen.grid.rows,
+      'Cabinet Grid Rows',
+      value => commitResize(screen.screen.id, screen.grid.columns, value),
+      gridValidator('Rows', () => maxRowsForColumns(screen, screen.grid.columns)),
+    )),
+  )
+  container.append(group('Dimensions', dimensionsBox))
+
+  const summaryBox = document.createElement('div')
+  summaryBox.append(
     propertyRow('Cabinets', valueNode(format.format(screen.cabinets.length))),
     propertyRow('Cabinet size', valueNode(`${format.format(screen.grid.cabinetWidth)} × ${format.format(screen.grid.cabinetHeight)} px`)),
     propertyRow('Ordering', valueNode(orderingSummary(screen))),
+    propertyRow('Screen size', valueNode(`${format.format(screenWidth(screen))} × ${format.format(screenHeight(screen))} px`)),
   )
-  container.append(group('Grid', box))
+  container.append(group('Summary', summaryBox))
   properties.append(container)
 }
 

@@ -90,6 +90,14 @@ try {
   assert.equal((await dump())[0].rows, 3)
   assert.equal((await dump())[0].cabinets.length, 12)
 
+  await gridColumnsInput.fill('400')
+  await gridColumnsInput.blur()
+  await page.waitForFunction(() => document.querySelector('input[aria-label="Cabinet Grid Columns"]').getAttribute('aria-invalid') === 'true')
+  assert.equal((await dump())[0].columns, 4, 'value above the limit does not mutate the model')
+  assert.equal(await gridColumnsInput.inputValue(), '4')
+  assert.match(await gridColumnsInput.getAttribute('title'), /limited to 341/)
+  assert.equal((await selection())?.type, 'cabinetGrid')
+
   await page.locator('#toggle-mode').click()
   assert.equal(await viewMode(), 'active')
   assert.equal(await page.locator('#toggle-mode').innerText(), 'All Screens')

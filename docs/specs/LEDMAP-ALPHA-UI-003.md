@@ -63,6 +63,16 @@ resizeScreenGrid(project: Project, screenId: string, columns: number, rows: numb
 
 **Properties выбранного Screen** (порядок блоков):
 
+```text
+Screen
+  Name                          (readonly)
+  Position        X, Y          (number input, как сейчас)
+  Cabinet Grid    Columns, Rows (number input, новое)
+  Cabinet size    Width, Height px (readonly)
+  Calculated Screen Size  Width, Height px (readonly, визуально read-only)
+  Cabinets        N             (readonly)
+```
+
 **Properties выбранного Cabinet Grid** использует ту же структурную мутацию и позволяет редактировать:
 
 ```text
@@ -78,18 +88,8 @@ Cabinet Grid
 
 Редактирование `Columns`/`Rows` из Grid selection и из Screen selection должно быть семантически эквивалентно: один и тот же parent Screen, одна валидация, одна функция `resizeScreenGrid(project, screenId, columns, rows)`. Selection остаётся `cabinetGrid` после успешного commit.
 
-
-```text
-Screen
-  Name                          (readonly)
-  Position        X, Y          (number input, как сейчас)
-  Cabinet Grid    Columns, Rows (number input, новое)
-  Cabinet size    Width, Height px (readonly)
-  Calculated Screen Size  Width, Height px (readonly, визуально read-only)
-  Cabinets        N             (readonly)
-```
-
 - Валидация `Columns`/`Rows`: целое `>= 1` в пределах лимита. Пустой или некорректный ввод помечает поле `aria-invalid` и сохраняет последнее допустимое значение — тот же контракт, что у существующих X/Y. Молчаливого округления и `NaN`/`Infinity` не принимается.
+- **Предел считается от противоположного измерения:** максимум `Columns` вычисляется из текущего `Rows`, максимум `Rows` — из текущего `Columns`. Предел не зависит от вводимого значения, иначе проверка была бы самоссылающейся и отличала бы `400` от `401` в одном и том же поле.
 - Существующий helper `numberField` получает необязательный валидатор; поведение X/Y не меняется.
 
 **Handles на canvas:**

@@ -20,7 +20,7 @@ screenHeight = grid.rows    * grid.cabinetHeight
 ## 2. Пользовательский сценарий
 
 1. Пользователь выбирает Screen (клик по контуру/дереву или `+ Screen`) — `SelectionContext` не меняется: `selection = { type: 'screen', id }`, `activeScreenId` равен `screen.id`.
-2. Properties выбранного Screen показывает редактируемые `Columns` и `Rows` и read-only `Cabinet size`, `Calculated Screen Size`, `Cabinets`.
+2. Properties выбранного Screen **или его Cabinet Grid** показывает редактируемые `Columns` и `Rows`. Оба UI-пути вызывают тот же `resizeScreenGrid(...)`; `Cabinet size`, рассчитанный размер Screen и количество Cabinets остаются read-only.
 3. Изменение `Columns` 4 → 5 немедленно перестраивает только этот Screen: 15 кабинетов, `640 × 384 px`, пересчитанные bounds, сигнальный путь и номера — тем же Cabinet Engine, что и обычный grid.
 4. Изменение `Rows` 3 → 4 даёт `5 × 4`, 20 кабинетов, `640 × 512 px`.
 5. На canvas у выбранного Screen доступны три handle: `right` (→ columns), `bottom` (→ rows), `bottomRight` (→ columns + rows). Drag дискретен по кабинетам, минимум 1; во время drag виден preview нового grid, по `pointerup` изменение остаётся в состоянии.
@@ -62,6 +62,22 @@ resizeScreenGrid(project: Project, screenId: string, columns: number, rows: numb
 ## 5. Properties и canvas
 
 **Properties выбранного Screen** (порядок блоков):
+
+**Properties выбранного Cabinet Grid** использует ту же структурную мутацию и позволяет редактировать:
+
+```text
+Cabinet Grid
+  Name                       (readonly)
+  Screen                     (readonly)
+  Dimensions  Columns, Rows  (number input)
+  Cabinets                   (readonly)
+  Cabinet size               (readonly)
+  Ordering                   (readonly на этой итерации)
+  Screen size                (readonly)
+```
+
+Редактирование `Columns`/`Rows` из Grid selection и из Screen selection должно быть семантически эквивалентно: один и тот же parent Screen, одна валидация, одна функция `resizeScreenGrid(project, screenId, columns, rows)`. Selection остаётся `cabinetGrid` после успешного commit.
+
 
 ```text
 Screen

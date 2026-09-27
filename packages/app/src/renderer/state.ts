@@ -1,8 +1,11 @@
 import {
   cabinetIndex, cabinetOrder, createCabinetGrid, createScreen, decomposeCabinetPixel,
   DomainError, asScreenId,
-  type CabinetEngineConfig, type CabinetGrid, type Screen, type GridOrdering, type GridPosition,
+  type CabinetEngineConfig, type CabinetGrid, type Screen, type GridOrdering, type GridPosition, type Size,
 } from '@ledmap/core'
+
+export const MAX_PREVIEW_CABINETS = 1024
+export const MAX_PREVIEW_MODULES = 65536
 
 export const dimensionFields = [
   'columns', 'rows', 'moduleColumns', 'moduleRows', 'modulePixelWidth', 'modulePixelHeight',
@@ -13,11 +16,14 @@ export interface PreviewCabinet extends GridPosition {
   readonly id: string
   readonly index: number
 }
-export interface Snapshot {
+export interface CabinetSeed {
+  readonly cabinets: readonly PreviewCabinet[]
+  readonly nextCabinetSerial: number
+}
+export interface Snapshot extends CabinetSeed {
   readonly config: CabinetEngineConfig
   readonly screen: Screen
   readonly grid: CabinetGrid
-  readonly cabinets: readonly PreviewCabinet[]
   readonly path: readonly GridPosition[]
   readonly moduleCount: number
   readonly pixelCount: number
@@ -62,7 +68,54 @@ function safeProduct(label: string, ...values: number[]): number {
   return result
 }
 
-export function buildSnapshot(previous: Snapshot | null, draft: Draft, ids: SnapshotIds = defaultSnapshotIds): AlphaState {
+export function gridPixelSize(grid: Pick<CabinetGrid, 'columns' | 'rows' | 'cabinetWidth' | 'cabinetHeight'>): Size {
+  return {
+    width: safeProduct('Screen width', grid.columns, grid.cabinetWidth),
+    height: safeProduct('Screen height', grid.rows, grid.cabinetHeight),
+  }
+}
+
+function cabinetCellKey(column: number, row: number): string {
+  return `${column},${row}`
+}
+
+function cabinetId(serial: number): string {
+  return `C${String(serial).padStart(2, '0')}`
+}
+
+export function buildCabinets(config: CabinetEngineConfig, seed: CabinetSeed | null): { cabinets: PreviewCabinet[]; nextCabinetSerial: number } {
+  const existing = new Map<string, string>()
+  for (const cabinet of seed?.cabinets ?? []) existing.set(cabinetCellKey(cabinet.column, cabinet.row), cabinet.id)
+  let serial = seed?.nextCabinetSerial ?? 1
+  const cabinets: PreviewCabinet[] = []
+  for (let row = 0; row < config.rows; row += 1) {
+    for (let column = 0; column < config.columns; column += 1) {
+      const reused = existing.get(cabinetCellKey(column, row))
+      const id = reused ?? cabinetId(serial)
+      if (reused === undefined) serial += 1
+      cabinets.push({ column, row, id, index: cabinetIndex(config, { column, row }) })
+    }
+  }
+  return { cabinets, nextCabinetSerial: serial }
+}
+
+export function maxPreviewColumns(rows: number, modulesPerCabinet: number): number {
+  if (rows < 1) return 1
+  return Math.max(1, Math.min(
+    Math.floor(MAX_PREVIEW_CABINETS / rows),
+    Math.floor(MAX_PREVIEW_MODULES / (rows * modulesPerCabinet)),
+  ))
+}
+
+export function maxPreviewRows(columns: number, modulesPerCabinet: number): number {
+  if (columns < 1) return 1
+  return Math.max(1, Math.min(
+    Math.floor(MAX_PREVIEW_CABINETS / columns),
+    Math.floor(MAX_PREVIEW_MODULES / (columns * modulesPerCabinet)),
+  ))
+}
+
+export function buildSnapshot(seed: CabinetSeed | null, draft: Draft, ids: SnapshotIds = defaultSnapshotIds): AlphaState {
   const errors: Partial<Record<DimensionField | 'form', string>> = {}
   const dimensions = {} as Record<DimensionField, number>
   for (const field of dimensionFields) {
@@ -72,7 +125,7 @@ export function buildSnapshot(previous: Snapshot | null, draft: Draft, ids: Snap
     }
     dimensions[field] = value
   }
-  if (Object.keys(errors).length) return { snapshot: previous, errors }
+  if (Object.keys(errors).length) return { snapshot: previousSnapshot(seed), errors }
   try {
     const config: CabinetEngineConfig = { ...dimensions, ordering: { ...draft.ordering } }
     decomposeCabinetPixel(config, { x: 0, y: 0 })
@@ -81,32 +134,39 @@ export function buildSnapshot(previous: Snapshot | null, draft: Draft, ids: Snap
     const totalModules = safeProduct('Total modules', cabinetCount, moduleCount)
     const cabinetWidth = safeProduct('Cabinet width', config.moduleColumns, config.modulePixelWidth)
     const cabinetHeight = safeProduct('Cabinet height', config.moduleRows, config.modulePixelHeight)
-    const width = safeProduct('Screen width', config.columns, cabinetWidth)
-    const height = safeProduct('Screen height', config.rows, cabinetHeight)
-    const pixelCount = safeProduct('Screen pixel count', width, height)
-    if (cabinetCount > 1024) throw new Error('Preview supports up to 1024 cabinets. Reduce Columns or Rows.')
-    if (totalModules > 65536) throw new Error('Preview supports up to 65,536 modules in total. Reduce the grid or module count.')
+    if (cabinetCount > MAX_PREVIEW_CABINETS) throw new Error(`Preview supports up to ${MAX_PREVIEW_CABINETS} cabinets. Reduce Columns or Rows.`)
+    if (totalModules > MAX_PREVIEW_MODULES) throw new Error(`Preview supports up to ${MAX_PREVIEW_MODULES} modules in total. Reduce the grid or module count.`)
+    const size = gridPixelSize({ columns: config.columns, rows: config.rows, cabinetWidth, cabinetHeight })
+    const pixelCount = safeProduct('Screen pixel count', size.width, size.height)
     const grid = createCabinetGrid({
       id: ids.gridId, screen: asScreenId(ids.screenId), name: ids.gridName,
       columns: config.columns, rows: config.rows, cabinetWidth, cabinetHeight, ordering: config.ordering,
     })
     const screen = createScreen({
-      id: ids.screenId, name: ids.screenName, resolution: { width, height }, cabinetGrids: [grid.id],
+      id: ids.screenId, name: ids.screenName, resolution: size, cabinetGrids: [grid.id],
     })
     const path = cabinetOrder(config)
-    const cabinets: PreviewCabinet[] = []
-    for (let row = 0; row < config.rows; row += 1) {
-      for (let column = 0; column < config.columns; column += 1) {
-        cabinets.push({ column, row, id: `C${String(cabinets.length + 1).padStart(2, '0')}`, index: cabinetIndex(config, { column, row }) })
-      }
+    const { cabinets, nextCabinetSerial } = buildCabinets(config, seed)
+    return {
+      snapshot: {
+        config, grid, screen, cabinets, nextCabinetSerial, path, moduleCount, pixelCount,
+      },
+      errors: {},
     }
-    return { snapshot: { config, grid, screen, cabinets, path, moduleCount, pixelCount }, errors: {} }
   } catch (error) {
     errors.form = error instanceof DomainError
       ? `Invalid cabinet configuration: ${error.message}`
       : error instanceof Error ? error.message : 'Unable to update the preview.'
-    return { snapshot: previous, errors }
+    return { snapshot: previousSnapshot(seed), errors }
   }
+}
+
+function isSnapshot(seed: CabinetSeed | null): seed is Snapshot {
+  return seed !== null && 'grid' in seed
+}
+
+function previousSnapshot(seed: CabinetSeed | null): Snapshot | null {
+  return isSnapshot(seed) ? seed : null
 }
 
 export function applyDraft(previous: Snapshot | null, draft: Draft): AlphaState {

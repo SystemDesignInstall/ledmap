@@ -1,5 +1,8 @@
 import type { CabinetEngineConfig, CabinetGrid, GridPosition, Screen } from '@ledmap/core'
-import { buildSnapshot, initialDraft, type Draft, type PreviewCabinet, type SnapshotIds } from './state.js'
+import {
+  buildSnapshot, gridPixelSize, initialDraft, maxPreviewColumns, maxPreviewRows,
+  type Draft, type PreviewCabinet, type SnapshotIds,
+} from './state.js'
 
 export interface ScreenView {
   readonly screen: Screen
@@ -8,6 +11,7 @@ export interface ScreenView {
   readonly x: number
   readonly y: number
   readonly cabinets: readonly PreviewCabinet[]
+  readonly nextCabinetSerial: number
   readonly path: readonly GridPosition[]
   readonly moduleCount: number
   readonly pixelCount: number
@@ -38,15 +42,15 @@ export interface Hit {
 }
 
 export function screenWidth(screen: ScreenView): number {
-  return screen.screen.resolution.width
+  return gridPixelSize(screen.grid).width
 }
 
 export function screenHeight(screen: ScreenView): number {
-  return screen.screen.resolution.height
+  return gridPixelSize(screen.grid).height
 }
 
-function buildScreenView(draft: Draft, ids: SnapshotIds, x: number, y: number): ScreenView {
-  const result = buildSnapshot(null, draft, ids)
+function buildScreenView(draft: Draft, ids: SnapshotIds, x: number, y: number, seed: ScreenView | null = null): ScreenView {
+  const result = buildSnapshot(seed, draft, ids)
   if (result.errors.form) throw new Error(result.errors.form)
   const snapshot = result.snapshot
   if (!snapshot) throw new Error('Unable to build screen view.')
@@ -57,6 +61,7 @@ function buildScreenView(draft: Draft, ids: SnapshotIds, x: number, y: number): 
     x,
     y,
     cabinets: snapshot.cabinets,
+    nextCabinetSerial: snapshot.nextCabinetSerial,
     path: snapshot.path,
     moduleCount: snapshot.moduleCount,
     pixelCount: snapshot.pixelCount,
@@ -81,6 +86,49 @@ export function setScreenPosition(project: Project, screenId: string, x: number,
       ? { ...screen, x, y }
       : screen),
   }
+}
+
+function draftFromConfig(config: CabinetEngineConfig, columns: number, rows: number): Draft {
+  return {
+    columns: String(columns),
+    rows: String(rows),
+    moduleColumns: String(config.moduleColumns),
+    moduleRows: String(config.moduleRows),
+    modulePixelWidth: String(config.modulePixelWidth),
+    modulePixelHeight: String(config.modulePixelHeight),
+    ordering: { ...config.ordering },
+  }
+}
+
+function assertGridDimension(label: string, value: number): void {
+  if (!Number.isSafeInteger(value) || value < 1) throw new Error(`${label} must be a whole number of at least 1.`)
+}
+
+export function resizeScreenGrid(project: Project, screenId: string, columns: number, rows: number): Project {
+  const screen = findScreen(project, screenId)
+  if (!screen) throw new Error(`Unknown screen: ${screenId}`)
+  assertGridDimension('Columns', columns)
+  assertGridDimension('Rows', rows)
+  const draft = draftFromConfig(screen.config, columns, rows)
+  const ids: SnapshotIds = {
+    screenId: screen.screen.id,
+    gridId: screen.grid.id,
+    screenName: screen.screen.name,
+    gridName: screen.grid.name,
+  }
+  return {
+    screens: project.screens.map(entry => entry.screen.id === screenId
+      ? buildScreenView(draft, ids, entry.x, entry.y, entry)
+      : entry),
+  }
+}
+
+export function maxColumnsForRows(screen: ScreenView, rows: number): number {
+  return maxPreviewColumns(rows, screen.moduleCount)
+}
+
+export function maxRowsForColumns(screen: ScreenView, columns: number): number {
+  return maxPreviewRows(columns, screen.moduleCount)
 }
 
 export function addScreen(project: Project, draft: Draft = initialDraft): Project {

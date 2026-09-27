@@ -127,9 +127,124 @@ try {
   assert.equal(await page.locator('#properties-title').innerText(), 'Screen')
   assert.equal(await page.locator('input[aria-label="Screen Y position"]').inputValue(), '620')
 
+  const preview = async () => page.evaluate(() => window.__ledmap.preview())
+  const handles = async id => page.evaluate(screenId => window.__ledmap.resizeHandlesPx(screenId), id)
+  const drawnText = async () => page.evaluate(() => window.__drawnText)
+  const screen3Before = (await dump())[2]
+  const boundsBeforeResize = await bounds()
+
+  const columnsInput = page.locator('input[aria-label="Screen Columns"]')
+  const rowsInput = page.locator('input[aria-label="Screen Rows"]')
+  assert.equal(await columnsInput.inputValue(), '4')
+  assert.equal(await rowsInput.inputValue(), '2')
+  assert.match(await page.locator('#properties').innerText(), /Calculated Screen Size\s*Width\s*512 px\s*Height\s*256 px/)
+  assert.match(await page.locator('#properties').innerText(), /Cabinet\s*Width\s*128 px\s*Height\s*128 px/)
+  assert.equal(await page.locator('#properties').innerText().then(text => /128 px[\s\S]*128 px/.test(text)), true)
+
+  await columnsInput.fill('6')
+  await columnsInput.blur()
+  const grown = (await dump())[2]
+  assert.equal(grown.columns, 6)
+  assert.equal(grown.width, 768)
+  assert.equal(grown.height, 256)
+  assert.equal(grown.cabinets.length, 12)
+  assert.deepEqual(grown.cabinets.filter(c => c.column < 4).map(c => c.id), screen3Before.cabinets.map(c => c.id))
+  assert.deepEqual(grown.order, [1, 2, 3, 4, 5, 6, 12, 11, 10, 9, 8, 7])
+  assert.ok((await bounds()).width > boundsBeforeResize.width, 'project bounds grow with the resized screen')
+  assert.equal((await dump())[0].columns, 4, 'other screens are untouched')
+  assert.equal((await dump())[1].columns, 3, 'other screens are untouched')
+  assert.equal(await preview(), null, 'properties commit does not leave a preview')
+  assert.equal(await page.locator('input[aria-label="Screen Columns"]').inputValue(), '6')
+
+  await columnsInput.fill('0')
+  await columnsInput.blur()
+  await page.waitForFunction(() => document.querySelector('input[aria-label="Screen Columns"]').getAttribute('aria-invalid') === 'true')
+  assert.equal((await dump())[2].columns, 6, 'invalid value does not mutate the model')
+  assert.equal(await page.locator('input[aria-label="Screen Columns"]').inputValue(), '6')
+
+  await rowsInput.fill('4')
+  await rowsInput.blur()
+  assert.equal((await dump())[2].rows, 4)
+  assert.equal((await dump())[2].height, 512)
+  const grownCells = (await dump())[2].cabinets.map(c => `${c.column},${c.row}:${c.id}`)
+
+  await page.locator('#toggle-mode').click()
+  await page.locator('#fit-project').click()
+  assert.equal(await viewMode(), 'active')
+  let step = 2 * 128 * (await camera()).zoom
+  const cornerOf = async () => (await handles('screen-3')).find(h => h.handle === 'bottomRight')
+  const handleList = await handles('screen-3')
+  assert.deepEqual(handleList.map(h => h.handle).sort(), ['bottom', 'bottomRight', 'right'])
+  let corner = await cornerOf()
+
+  await page.mouse.move(box.x + corner.x, box.y + corner.y)
+  assert.equal(await page.locator('#project-canvas').evaluate(node => node.style.cursor), 'se-resize')
+  await page.mouse.down()
+  assert.equal(await preview(), null, 'gesture captures the original size without a preview')
+  assert.equal((await dump())[2].columns, 6)
+  assert.equal((await dump())[2].rows, 4)
+
+  await page.mouse.move(box.x + corner.x + step, box.y + corner.y + step, { steps: 4 })
+  assert.deepEqual(await preview(), { screenId: 'screen-3', columns: 8, rows: 6 })
+  assert.equal((await dump())[2].columns, 6, 'preview does not mutate the project')
+  assert.equal((await dump())[2].rows, 4)
+  assert.equal((await dump())[2].x, grown.x, 'handle drag does not move the screen')
+  assert.equal((await dump())[2].y, grown.y)
+  const previewLabels = (await drawnText()).filter(t => /^C\d\d$/.test(t))
+  assert.deepEqual(
+    [...new Set(previewLabels)].sort(),
+    [...new Set(grownCells.map(cell => cell.split(':')[1]))].sort(),
+    'pending preview cells are drawn without IDs, numbers or new identity',
+  )
+  assert.equal(previewLabels.length, grownCells.length, 'each existing cabinet keeps exactly one label')
+  assert.ok((await drawnText()).some(t => t.includes('8 × 6 cabinets') && t.includes('preview')))
+  await page.screenshot({ path: `${output}/resize-preview.png` })
+
+  await page.mouse.move(box.x + corner.x + 2 * step, box.y + corner.y + 2 * step, { steps: 4 })
+  assert.deepEqual(await preview(), { screenId: 'screen-3', columns: 10, rows: 8 })
+  await page.mouse.move(box.x + corner.x + step, box.y + corner.y + step, { steps: 4 })
+  assert.deepEqual(await preview(), { screenId: 'screen-3', columns: 8, rows: 6 })
+  await page.mouse.up()
+  assert.equal(await preview(), null, 'gesture ends without a preview')
+  const committed = (await dump())[2]
+  assert.equal(committed.columns, 8)
+  assert.equal(committed.rows, 6)
+  assert.equal(committed.width, 1024)
+  assert.equal(committed.height, 768)
+  assert.equal(committed.cabinets.length, 48)
+  const committedCells = new Map(committed.cabinets.map(c => [`${c.column},${c.row}`, c.id]))
+  assert.ok(
+    grownCells.every(cell => committedCells.get(cell.slice(0, cell.indexOf(':'))) === cell.slice(cell.indexOf(':') + 1)),
+    'every existing cabinet keeps identity and position',
+  )
+  assert.equal(new Set(committed.cabinets.map(c => c.id)).size, 48, 'IDs are never reused')
+  assert.equal(committed.cabinets.filter(c => !grownCells.some(cell => cell.endsWith(`:${c.id}`))).length, 24)
+  assert.deepEqual([...committed.order].sort((a, b) => a - b), [...Array(48).keys()].map(i => i + 1))
+  assert.equal((await selection())?.type, 'screen')
+  assert.equal((await selection())?.id, 'screen-3')
+
+  await page.locator('#fit-project').click()
+  step = 2 * 128 * (await camera()).zoom
+  corner = await cornerOf()
+  await page.mouse.move(box.x + corner.x, box.y + corner.y)
+  await page.mouse.down()
+  await page.mouse.move(box.x + corner.x - step, box.y + corner.y, { steps: 4 })
+  assert.deepEqual(await preview(), { screenId: 'screen-3', columns: 6, rows: 6 })
+  await page.keyboard.press('Escape')
+  assert.equal(await preview(), null)
+  await page.mouse.up()
+  assert.equal((await dump())[2].columns, 8, 'Escape cancels the gesture without a commit')
+  assert.equal((await dump())[2].rows, 6)
+  assert.equal((await selection()), null)
+
+  await page.locator('#toggle-mode').click()
+  await page.locator('#fit-project').click()
+  assert.equal(await viewMode(), 'all')
+
   await page.screenshot({ path: `${output}/project-canvas.png` })
   assert.deepEqual(failures, [])
   console.log('Electron smoke passed: demo project, selection, properties edit, cabinet hit, drag, REF-001 safety, view modes, add screen, Escape clear.')
+  console.log('Electron smoke passed: grid resize via Properties and handles, deferred commit, ID continuity, invalid input rejection.')
   console.log(`Screenshots: ${output}`)
 } finally {
   await app.close()

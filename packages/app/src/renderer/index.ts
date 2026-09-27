@@ -1,11 +1,13 @@
 import {
-  createDemoProject, findScreen, hitTest, moveScreen, projectBounds, screenBounds,
-  screenHeight, screenWidth, setScreenPosition, type Project, type ScreenView, type SelectedObject,
+  createDemoProject, findScreen, hitTest, maxColumnsForRows, maxRowsForColumns, moveScreen, projectBounds,
+  resizeScreenGrid, screenBounds, screenHeight, screenWidth, setScreenPosition,
+  type Project, type ScreenView, type SelectedObject,
 } from './project.js'
 import { addScreen } from './project.js'
-import type { Point } from './canvas.js'
+import type { GridShape, Point, ResizeHandle, ResizePreview } from './canvas.js'
 import {
-  cabinetLabelHit, drawProject, fitCamera, screenBoundaryHit, toProject, toScreen, zoomAt, type Camera,
+  cabinetLabelHit, drawProject, fitCamera, resizeHandleCursor, resizeHandleHit, screenBoundaryHit,
+  screenResizeHandles, screenShape, toProject, toScreen, zoomAt, type Camera,
 } from './canvas.js'
 import type { Direction } from '@ledmap/core'
 
@@ -28,6 +30,8 @@ interface LedmapHook {
   viewMode(): 'all' | 'active'
   screenCenterPx(id: string): Point
   projectToPx(point: Point): Point
+  preview(): ResizePreview | null
+  resizeHandlesPx(id: string): ReadonlyArray<{ readonly handle: ResizeHandle; readonly x: number; readonly y: number }>
 }
 
 function element<T extends HTMLElement>(id: string): T {
@@ -56,10 +60,20 @@ let selection: SelectedObject | null = null
 let activeScreenId: string | null = project.screens[0]?.screen.id ?? null
 let camera: Camera = fitCamera(projectBounds(project), 1, 1)
 let spaceDown = false
-type PointerMode = 'none' | 'drag' | 'pan'
+type PointerMode = 'none' | 'drag' | 'pan' | 'resize'
 let pointerMode: PointerMode = 'none'
 let dragState: { screenId: string; lastProject: Point } | null = null
 let panState: { lastX: number; lastY: number } | null = null
+let resizeGesture: {
+  screenId: string
+  handle: ResizeHandle
+  startProject: Point
+  startColumns: number
+  startRows: number
+  columns: number
+  rows: number
+} | null = null
+let resizePreview: ResizePreview | null = null
 
 const format = new Intl.NumberFormat('en-US')
 
@@ -91,7 +105,7 @@ function render(): void {
 }
 
 function draw(): void {
-  const note = drawProject(canvas, project, { mode: viewMode, selection, activeScreenId }, camera)
+  const note = drawProject(canvas, project, { mode: viewMode, selection, activeScreenId, resizePreview }, camera)
   const b = projectBounds(project)
   bounds.textContent = `Project bounds ${format.format(b.width)} × ${format.format(b.height)} px`
   zoomIndicator.textContent = `${Math.round(camera.zoom * 100)}%`
@@ -260,22 +274,39 @@ function valueNode(text: string): HTMLElement {
   return node
 }
 
-function numberField(initial: number, ariaLabel: string, onCommit: (value: number) => void): HTMLInputElement {
+function numberField(initial: number, ariaLabel: string, onCommit: (value: number) => void, validate?: (value: number) => string | null): HTMLInputElement {
   const input = document.createElement('input')
   input.type = 'number'
+  input.min = '1'
+  input.step = '1'
   input.value = String(initial)
   input.setAttribute('aria-label', ariaLabel)
   input.addEventListener('change', () => {
     const raw = input.value.trim()
     const value = Number(raw)
-    if (!raw || !Number.isFinite(value)) {
+    const problem = !raw || !Number.isFinite(value)
+      ? 'Enter a number.'
+      : validate ? validate(value) : null
+    if (problem) {
       input.setAttribute('aria-invalid', 'true')
+      input.title = problem
+      input.value = String(initial)
       return
     }
     input.removeAttribute('aria-invalid')
+    input.removeAttribute('title')
     onCommit(value)
   })
   return input
+}
+
+function gridValidator(label: string, limit: (value: number) => number): (value: number) => string | null {
+  return value => {
+    if (!Number.isSafeInteger(value) || value < 1) return `${label} must be a whole number of at least 1.`
+    const max = limit(value)
+    if (value > max) return `${label} is limited to ${format.format(max)} for this screen.`
+    return null
+  }
 }
 
 function renderScreenProperties(screen: ScreenView): void {
@@ -305,21 +336,53 @@ function renderScreenProperties(screen: ScreenView): void {
   )
   container.append(group('Position', positionBox))
 
+  const gridBox = document.createElement('div')
+  gridBox.append(
+    propertyRow('Columns', numberField(
+      screen.grid.columns,
+      'Screen Columns',
+      value => commitResize(screen.screen.id, value, screen.grid.rows),
+      gridValidator('Columns', value => maxColumnsForRows(screen, value)),
+    )),
+    propertyRow('Rows', numberField(
+      screen.grid.rows,
+      'Screen Rows',
+      value => commitResize(screen.screen.id, screen.grid.columns, value),
+      gridValidator('Rows', value => maxRowsForColumns(screen, value)),
+    )),
+  )
+  container.append(group('Cabinet Grid', gridBox))
+
+  const cabinetBox = document.createElement('div')
+  cabinetBox.append(
+    propertyRow('Width', valueNode(`${format.format(screen.grid.cabinetWidth)} px`)),
+    propertyRow('Height', valueNode(`${format.format(screen.grid.cabinetHeight)} px`)),
+    propertyRow('Ordering', valueNode(orderingSummary(screen))),
+  )
+  container.append(group('Cabinet', cabinetBox))
+
   const sizeBox = document.createElement('div')
   sizeBox.append(
     propertyRow('Width', valueNode(`${format.format(screenWidth(screen))} px`)),
     propertyRow('Height', valueNode(`${format.format(screenHeight(screen))} px`)),
   )
-  container.append(group('Size (from grid)', sizeBox))
+  container.append(group('Calculated Screen Size', sizeBox))
 
-  const gridBox = document.createElement('div')
-  gridBox.append(
-    propertyRow('Columns', valueNode(format.format(screen.grid.columns))),
-    propertyRow('Rows', valueNode(format.format(screen.grid.rows))),
-    propertyRow('Cabinets', valueNode(format.format(screen.cabinets.length))),
-  )
-  container.append(group('Cabinet Grid', gridBox))
+  const countBox = document.createElement('div')
+  countBox.append(propertyRow('Cabinets', valueNode(format.format(screen.cabinets.length))))
+  container.append(group('Totals', countBox))
   properties.append(container)
+}
+
+function commitResize(screenId: string, columns: number, rows: number): void {
+  try {
+    apply(resizeScreenGrid(project, screenId, columns, rows))
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unable to resize the cabinet grid.'
+    canvasNote.textContent = message
+    return
+  }
+  render()
 }
 
 function renderGridProperties(screen: ScreenView): void {
@@ -363,6 +426,33 @@ function viewportPoint(event: { offsetX: number; offsetY: number }): { x: number
   return { x: event.offsetX, y: event.offsetY }
 }
 
+function selectedScreenShape(): { screen: ScreenView; shape: GridShape } | null {
+  if (selection?.type !== 'screen') return null
+  const screen = findScreen(project, selection.id)
+  if (!screen) return null
+  return { screen, shape: screenShape(screen, screen.grid.columns, screen.grid.rows) }
+}
+
+function resizeTargetAt(px: Point): { screen: ScreenView; handle: ResizeHandle } | null {
+  const target = selectedScreenShape()
+  if (!target) return null
+  const handle = resizeHandleHit(camera, target.screen, target.shape, px)
+  return handle ? { screen: target.screen, handle } : null
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value))
+}
+
+function endPointerGesture(): void {
+  pointerMode = 'none'
+  dragState = null
+  panState = null
+  resizeGesture = null
+  resizePreview = null
+  canvas.classList.remove('dragging')
+}
+
 canvas.addEventListener('pointerdown', event => {
   if (event.button === 1) {
     event.preventDefault()
@@ -380,6 +470,26 @@ canvas.addEventListener('pointerdown', event => {
   }
   const px = viewportPoint(event)
   const projectPoint = toProject(camera, px)
+  const resizeTarget = resizeTargetAt(px)
+  if (resizeTarget) {
+    const { screen, handle } = resizeTarget
+    selection = { type: 'screen', id: screen.screen.id }
+    activeScreenId = screen.screen.id
+    pointerMode = 'resize'
+    resizeGesture = {
+      screenId: screen.screen.id,
+      handle,
+      startProject: projectPoint,
+      startColumns: screen.grid.columns,
+      startRows: screen.grid.rows,
+      columns: screen.grid.columns,
+      rows: screen.grid.rows,
+    }
+    canvas.classList.add('dragging')
+    canvas.setPointerCapture(event.pointerId)
+    render()
+    return
+  }
   const hit = hitTest(project, projectPoint)
   canvas.classList.add('dragging')
   if (hit) {
@@ -409,6 +519,35 @@ canvas.addEventListener('pointermove', event => {
     draw()
     return
   }
+  if (pointerMode === 'resize' && resizeGesture) {
+    const screen = findScreen(project, resizeGesture.screenId)
+    if (!screen) return
+    const point = toProject(camera, viewportPoint(event))
+    const dx = point.x - resizeGesture.startProject.x
+    const dy = point.y - resizeGesture.startProject.y
+    const changesColumns = resizeGesture.handle === 'right' || resizeGesture.handle === 'bottomRight'
+    const changesRows = resizeGesture.handle === 'bottom' || resizeGesture.handle === 'bottomRight'
+    const columns = changesColumns
+      ? clamp(
+        resizeGesture.startColumns + Math.round(dx / screen.grid.cabinetWidth),
+        1,
+        maxColumnsForRows(screen, resizeGesture.startRows),
+      )
+      : resizeGesture.startColumns
+    const rows = changesRows
+      ? clamp(
+        resizeGesture.startRows + Math.round(dy / screen.grid.cabinetHeight),
+        1,
+        maxRowsForColumns(screen, resizeGesture.startColumns),
+      )
+      : resizeGesture.startRows
+    resizeGesture = { ...resizeGesture, columns, rows }
+    resizePreview = columns === screen.grid.columns && rows === screen.grid.rows
+      ? null
+      : { screenId: screen.screen.id, columns, rows }
+    draw()
+    return
+  }
   if (pointerMode === 'drag' && dragState) {
     const px = viewportPoint(event)
     const projectPoint = toProject(camera, px)
@@ -419,21 +558,31 @@ canvas.addEventListener('pointermove', event => {
     const moved = findScreen(project, dragState.screenId)
     if (moved) selection = { type: 'screen', id: moved.screen.id }
     render()
+    return
   }
+  const target = resizeTargetAt(viewportPoint(event))
+  canvas.style.cursor = target ? resizeHandleCursor(target.handle) : ''
 })
 
 canvas.addEventListener('pointerup', () => {
-  pointerMode = 'none'
-  dragState = null
-  panState = null
-  canvas.classList.remove('dragging')
+  if (pointerMode === 'resize') {
+    const gesture = resizeGesture
+    const screen = gesture ? findScreen(project, gesture.screenId) : undefined
+    if (gesture && screen && (gesture.columns !== screen.grid.columns || gesture.rows !== screen.grid.rows)) {
+      endPointerGesture()
+      commitResize(gesture.screenId, gesture.columns, gesture.rows)
+      return
+    }
+    endPointerGesture()
+    render()
+    return
+  }
+  endPointerGesture()
 })
 
 canvas.addEventListener('pointercancel', () => {
-  pointerMode = 'none'
-  dragState = null
-  panState = null
-  canvas.classList.remove('dragging')
+  endPointerGesture()
+  render()
 })
 
 canvas.addEventListener('wheel', event => {
@@ -493,6 +642,7 @@ window.addEventListener('keydown', event => {
     event.preventDefault()
   }
   if (event.key === 'Escape') {
+    endPointerGesture()
     selection = null
     render()
   }
@@ -552,6 +702,13 @@ const hook: LedmapHook = {
     return toScreen(camera, center)
   },
   projectToPx: point => toScreen(camera, point),
+  preview: () => resizePreview,
+  resizeHandlesPx: id => {
+    const screen = findScreen(project, id)
+    if (!screen) return []
+    return screenResizeHandles(camera, screen, screenShape(screen, screen.grid.columns, screen.grid.rows))
+      .map(({ handle, point }) => ({ handle, x: point.x, y: point.y }))
+  },
 }
 
 ;(window as unknown as { __ledmap: LedmapHook }).__ledmap = hook

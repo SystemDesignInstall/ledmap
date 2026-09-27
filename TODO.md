@@ -114,8 +114,14 @@
 - [ ] `electron-builder` Windows packaging
 - [ ] Экспорт hardware-форматов производителей (отдельный контракт)
 
+## Early Alpha UI — итерация 3: изменение размера Screen
+- [x] План/docs-gate: [LEDMAP-ALPHA-UI-003](docs/specs/LEDMAP-ALPHA-UI-003.md) — Screen Resize via Cabinet Grid; ADR-026. Одобрен пользователем 2026-09-27 с двумя обязательными корректировками: canvas-resize = transient preview + ровно один `resizeScreenGrid()` на `pointerup` (identity не зависит от траектории мыши), `nextCabinetSerial` — аллокатор identity, отделённый от `displayNumber`/signalling order. Ветка `feat/screen-resize-cabinet-grid` от `f44c248` (7E CLOSED).
+- [ ] Реализация: `resizeScreenGrid` как единственная операция изменения структуры; кабинеты в состоянии представления с сохранением ID и монотонным `nextCabinetSerial` (без переиспользования ID); единый app-helper `gridPixelSize(grid)` для Properties, renderer, handles, hit-test и bounds; редактируемые `Columns`/`Rows` в Properties; три canvas-handle (`right`, `bottom`, `bottomRight`) с дискретным snapping и preview; пересчёт `Screen.resolution`, bounds, hit-testing и сигнального пути существующим Cabinet Engine.
+- [ ] Тесты: unit-тесты project-состояния (4×3 → 512×384 / 12 кабинетов; 5×4 → 640×512 / 20 кабинетов; непрерывность и неповторяемость ID; изоляция остальных Screen; валидация; REF-001 regression) и обновлённый Electron smoke.
+- [ ] Отложено осознанно: редактирование разрешения кабинета (выводится как `moduleColumns * modulePixelWidth`, неоднозначно — возвращается в Phase 8 вместе с редактором geometry/ordering), handles `left`/`top` с компенсацией позиции, undo/redo (запрещён), авто-пересчёт camera. `packages/core` и схема `.ledmap` v1 не затрагиваются.
+
 ## Запреты на ближайших этапах (0–5)
-- UI — Phase 8; исключение только для Early Alpha UI по утверждённым LEDMAP-ALPHA-UI-001 / ADR-017 и LEDMAP-ALPHA-UI-002 / ADR-024
+- UI — Phase 8; исключение только для Early Alpha UI по утверждённым LEDMAP-ALPHA-UI-001 / ADR-017 и LEDMAP-ALPHA-UI-002 / ADR-024; итерация 3 (Screen Resize via Cabinet Grid) оформляется LEDMAP-ALPHA-UI-003 / ADR-026 и также остаётся узким исключением
 - Electron runtime — Phase 8; в одобренном Early Alpha разрешены окно и renderer, без привилегированного IPC
 - Без hardware драйверов/сетевых протоколов видеопроцессоров
 - Без экспортных форматов производителей

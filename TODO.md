@@ -4,6 +4,18 @@
 
 ## Текущая точка и следующий этап
 
+## Product V1 Convergence
+
+- [x] Зафиксировать единый критерий готовности: [LEDMAP-PRODUCT-V1-CONVERGENCE-001](docs/specs/LEDMAP-PRODUCT-V1-CONVERGENCE-001.md).
+- [ ] P1: Project Aggregate + Serialization v2 для реального multi-screen workspace.
+- [ ] P2: New/Open/Save/Save As + typed preload/IPC + dirty state.
+- [ ] P3: Mapping Region + Hardware topology UI + Auto Allocate.
+- [ ] P4: Validation UI + forward/reverse Inspector + generic export.
+- [ ] P5: Undo/Redo и UX completion.
+- [ ] P6: electron-builder + Windows release candidate.
+- Product V1 закрывается только end-to-end сценарием create/edit/map/validate/save/reopen/export; isolated engine milestone больше не считается продуктовым завершением.
+
+
 - [x] Phase 4E — обобщённая геометрия Cabinet pixel layout принята пользователем на `67fd975cf0e0036fd50c06d533a13a1bff871651`.
 - Cabinet Engine поддерживает Row/Column, LTR/RTL, TTB/BTT, независимый Snake, Top Left и прямоугольный module-first pixel layout с inverse mapping и safe integer validation. REF-001…004 служат регрессией Cabinet Engine; полная hardware/mapping-приёмка из Phase 5 ниже этим не объявляется завершённой.
 - Старые пункты Phase 0–5 ниже сохраняют исходный план и не являются актуальным отчётом о каждом реализованном файле.

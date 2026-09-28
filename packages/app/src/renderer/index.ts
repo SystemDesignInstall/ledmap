@@ -790,7 +790,7 @@ addScreenButton.addEventListener('click', () => {
 })
 
 function isPropertyControl(target: EventTarget | null): boolean {
-  return target instanceof HTMLElement && (
+  return target instanceof HTMLElement && properties.contains(target) && (
     target.matches('input, select, button, textarea') || target.isContentEditable
   )
 }

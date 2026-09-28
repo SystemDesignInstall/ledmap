@@ -48,11 +48,14 @@ canvas.dragging { cursor: grabbing; }
 .property { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; color: #aebed0; }
 .property:last-child { margin-bottom: 0; }
 .property label { font-size: 11px; color: #98a9bd; }
-.property input[type=number], .property .value, .property strong { font-size: 13px; color: #edf4fc; }
-.property input[type=number] { width: 96px; background: #0f1620; border: 1px solid #354256; border-radius: 5px; padding: 7px 9px; font: inherit; color: #edf4fc; }
-input[type=number]:focus-visible { outline: 2px solid #74e0c2; outline-offset: 1px; }
+.property input[type=number], .property select, .property .value, .property strong { font-size: 13px; color: #edf4fc; }
+.property input[type=number], .property select { width: 116px; background: #0f1620; border: 1px solid #354256; border-radius: 5px; padding: 7px 9px; font: inherit; color: #edf4fc; }
+.property select { appearance: auto; }
+.property input[type=number]:focus-visible, .property select:focus-visible, .property-toggle:focus-visible { outline: 2px solid #74e0c2; outline-offset: 1px; }
 input[aria-invalid=true] { border-color: #ff9494; }
 .property .value { font-variant-numeric: tabular-nums; }
+.property-toggle { width: 72px; padding: 7px 9px; background: #263443; color: #d8e5f2; border: 1px solid #354256; }
+.property-toggle[aria-pressed=true] { background: #3b615b; color: #a4efdb; }
 .statusbar { height: 36px; padding: 0 24px; border-top: 1px solid #2a3545; background: #151c26; display: flex; align-items: center; gap: 20px; font-size: 11px; color: #98a9bd; flex: none; }
 .status-item { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .status-note { color: #e8ba79; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

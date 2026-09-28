@@ -1,15 +1,16 @@
 import {
   createDemoProject, findScreen, hitTest, maxColumnsForRows, maxRowsForColumns, moveScreen, projectBounds,
-  resizeScreenGrid, screenBounds, screenHeight, screenWidth, setScreenPosition,
-  type Project, type ScreenView, type SelectedObject,
+  resizeScreenGrid, screenBounds, screenHeight, screenWidth, setScreenPosition, updateScreenCabinetConfig,
+  type Project, type ScreenCabinetConfigPatch, type ScreenView, type SelectedObject,
 } from './project.js'
 import { addScreen } from './project.js'
+import { changeNumbering } from './state.js'
 import type { GridShape, Point, ResizeHandle, ResizePreview } from './canvas.js'
 import {
   cabinetLabelHit, drawProject, fitCamera, resizeHandleCursor, resizeHandleHit, screenBoundaryHit,
   screenResizeHandles, screenShape, toProject, toScreen, zoomAt, type Camera,
 } from './canvas.js'
-import type { Direction } from '@ledmap/core'
+import type { Direction, Numbering } from '@ledmap/core'
 
 interface LedmapHook {
   dump(): ReadonlyArray<{
@@ -21,6 +22,18 @@ interface LedmapHook {
     readonly height: number
     readonly columns: number
     readonly rows: number
+    readonly cabinetWidth: number
+    readonly cabinetHeight: number
+    readonly moduleColumns: number
+    readonly moduleRows: number
+    readonly modulePixelWidth: number
+    readonly modulePixelHeight: number
+    readonly modulesPerCabinet: number
+    readonly totalModules: number
+    readonly numbering: Numbering
+    readonly direction: Direction
+    readonly snake: boolean
+    readonly nextCabinetSerial: number
     readonly cabinets: ReadonlyArray<{ readonly id: string; readonly index: number; readonly column: number; readonly row: number }>
     readonly order: readonly number[]
   }>
@@ -85,12 +98,6 @@ function directionLabel(direction: Direction): string {
     'bottom-to-top': 'Bottom → Top',
   }
   return labels[direction]
-}
-
-function orderingSummary(screen: ScreenView): string {
-  const { ordering } = screen.grid
-  const numbering = ordering.numbering === 'row' ? 'Row' : 'Column'
-  return `${numbering} · ${directionLabel(ordering.direction)} · Snake ${ordering.snake ? 'ON' : 'OFF'}`
 }
 
 function apply(next: Project): void {
@@ -274,7 +281,12 @@ function valueNode(text: string): HTMLElement {
   return node
 }
 
-function numberField(initial: number, ariaLabel: string, onCommit: (value: number) => void, validate?: (value: number) => string | null): HTMLInputElement {
+function numberField(
+  initial: number,
+  ariaLabel: string,
+  onCommit: (value: number) => string | null | void,
+  validate?: (value: number) => string | null,
+): HTMLInputElement {
   const input = document.createElement('input')
   input.type = 'number'
   input.min = '1'
@@ -287,17 +299,47 @@ function numberField(initial: number, ariaLabel: string, onCommit: (value: numbe
     const problem = !raw || !Number.isFinite(value)
       ? 'Enter a number.'
       : validate ? validate(value) : null
-    if (problem) {
+    const commitProblem = problem ?? onCommit(value) ?? null
+    if (commitProblem) {
       input.setAttribute('aria-invalid', 'true')
-      input.title = problem
+      input.title = commitProblem
       input.value = String(initial)
       return
     }
     input.removeAttribute('aria-invalid')
     input.removeAttribute('title')
-    onCommit(value)
   })
   return input
+}
+
+function selectField<T extends string>(
+  initial: T,
+  ariaLabel: string,
+  options: readonly { readonly value: T; readonly label: string }[],
+  onCommit: (value: T) => void,
+): HTMLSelectElement {
+  const select = document.createElement('select')
+  select.setAttribute('aria-label', ariaLabel)
+  for (const option of options) {
+    const node = document.createElement('option')
+    node.value = option.value
+    node.textContent = option.label
+    select.append(node)
+  }
+  select.value = initial
+  select.addEventListener('change', () => onCommit(select.value as T))
+  return select
+}
+
+function toggleField(initial: boolean, ariaLabel: string, onCommit: (value: boolean) => void): HTMLButtonElement {
+  const button = document.createElement('button')
+  button.type = 'button'
+  button.className = 'property-toggle'
+  button.setAttribute('aria-label', ariaLabel)
+  button.setAttribute('aria-pressed', String(initial))
+  button.textContent = initial ? 'ON' : 'OFF'
+  button.addEventListener('click', () => onCommit(!initial))
+  return button
 }
 
 function gridValidator(label: string, limit: (value: number) => number): (value: number) => string | null {
@@ -307,6 +349,119 @@ function gridValidator(label: string, limit: (value: number) => number): (value:
     if (value > max) return `${label} is limited to ${format.format(max)} for this screen.`
     return null
   }
+}
+
+function cabinetConfigProblem(screenId: string, patch: ScreenCabinetConfigPatch): string | null {
+  try {
+    updateScreenCabinetConfig(project, screenId, patch)
+    return null
+  } catch (error) {
+    return error instanceof Error ? error.message : 'Unable to update cabinet configuration.'
+  }
+}
+
+function commitCabinetConfig(screenId: string, patch: ScreenCabinetConfigPatch): string | null {
+  try {
+    apply(updateScreenCabinetConfig(project, screenId, patch))
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unable to update cabinet configuration.'
+    canvasNote.textContent = message
+    return message
+  }
+  render()
+  return null
+}
+
+type ModuleDimensionKey = 'moduleColumns' | 'moduleRows' | 'modulePixelWidth' | 'modulePixelHeight'
+
+function moduleNumberField(screen: ScreenView, prefix: string, key: ModuleDimensionKey, label: string): HTMLInputElement {
+  const patch = (value: number): ScreenCabinetConfigPatch => ({ [key]: value }) as ScreenCabinetConfigPatch
+  return numberField(
+    screen.config[key],
+    `${prefix} ${label}`,
+    value => commitCabinetConfig(screen.screen.id, patch(value)),
+    value => {
+      if (!Number.isSafeInteger(value) || value < 1) return `${label} must be a whole number of at least 1.`
+      return cabinetConfigProblem(screen.screen.id, patch(value))
+    },
+  )
+}
+
+function directionOptions(numbering: Numbering): readonly { readonly value: Direction; readonly label: string }[] {
+  return numbering === 'row'
+    ? [
+        { value: 'left-to-right', label: directionLabel('left-to-right') },
+        { value: 'right-to-left', label: directionLabel('right-to-left') },
+      ]
+    : [
+        { value: 'top-to-bottom', label: directionLabel('top-to-bottom') },
+        { value: 'bottom-to-top', label: directionLabel('bottom-to-top') },
+      ]
+}
+
+function appendCabinetConfigGroups(container: HTMLDivElement, screen: ScreenView, prefix: string): void {
+  const modulesBox = document.createElement('div')
+  modulesBox.append(
+    propertyRow('Columns', moduleNumberField(screen, prefix, 'moduleColumns', 'Module Columns')),
+    propertyRow('Rows', moduleNumberField(screen, prefix, 'moduleRows', 'Module Rows')),
+  )
+  container.append(group('Modules per Cabinet', modulesBox))
+
+  const moduleResolutionBox = document.createElement('div')
+  moduleResolutionBox.append(
+    propertyRow('Width', moduleNumberField(screen, prefix, 'modulePixelWidth', 'Module Pixel Width')),
+    propertyRow('Height', moduleNumberField(screen, prefix, 'modulePixelHeight', 'Module Pixel Height')),
+  )
+  container.append(group('Module Resolution', moduleResolutionBox))
+
+  const calculatedCabinetBox = document.createElement('div')
+  calculatedCabinetBox.append(
+    propertyRow('Width', valueNode(`${format.format(screen.grid.cabinetWidth)} px`)),
+    propertyRow('Height', valueNode(`${format.format(screen.grid.cabinetHeight)} px`)),
+    propertyRow('Modules', valueNode(format.format(screen.modulesPerCabinet))),
+  )
+  container.append(group('Calculated Cabinet', calculatedCabinetBox))
+
+  const orderingBox = document.createElement('div')
+  const numbering = selectField<Numbering>(
+    screen.grid.ordering.numbering,
+    `${prefix} Numbering`,
+    [{ value: 'row', label: 'Row' }, { value: 'column', label: 'Column' }],
+    value => {
+      const next = changeNumbering(screen.grid.ordering, value)
+      commitCabinetConfig(screen.screen.id, { numbering: next.numbering, direction: next.direction })
+    },
+  )
+  const direction = selectField<Direction>(
+    screen.grid.ordering.direction,
+    `${prefix} Direction`,
+    directionOptions(screen.grid.ordering.numbering),
+    value => { commitCabinetConfig(screen.screen.id, { direction: value }) },
+  )
+  const snake = toggleField(screen.grid.ordering.snake, `${prefix} Snake`, value => {
+    commitCabinetConfig(screen.screen.id, { snake: value })
+  })
+  orderingBox.append(
+    propertyRow('Numbering', numbering),
+    propertyRow('Direction', direction),
+    propertyRow('Snake', snake),
+  )
+  container.append(group('Ordering', orderingBox))
+
+  const calculatedScreenBox = document.createElement('div')
+  calculatedScreenBox.append(
+    propertyRow('Width', valueNode(`${format.format(screenWidth(screen))} px`)),
+    propertyRow('Height', valueNode(`${format.format(screenHeight(screen))} px`)),
+  )
+  container.append(group('Calculated Screen', calculatedScreenBox))
+
+  const totalsBox = document.createElement('div')
+  totalsBox.append(
+    propertyRow('Cabinets', valueNode(format.format(screen.cabinets.length))),
+    propertyRow('Modules', valueNode(format.format(screen.totalModules))),
+    propertyRow('Pixels', valueNode(format.format(screen.pixelCount))),
+  )
+  container.append(group('Totals', totalsBox))
 }
 
 function renderScreenProperties(screen: ScreenView): void {
@@ -353,36 +508,20 @@ function renderScreenProperties(screen: ScreenView): void {
   )
   container.append(group('Cabinet Grid', gridBox))
 
-  const cabinetBox = document.createElement('div')
-  cabinetBox.append(
-    propertyRow('Width', valueNode(`${format.format(screen.grid.cabinetWidth)} px`)),
-    propertyRow('Height', valueNode(`${format.format(screen.grid.cabinetHeight)} px`)),
-    propertyRow('Ordering', valueNode(orderingSummary(screen))),
-  )
-  container.append(group('Cabinet', cabinetBox))
-
-  const sizeBox = document.createElement('div')
-  sizeBox.append(
-    propertyRow('Width', valueNode(`${format.format(screenWidth(screen))} px`)),
-    propertyRow('Height', valueNode(`${format.format(screenHeight(screen))} px`)),
-  )
-  container.append(group('Calculated Screen Size', sizeBox))
-
-  const countBox = document.createElement('div')
-  countBox.append(propertyRow('Cabinets', valueNode(format.format(screen.cabinets.length))))
-  container.append(group('Totals', countBox))
+  appendCabinetConfigGroups(container, screen, 'Screen')
   properties.append(container)
 }
 
-function commitResize(screenId: string, columns: number, rows: number): void {
+function commitResize(screenId: string, columns: number, rows: number): string | null {
   try {
     apply(resizeScreenGrid(project, screenId, columns, rows))
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unable to resize the cabinet grid.'
     canvasNote.textContent = message
-    return
+    return message
   }
   render()
+  return null
 }
 
 function renderGridProperties(screen: ScreenView): void {
@@ -414,14 +553,7 @@ function renderGridProperties(screen: ScreenView): void {
   )
   container.append(group('Dimensions', dimensionsBox))
 
-  const summaryBox = document.createElement('div')
-  summaryBox.append(
-    propertyRow('Cabinets', valueNode(format.format(screen.cabinets.length))),
-    propertyRow('Cabinet size', valueNode(`${format.format(screen.grid.cabinetWidth)} × ${format.format(screen.grid.cabinetHeight)} px`)),
-    propertyRow('Ordering', valueNode(orderingSummary(screen))),
-    propertyRow('Screen size', valueNode(`${format.format(screenWidth(screen))} × ${format.format(screenHeight(screen))} px`)),
-  )
-  container.append(group('Summary', summaryBox))
+  appendCabinetConfigGroups(container, screen, 'Cabinet Grid')
   properties.append(container)
 }
 
@@ -657,8 +789,15 @@ addScreenButton.addEventListener('click', () => {
   render()
 })
 
+function isPropertyControl(target: EventTarget | null): boolean {
+  return target instanceof HTMLElement && properties.contains(target) && (
+    target.matches('input, select, button, textarea') || target.isContentEditable
+  )
+}
+
 window.addEventListener('keydown', event => {
-  if (event.code === 'Space' && document.activeElement?.tagName !== 'INPUT') {
+  if (isPropertyControl(event.target)) return
+  if (event.code === 'Space') {
     spaceDown = true
     canvas.classList.add('space-grab')
     event.preventDefault()
@@ -710,6 +849,18 @@ const hook: LedmapHook = {
     height: screenHeight(s),
     columns: s.grid.columns,
     rows: s.grid.rows,
+    cabinetWidth: s.grid.cabinetWidth,
+    cabinetHeight: s.grid.cabinetHeight,
+    moduleColumns: s.config.moduleColumns,
+    moduleRows: s.config.moduleRows,
+    modulePixelWidth: s.config.modulePixelWidth,
+    modulePixelHeight: s.config.modulePixelHeight,
+    modulesPerCabinet: s.modulesPerCabinet,
+    totalModules: s.totalModules,
+    numbering: s.grid.ordering.numbering,
+    direction: s.grid.ordering.direction,
+    snake: s.grid.ordering.snake,
+    nextCabinetSerial: s.nextCabinetSerial,
     cabinets: s.cabinets.map(c => ({ id: c.id, index: c.index, column: c.column, row: c.row })),
     order: s.cabinets.map(c => c.index + 1),
   })),

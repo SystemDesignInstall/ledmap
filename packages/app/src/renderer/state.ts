@@ -25,7 +25,8 @@ export interface Snapshot extends CabinetSeed {
   readonly screen: Screen
   readonly grid: CabinetGrid
   readonly path: readonly GridPosition[]
-  readonly moduleCount: number
+  readonly modulesPerCabinet: number
+  readonly totalModules: number
   readonly pixelCount: number
 }
 export interface AlphaState {
@@ -130,8 +131,8 @@ export function buildSnapshot(seed: CabinetSeed | null, draft: Draft, ids: Snaps
     const config: CabinetEngineConfig = { ...dimensions, ordering: { ...draft.ordering } }
     decomposeCabinetPixel(config, { x: 0, y: 0 })
     const cabinetCount = safeProduct('Cabinet count', config.columns, config.rows)
-    const moduleCount = safeProduct('Modules per cabinet', config.moduleColumns, config.moduleRows)
-    const totalModules = safeProduct('Total modules', cabinetCount, moduleCount)
+    const modulesPerCabinet = safeProduct('Modules per cabinet', config.moduleColumns, config.moduleRows)
+    const totalModules = safeProduct('Total modules', cabinetCount, modulesPerCabinet)
     const cabinetWidth = safeProduct('Cabinet width', config.moduleColumns, config.modulePixelWidth)
     const cabinetHeight = safeProduct('Cabinet height', config.moduleRows, config.modulePixelHeight)
     if (cabinetCount > MAX_PREVIEW_CABINETS) throw new Error(`Preview supports up to ${MAX_PREVIEW_CABINETS} cabinets. Reduce Columns or Rows.`)
@@ -149,7 +150,7 @@ export function buildSnapshot(seed: CabinetSeed | null, draft: Draft, ids: Snaps
     const { cabinets, nextCabinetSerial } = buildCabinets(config, seed)
     return {
       snapshot: {
-        config, grid, screen, cabinets, nextCabinetSerial, path, moduleCount, pixelCount,
+        config, grid, screen, cabinets, nextCabinetSerial, path, modulesPerCabinet, totalModules, pixelCount,
       },
       errors: {},
     }

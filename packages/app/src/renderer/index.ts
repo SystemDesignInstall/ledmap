@@ -512,15 +512,16 @@ function renderScreenProperties(screen: ScreenView): void {
   properties.append(container)
 }
 
-function commitResize(screenId: string, columns: number, rows: number): void {
+function commitResize(screenId: string, columns: number, rows: number): string | null {
   try {
     apply(resizeScreenGrid(project, screenId, columns, rows))
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unable to resize the cabinet grid.'
     canvasNote.textContent = message
-    return
+    return message
   }
   render()
+  return null
 }
 
 function renderGridProperties(screen: ScreenView): void {
@@ -788,8 +789,15 @@ addScreenButton.addEventListener('click', () => {
   render()
 })
 
+function isPropertyControl(target: EventTarget | null): boolean {
+  return target instanceof HTMLElement && (
+    target.matches('input, select, button, textarea') || target.isContentEditable
+  )
+}
+
 window.addEventListener('keydown', event => {
-  if (event.code === 'Space' && document.activeElement?.tagName !== 'INPUT') {
+  if (isPropertyControl(event.target)) return
+  if (event.code === 'Space') {
     spaceDown = true
     canvas.classList.add('space-grab')
     event.preventDefault()

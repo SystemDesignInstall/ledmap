@@ -74,7 +74,7 @@ interface ScreenCabinetConfigPatch {
 
 - Чистая функция над `Project`, рядом с `resizeScreenGrid` / `moveScreen` / `setScreenPosition` / `addScreen`. Возвращает новый `Project`; вход не мутируется.
 - **Атомарный patch:** поля, отсутствующие в patch, сохраняют текущие значения. Если хотя бы одно поле невалидно, операция отклоняется **целиком** — частичное применение (`moduleColumns` применён, `snake` нет) невозможно, а невалидный patch MUST NOT менять состояние.
-- Каждое числовое поле валидируется как positive safe integer `>= 1`; `ordering` валидируется существующим `decomposeCabinetPixel(config, { x: 0, y: 0 })`, а не новой логикой.
+- Каждое числовое поле валидируется как positive safe integer `>= 1`; итоговый `CabinetEngineConfig` проходит существующий путь `buildSnapshot(...)`, который уже вызывает core-проверки (`decomposeCabinetPixel(...)`, `cabinetOrder(...)`) и не дублирует правила ordering в UI.
 - Лимиты preview ALPHA-UI-001 сохраняются и теперь зависят от module-геометрии: 1024 кабинета на grid и 65 536 модулей суммарно. Рост любого module-поля может вытолкнуть экран за предел при неизменных `columns`/`rows`, поэтому предел проверяется на итоговом patch.
 - Сборка snapshot идёт **тем же** путём, что и в итерации 3: `buildSnapshot(seed, draft, ids)` с текущими кабинетами и `nextCabinetSerial` в качестве seed. Новый путь построения snapshot не создаётся, иначе инварианты непрерывности ID из ADR-026 разойдутся с реальностью.
 - Остальные Screen возвращаются без изменений (тот же readonly `ScreenView`).
@@ -216,7 +216,7 @@ Cabinet Grid
   - preview — **допущение уровня проекта**: «все кабинеты этого Screen имеют одинаковую module-геометрию», редактируемую пользователем;
   - hardware topology — **authority** для фактического оборудования, когда Phase 8/7E дойдёт до интеграции;
   - расхождение не «чинится» на этом этапе и не маскируется: изменение module-геометрии в preview MUST NOT менять семантику `resolveMapping`, а переход на hardware-источник — отдельная задача интеграции.
-- **Сериализация v1 (7D) не затрагивается:** `columns`, `rows`, `cabinetWidth`, `cabinetHeight` и `ordering` уже являются её полями. `moduleColumns`/`moduleRows`/`modulePixelWidth`/`modulePixelHeight` в v1 не хранятся — они выводятся из `cabinetWidth`/`cabinetHeight` при загрузке, и это неоднозначность, которая должна быть решена на отдельном gate сериализации, **не** на этом этапе. Open/Save остаётся Phase 8.
+- **Сериализация v1 (7D) не изменяется:** `Cabinet` уже хранит `pixelWidth`/`pixelHeight`, `moduleColumns`/`moduleRows`, а `StoredModuleV1` — собственные `pixelWidth`/`pixelHeight`; `CabinetGrid` хранит `columns`/`rows`/`cabinetWidth`/`cabinetHeight`/`ordering`. UI-поля `modulePixelWidth`/`modulePixelHeight` не являются отдельными wire-полями, но их значение представимо существующими module records. Эта итерация не меняет schema/serialization code и не определяет Open/Save mapping между in-memory preview и полным набором serialized Cabinet/Module records — это интеграционная задача Phase 8. Утверждать, что `moduleColumns`/`moduleRows` отсутствуют в v1, нельзя.
 
 ## 10. Зависимость от одобрения
 

@@ -136,7 +136,7 @@
 - [ ] Ортогональность: смена ordering не меняет `cabinetWidth`/`Height`/разрешение; смена module-геометрии не меняет `index`/`path`. Direction — через единственный существующий `changeNumbering()`; в UI не создаётся вторая копия правила.
 - [ ] Переименование в app: `moduleCount` → `modulesPerCabinet` + `totalModules` (в core не выходит).
 - [ ] Тесты: unit на module-геометрию (`4→5` → `160 × 128`; `32→64` → `256 × 128`), неприкосновенность ID и `nextCabinetSerial`, четыре комбинации ordering против REF-001 и зеркал, ортогональность, атомарность, валидация, предел 65 536 модулей, изоляция экранов; Electron smoke (правка `moduleColumns`, смена `Numbering`/`Snake`, `aria-invalid`, недостижимые опции `Direction`, сохранение панели `Cabinet Grid`, REF-001 safety). Baseline 1252 теста / 53 файла.
-- [ ] Вне scope: индивидуальная геометрия кабинета (`C01` ≠ `C02`), перенос геометрии в hardware topology как authority (отдельный gate интеграции Phase 8/7E), module-поля в `.ledmap` v1 (отдельный gate сериализации), перетаскивание кабинета между экранами, новые canvas-жесты, undo/redo.
+- [ ] Вне scope: индивидуальная геометрия кабинета (`C01` ≠ `C02`), перенос геометрии в hardware topology как authority (отдельный gate интеграции Phase 8/7E), Open/Save mapping между uniform preview geometry и существующими serialized Cabinet/Module records v1 (schema v1 не меняется), перетаскивание кабинета между экранами, новые canvas-жесты, undo/redo.
 - [ ] Production-код только после одобрения плана.
 
 ## Запреты на ближайших этапах (0–5)

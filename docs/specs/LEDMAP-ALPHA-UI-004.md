@@ -1,8 +1,8 @@
 # LEDMAP-ALPHA-UI-004 — Early Alpha UI: Cabinet Geometry & Ordering Editor
 
-Статус: **Draft — план на docs-gate, не авторизован.** Четвёртая итерация Early Alpha UI, продолжающая [LEDMAP-ALPHA-UI-003](LEDMAP-ALPHA-UI-003.md) (Screen Resize via Cabinet Grid, ACCEPTED/CLOSED на `02e8483`). Основание исключения — ADR-017, первая итерация — ADR-017, вторая — ADR-024, третья — ADR-026; настоящая итерация оформляется ADR-027. Базовые контракты ALPHA-UI-001/002/003 сохраняются в части границ core/app, интеграции, лимитов preview, deferred commit и запретов.
+Статус: **Accepted — implementation authorized 2026-09-28.** Четвёртая итерация Early Alpha UI, продолжающая [LEDMAP-ALPHA-UI-003](LEDMAP-ALPHA-UI-003.md) (Screen Resize via Cabinet Grid, ACCEPTED/CLOSED на `02e8483`). Основание исключения — ADR-017, первая итерация — ADR-017, вторая — ADR-024, третья — ADR-026; настоящая итерация оформляется ADR-027. Базовые контракты ALPHA-UI-001/002/003 сохраняются в части границ core/app, интеграции, лимитов preview, deferred commit и запретов.
 
-Production-код не пишется до одобрения этого документа. Ветка `feat/cabinet-geometry-ordering-editor` от `dc027f7`.
+Документ одобрен пользователем 2026-09-28; production-код разрешён строго в границах этого контракта. Ветка `feat/cabinet-geometry-ordering-editor` от `dc027f7`.
 
 ## 1. Цель и границы
 
@@ -218,6 +218,6 @@ Cabinet Grid
   - расхождение не «чинится» на этом этапе и не маскируется: изменение module-геометрии в preview MUST NOT менять семантику `resolveMapping`, а переход на hardware-источник — отдельная задача интеграции.
 - **Сериализация v1 (7D) не изменяется:** `Cabinet` уже хранит `pixelWidth`/`pixelHeight`, `moduleColumns`/`moduleRows`, а `StoredModuleV1` — собственные `pixelWidth`/`pixelHeight`; `CabinetGrid` хранит `columns`/`rows`/`cabinetWidth`/`cabinetHeight`/`ordering`. UI-поля `modulePixelWidth`/`modulePixelHeight` не являются отдельными wire-полями, но их значение представимо существующими module records. Эта итерация не меняет schema/serialization code и не определяет Open/Save mapping между in-memory preview и полным набором serialized Cabinet/Module records — это интеграционная задача Phase 8. Утверждать, что `moduleColumns`/`moduleRows` отсутствуют в v1, нельзя.
 
-## 10. Зависимость от одобрения
+## 10. Одобрение
 
-Документ не является разрешением на production-код. Порядок: одобрение пользователем → отдельный коммит docs-gate (`LEDMAP-ALPHA-UI-004.md`, ADR-027, `TODO.md`, `AGENTS.md`) → проверка SHA → только затем реализация `updateScreenCabinetConfig`, панели Properties и тестов.
+Одобрено пользователем 2026-09-28. После отдельного docs-gate коммита разрешена реализация `updateScreenCabinetConfig`, панели Properties и тестов в ветке `feat/cabinet-geometry-ordering-editor`; `master` не изменяется до завершения проверки.

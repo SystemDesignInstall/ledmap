@@ -1,6 +1,6 @@
 # LEDMAP-ALPHA-UI-004 — Early Alpha UI: Cabinet Geometry & Ordering Editor
 
-Статус: **Accepted — implementation authorized 2026-09-28.** Четвёртая итерация Early Alpha UI, продолжающая [LEDMAP-ALPHA-UI-003](LEDMAP-ALPHA-UI-003.md) (Screen Resize via Cabinet Grid, ACCEPTED/CLOSED на `02e8483`). Основание исключения — ADR-017, первая итерация — ADR-017, вторая — ADR-024, третья — ADR-026; настоящая итерация оформляется ADR-027. Базовые контракты ALPHA-UI-001/002/003 сохраняются в части границ core/app, интеграции, лимитов preview, deferred commit и запретов.
+Статус: **Implemented — CI PASS 2026-09-28, not merged.** Четвёртая итерация Early Alpha UI, продолжающая [LEDMAP-ALPHA-UI-003](LEDMAP-ALPHA-UI-003.md) (Screen Resize via Cabinet Grid, ACCEPTED/CLOSED на `02e8483`). Основание исключения — ADR-017, первая итерация — ADR-017, вторая — ADR-024, третья — ADR-026; настоящая итерация оформляется ADR-027. Базовые контракты ALPHA-UI-001/002/003 сохраняются в части границ core/app, интеграции, лимитов preview, deferred commit и запретов.
 
 Документ одобрен пользователем 2026-09-28; production-код разрешён строго в границах этого контракта. Ветка `feat/cabinet-geometry-ordering-editor` от `dc027f7`.
 
@@ -220,4 +220,4 @@ Cabinet Grid
 
 ## 10. Одобрение
 
-Одобрено пользователем 2026-09-28. После отдельного docs-gate коммита разрешена реализация `updateScreenCabinetConfig`, панели Properties и тестов в ветке `feat/cabinet-geometry-ordering-editor`; `master` не изменяется до завершения проверки.
+Одобрено пользователем 2026-09-28. Docs-gate `8764f52`; implementation `051f5e8`; Properties UI и Electron smoke `4800559`; CI `130c38c` и `9e0abf9`. GitHub Actions подтвердил `npm test`, `typecheck`, `lint`, `build` и `xvfb-run -a npm run test:smoke`. `master` не изменён.

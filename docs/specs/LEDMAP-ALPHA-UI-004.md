@@ -1,8 +1,8 @@
 # LEDMAP-ALPHA-UI-004 — Early Alpha UI: Cabinet Geometry & Ordering Editor
 
-Статус: **Implemented — CI PASS 2026-09-28, not merged.** Четвёртая итерация Early Alpha UI, продолжающая [LEDMAP-ALPHA-UI-003](LEDMAP-ALPHA-UI-003.md) (Screen Resize via Cabinet Grid, ACCEPTED/CLOSED на `02e8483`). Основание исключения — ADR-017, первая итерация — ADR-017, вторая — ADR-024, третья — ADR-026; настоящая итерация оформляется ADR-027. Базовые контракты ALPHA-UI-001/002/003 сохраняются в части границ core/app, интеграции, лимитов preview, deferred commit и запретов.
+Статус: **ACCEPTED / CLOSED — merged via PR #2 on 2026-09-28; `master` contains merge `a3ac0ab36600c32cd9e1a645e770af50246de461`.** Четвёртая итерация Early Alpha UI, продолжающая [LEDMAP-ALPHA-UI-003](LEDMAP-ALPHA-UI-003.md) (Screen Resize via Cabinet Grid, ACCEPTED/CLOSED на `02e8483`). Основание исключения — ADR-017, первая итерация — ADR-017, вторая — ADR-024, третья — ADR-026; настоящая итерация оформляется ADR-027. Базовые контракты ALPHA-UI-001/002/003 сохраняются в части границ core/app, интеграции, лимитов preview, deferred commit и запретов.
 
-Документ одобрен пользователем 2026-09-28; production-код разрешён строго в границах этого контракта. Ветка `feat/cabinet-geometry-ordering-editor` от `dc027f7`.
+Документ одобрен пользователем 2026-09-28; production-код был разрешён строго в границах этого контракта. Итерация реализована в `feat/cabinet-geometry-ordering-editor` от `dc027f7`, прошла GitHub CI и смержена PR #2 в `master` merge-коммитом `a3ac0ab`.
 
 ## 1. Цель и границы
 

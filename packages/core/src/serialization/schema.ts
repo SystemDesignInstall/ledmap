@@ -1,6 +1,6 @@
 import { SerializationError, type SerializationPath } from './errors.js'
 import { canonicalArrayIndex, cloneJsonValue, compareUtf16, isPlainRecord } from './json.js'
-import type { JsonObject, JsonValue, StoredProjectV1 } from './types.js'
+import type { JsonObject, JsonValue, StoredEditableProjectV2, StoredProjectV1 } from './types.js'
 
 export type SchemaMode = 'document' | 'runtime'
 
@@ -33,13 +33,19 @@ interface RecordField {
   readonly fields: readonly FieldSpec[]
 }
 
+interface NullableRecordField {
+  readonly name: string
+  readonly type: 'nullable-record'
+  readonly fields: readonly FieldSpec[]
+}
+
 interface ArrayField {
   readonly name: string
   readonly type: 'array'
   readonly items: ItemSpec
 }
 
-type FieldSpec = StringField | NumberField | BooleanField | EnumField | RecordField | ArrayField
+type FieldSpec = StringField | NumberField | BooleanField | EnumField | RecordField | NullableRecordField | ArrayField
 
 type ItemSpec =
   | { readonly kind: 'string' }
@@ -199,6 +205,25 @@ const projectFields: readonly FieldSpec[] = [
   { name: 'rules', type: 'array', items: { kind: 'json' } },
 ]
 
+const screenPlacementFields: readonly FieldSpec[] = [
+  { name: 'screen', type: 'string' },
+  { name: 'position', type: 'record', fields: xyFields },
+]
+
+const editorLayoutFields: readonly FieldSpec[] = [
+  { name: 'screenPositions', type: 'array', items: { kind: 'record', fields: screenPlacementFields } },
+]
+
+const editableProjectFields: readonly FieldSpec[] = [
+  { name: 'inputCanvas', type: 'nullable-record', fields: inputCanvasFields },
+  { name: 'screens', type: 'array', items: { kind: 'record', fields: screenFields } },
+  { name: 'cabinetGrids', type: 'array', items: { kind: 'record', fields: gridFields } },
+  { name: 'mappingRegions', type: 'array', items: { kind: 'record', fields: regionFields } },
+  { name: 'hardwareTopology', type: 'record', fields: topologyFields },
+  { name: 'rules', type: 'array', items: { kind: 'json' } },
+  { name: 'editorLayout', type: 'record', fields: editorLayoutFields },
+]
+
 export function assertOwnDataProperties(value: object, path: SerializationPath): void {
   for (const key of Object.getOwnPropertyNames(value)) {
     const descriptor = Object.getOwnPropertyDescriptor(value, key)!
@@ -266,6 +291,10 @@ function checkFieldValue(field: FieldSpec, value: unknown, path: SerializationPa
     if (typeof value !== 'string' || !field.values.includes(value)) fail(mode, path, `one of: ${field.values.join(', ')}`)
     return value
   }
+  if (field.type === 'nullable-record') {
+    if (value === null) return null
+    return checkRecordFields(value, field.fields, path, mode) as JsonValue
+  }
   if (field.type === 'record') return checkRecordFields(value, field.fields, path, mode) as JsonValue
   const array = checkDenseArray(value, path, mode)
   return array.map((item, index) => checkItem(field.items, item, [...path, index], mode))
@@ -303,6 +332,10 @@ function checkRecordFields(value: unknown, fields: readonly FieldSpec[], path: S
 
 export function checkProjectPayload(value: unknown, path: SerializationPath, mode: SchemaMode): StoredProjectV1 {
   return checkRecordFields(value, projectFields, path, mode) as unknown as StoredProjectV1
+}
+
+export function checkEditableProjectPayload(value: unknown, path: SerializationPath, mode: SchemaMode): StoredEditableProjectV2 {
+  return checkRecordFields(value, editableProjectFields, path, mode) as unknown as StoredEditableProjectV2
 }
 
 export function checkExtensionsPayload(value: unknown, path: SerializationPath, mode: SchemaMode): JsonObject {

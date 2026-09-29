@@ -1,3 +1,4 @@
+import type { EditableProject, EditableProjectDiagnostic } from '../editor-project/index.js'
 import type { ProjectValidationReport, ValidateProjectInput } from '../validation/index.js'
 
 export type JsonValue = null | boolean | number | string | JsonObject | readonly JsonValue[]
@@ -141,6 +142,34 @@ export interface ProjectDocumentV1 {
   readonly extensions: JsonObject
 }
 
+export interface ScreenPlacementV2 {
+  readonly screen: string
+  readonly position: XYV1
+}
+
+export interface EditorLayoutV2 {
+  readonly screenPositions: readonly ScreenPlacementV2[]
+}
+
+export interface StoredEditableProjectV2 {
+  readonly inputCanvas: InputCanvasV1 | null
+  readonly screens: readonly ScreenV1[]
+  readonly cabinetGrids: readonly GridV1[]
+  readonly mappingRegions: readonly RegionV1[]
+  readonly hardwareTopology: StoredHardwareTopologyV1
+  readonly rules: readonly JsonValue[]
+  readonly editorLayout: EditorLayoutV2
+}
+
+export interface ProjectDocumentV2 {
+  readonly format: 'ledmap'
+  readonly schemaVersion: 2
+  readonly project: StoredEditableProjectV2
+  readonly extensions: JsonObject
+}
+
+export type EditableProjectDocument = ProjectDocumentV1 | ProjectDocumentV2
+
 export interface SerializeProjectInput {
   readonly project: ValidateProjectInput
   readonly extensions?: JsonObject
@@ -150,4 +179,16 @@ export interface LoadedProject {
   readonly project: ValidateProjectInput
   readonly extensions: JsonObject
   readonly validation: ProjectValidationReport
+}
+
+export interface SerializeEditableProjectInput {
+  readonly project: EditableProject
+  readonly extensions?: JsonObject
+}
+
+export interface LoadedEditableProject {
+  readonly project: EditableProject
+  readonly extensions: JsonObject
+  readonly sourceSchemaVersion: 1 | 2
+  readonly integrityDiagnostics: readonly EditableProjectDiagnostic[]
 }

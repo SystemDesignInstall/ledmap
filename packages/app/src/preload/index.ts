@@ -7,6 +7,8 @@ import {
   type SimulateDisplayChangeRequest,
   type StartLiveOutputRequest,
   type UpdateLiveOutputRequest,
+  type WriteExportFilesRequest,
+  type WriteGenericMappingRequest,
 } from '../shared/ipc.js'
 
 const api: LedmapDesktopApi = {
@@ -35,6 +37,9 @@ const api: LedmapDesktopApi = {
     return () => ipcRenderer.removeListener(ipcChannels.liveOutputStateChanged, listener)
   },
   simulateDisplayChange: (request: SimulateDisplayChangeRequest) => ipcRenderer.invoke(ipcChannels.simulateDisplayChange, request),
+  writeExportFiles: (request: WriteExportFilesRequest) => ipcRenderer.invoke(ipcChannels.writeExportFiles, request),
+  writeGenericMapping: (request: WriteGenericMappingRequest) => ipcRenderer.invoke(ipcChannels.writeGenericMapping, request),
+  simulateExportCancel: () => ipcRenderer.invoke(ipcChannels.simulateExportCancel),
 }
 
 contextBridge.exposeInMainWorld('ledmapDesktop', api)

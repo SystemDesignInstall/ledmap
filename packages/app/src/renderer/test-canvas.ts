@@ -1,5 +1,5 @@
 import type { LiveOutputRegion } from '../shared/ipc.js'
-import type { TestFrame, TestPoint, TestPrimitive } from '../shared/test-engine.js'
+import type { TestBounds, TestFrame, TestPoint, TestPrimitive } from '../shared/test-engine.js'
 import type { Camera } from './canvas.js'
 
 function canvasSize(canvas: HTMLCanvasElement): { width: number; height: number; dpr: number } {
@@ -133,4 +133,21 @@ export function drawTestOutputOverlays(canvas: HTMLCanvasElement, overlays: read
     ctx.textBaseline = 'bottom'
     ctx.fillText(overlay.id, origin.x + 5, origin.y - 5)
   }
+}
+
+export function drawTestFrameAtActualPixels(canvas: HTMLCanvasElement, frame: TestFrame, bounds: TestBounds): void {
+  canvas.width = bounds.width
+  canvas.height = bounds.height
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('PNG Canvas 2D context is unavailable.')
+  ctx.setTransform(1, 0, 0, 1, 0, 0)
+  ctx.fillStyle = '#000000'
+  ctx.fillRect(0, 0, bounds.width, bounds.height)
+  ctx.save()
+  ctx.beginPath()
+  ctx.rect(0, 0, bounds.width, bounds.height)
+  ctx.clip()
+  const camera: Camera = { zoom: 1, offsetX: -bounds.x, offsetY: -bounds.y }
+  for (const primitive of frame.primitives) drawPrimitive(ctx, camera, primitive)
+  ctx.restore()
 }

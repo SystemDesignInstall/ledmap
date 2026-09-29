@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
+import { createReadStream } from 'node:fs'
 import { mkdir, readFile, rm } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -16,14 +18,27 @@ process.on('unhandledRejection', error => {
 const appRoot = resolve(fileURLToPath(new URL('../', import.meta.url)))
 const output = fileURLToPath(new URL('../out/smoke/', import.meta.url))
 const projectPath = resolve(output, 'document-lifecycle.ledmap')
+const exportDirectory = resolve(output, 'exports')
+const exportFiles = [
+  'test-checkerboard.png',
+  'test-checkerboard-Screen-1-screen-1.png',
+  'test-checkerboard-Screen-2-screen-2.png',
+  'test-checkerboard-Screen-3-screen-3.png',
+  'ledmap-generic-mapping.json',
+  'ledmap-generic-mapping.csv',
+  'ledmap-generic-mapping-screen-2.json',
+]
 await mkdir(output, { recursive: true })
+await mkdir(exportDirectory, { recursive: true })
 await rm(projectPath, { force: true })
+await Promise.all(exportFiles.map(name => rm(resolve(exportDirectory, name), { force: true })))
 
 const env = {
   ...process.env,
   LEDMAP_SMOKE_PROJECT_PATH: projectPath,
   LEDMAP_SMOKE_UNSAVED_ACTION: 'discard',
   LEDMAP_SMOKE_SIMULATED_DISPLAYS: '1',
+  LEDMAP_SMOKE_EXPORT_DIR: exportDirectory,
 }
 delete env['ELECTRON_RUN_AS_NODE']
 delete env['ELECTRON_RENDERER_URL']
@@ -103,6 +118,66 @@ async function setOutputRegion(page, outputId, values) {
   }
 }
 
+async function sha256(filePath) {
+  const hash = createHash('sha256')
+  for await (const chunk of createReadStream(filePath)) hash.update(chunk)
+  return hash.digest('hex')
+}
+
+async function jsonRowsAt(filePath, indexes) {
+  const targets = new Set(indexes)
+  const rows = new Map()
+  const stream = createReadStream(filePath, { encoding: 'utf8' })
+  let buffer = ''
+  for await (const chunk of stream) {
+    buffer += chunk
+    for (const index of targets) {
+      if (rows.has(index)) continue
+      const marker = `,"dataIndex":${index}}`
+      const end = buffer.indexOf(marker)
+      if (end < 0) continue
+      const start = buffer.lastIndexOf('{"inputCanvas"', end)
+      if (start >= 0) rows.set(index, JSON.parse(buffer.slice(start, end + marker.length)))
+    }
+    if (rows.size === targets.size) break
+    if (buffer.length > 16384) buffer = buffer.slice(-8192)
+  }
+  return rows
+}
+
+async function csvRowsAt(filePath, indexes) {
+  const targets = new Set(indexes)
+  const rows = new Map()
+  const stream = createReadStream(filePath, { encoding: 'utf8' })
+  let pending = ''
+  for await (const chunk of stream) {
+    pending += chunk
+    const lines = pending.split('\n')
+    pending = lines.pop() ?? ''
+    for (const line of lines) {
+      const columns = line.split(',')
+      const dataIndex = Number(columns[15])
+      if (targets.has(dataIndex)) rows.set(dataIndex, columns)
+    }
+    if (rows.size === targets.size) break
+  }
+  return rows
+}
+
+async function runExport(page, selector, resultPattern, timeout = 120000) {
+  await page.locator(selector).click()
+  await page.waitForFunction(value => document.querySelector(value)?.disabled === true, selector)
+  await page.waitForFunction(({ value, pattern }) => {
+    const button = document.querySelector(value)
+    return button?.disabled === false && new RegExp(pattern).test(window.__ledmapExport.dump().lastResult)
+  }, { value: selector, pattern: resultPattern }, { timeout })
+}
+
+function pngSize(bytes) {
+  assert.deepEqual([...bytes.subarray(1, 4)], [80, 78, 71])
+  return { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) }
+}
+
 let running = await launch()
 try {
   const page = running.page
@@ -115,7 +190,7 @@ try {
   assert.match(await page.locator('#empty').innerText(), /Add your first Screen/)
   assert.equal((await documentState()).dirty, false)
   assert.match(await page.locator('.mode-switcher').innerText(), /Layout\s+Mapping\s+Hardware\s+Test\s+Export/)
-  assert.equal((await page.locator('.mode-switcher .mode:disabled').count()), 1)
+  assert.equal((await page.locator('.mode-switcher .mode:disabled').count()), 0)
   assert.doesNotMatch(await page.locator('body').innerText(), /ALPHA|In-memory session/)
   await page.locator('#test-mode').click()
   await page.locator('#test-workspace').waitFor({ state: 'visible' })
@@ -699,8 +774,93 @@ try {
   await mappingPage.locator('#test-fit').click()
   await mappingPage.screenshot({ path: resolve(output, 'test-workspace.png') })
 
+  await mappingPage.locator('[data-test-pattern="checkerboard"]').click()
+  await mappingPage.locator('#export-mode').click()
+  await mappingPage.locator('#export-workspace').waitFor({ state: 'visible' })
+  assert.equal(await mappingPage.locator('#test-workspace').isHidden(), true)
+  assert.deepEqual(await mappingPage.evaluate(() => window.__ledmapExport.dump().stages.map(stage => [stage.id, stage.status])), [
+    ['integrity', 'ready'], ['mapping', 'ready'], ['hardware', 'ready'], ['remap', 'ready'],
+  ])
+  assert.equal((await mappingPage.evaluate(() => window.__ledmapExport.dump())).pattern, 'checkerboard')
+  assert.equal((await mappingPage.evaluate(() => window.__ledmapExport.dump())).pixelCount, 589824)
+
+  await runExport(mappingPage, '#export-png-run', 'Exported 1 PNG')
+  assert.deepEqual(pngSize(await readFile(resolve(exportDirectory, 'test-checkerboard.png'))), { width: 1112, height: 884 })
+  await mappingPage.locator('#export-png-scope').selectOption('batch-screens')
+  await runExport(mappingPage, '#export-png-run', 'Exported 3 PNG')
+  for (const [name, id] of [['Screen-1', 'screen-1'], ['Screen-2', 'screen-2'], ['Screen-3', 'screen-3']]) {
+    assert.deepEqual(pngSize(await readFile(resolve(exportDirectory, `test-checkerboard-${name}-${id}.png`))), { width: 512, height: 384 })
+  }
+
+  const jsonPath = resolve(exportDirectory, 'ledmap-generic-mapping.json')
+  const csvPath = resolve(exportDirectory, 'ledmap-generic-mapping.csv')
+  await runExport(mappingPage, '#export-json-run', 'Exported JSON')
+  const jsonBoundary = await jsonRowsAt(jsonPath, [65535, 65536])
+  assert.deepEqual(
+    [jsonBoundary.get(65535).screen, jsonBoundary.get(65535).receiver, jsonBoundary.get(65535).port, jsonBoundary.get(65535).dataIndex],
+    ['screen-1', 'receiver-1', 'port-1', 65535],
+  )
+  assert.deepEqual(
+    [jsonBoundary.get(65536).screen, jsonBoundary.get(65536).receiver, jsonBoundary.get(65536).port, jsonBoundary.get(65536).dataIndex],
+    ['screen-2', 'receiver-2', 'port-1', 65536],
+  )
+  const jsonHash = await sha256(jsonPath)
+  await runExport(mappingPage, '#export-json-run', 'Exported JSON')
+  assert.equal(await sha256(jsonPath), jsonHash)
+
+  await runExport(mappingPage, '#export-csv-run', 'Exported CSV')
+  const csvBoundary = await csvRowsAt(csvPath, [65535, 65536])
+  assert.deepEqual(csvBoundary.get(65535).slice(3, 4).concat(csvBoundary.get(65535).slice(12, 16)), [
+    'screen-1', 'processor-1', 'port-1', 'receiver-1', '65535',
+  ])
+  assert.deepEqual(csvBoundary.get(65536).slice(3, 4).concat(csvBoundary.get(65536).slice(12, 16)), [
+    'screen-2', 'processor-1', 'port-1', 'receiver-2', '65536',
+  ])
+  const csvHash = await sha256(csvPath)
+  await runExport(mappingPage, '#export-csv-run', 'Exported CSV')
+  assert.equal(await sha256(csvPath), csvHash)
+
+  await mappingPage.locator('#export-generic-scope').selectOption('screen')
+  await mappingPage.locator('#export-generic-screen').selectOption('screen-2')
+  await runExport(mappingPage, '#export-json-run', 'Exported JSON')
+  const selectedRows = await jsonRowsAt(resolve(exportDirectory, 'ledmap-generic-mapping-screen-2.json'), [65536])
+  assert.deepEqual(
+    [selectedRows.get(65536).screen, selectedRows.get(65536).port, selectedRows.get(65536).dataIndex],
+    ['screen-2', 'port-1', 65536],
+  )
+  assert.equal((await mappingPage.evaluate(() => window.__ledmap.document())).dirty, false)
+
+  await mappingPage.locator('#export-png-scope').selectOption('composition')
+  await mappingPage.locator('#export-generic-scope').selectOption('composition')
+  assert.equal(await mappingPage.evaluate(() => window.__ledmapExport.simulateCancel()), true)
+  await mappingPage.locator('#export-png-run').click()
+  await mappingPage.waitForFunction(() => /canceled/i.test(window.__ledmapExport.dump().lastResult))
+  assert.equal((await mappingPage.evaluate(() => window.__ledmap.document())).dirty, false)
+
+  await mappingPage.locator('#hardware-mode').click()
+  await mappingPage.locator('[data-hardware-type="receiver"][data-hardware-id="receiver-1"]').click()
+  await mappingPage.locator('#hardware-delete').click()
+  const brokenHardware = await mappingPage.evaluate(() => window.__ledmapHardware.dump())
+  assert.equal((await mappingPage.evaluate(() => window.__ledmap.document())).dirty, true)
+  await mappingPage.locator('#export-mode').click()
+  await mappingPage.waitForFunction(() => window.__ledmapExport.dump().ready === false)
+  assert.equal((await mappingPage.evaluate(() => window.__ledmapExport.dump())).stages.find(stage => stage.id === 'hardware').status, 'blocked')
+  assert.equal(await mappingPage.locator('#export-json-run').isDisabled(), true)
+  assert.equal(await mappingPage.locator('#export-csv-run').isDisabled(), true)
+  assert.equal((await mappingPage.evaluate(() => window.__ledmapExport.dump())).pngReady, true)
+  assert.equal(await mappingPage.locator('#export-png-run').isEnabled(), true)
+  await mappingPage.locator('#hardware-mode').click()
+  assert.deepEqual(await mappingPage.evaluate(() => window.__ledmapHardware.dump()), brokenHardware)
+  await mappingPage.locator('#open-project').click()
+  await mappingPage.waitForFunction(() => window.__ledmapHardware.dump().receivers.length === 9)
+  assert.equal((await mappingPage.evaluate(() => window.__ledmap.document())).dirty, false)
+  await mappingPage.locator('#export-mode').click()
+  await mappingPage.waitForFunction(() => window.__ledmapExport.dump().ready === true)
+  await mappingPage.locator('#export-generic-scope').selectOption('composition')
+  await mappingPage.screenshot({ path: resolve(output, 'export-center.png') })
+
   assert.deepEqual(failures, [])
-  console.log('Electron smoke passed: Layout, Mapping, Hardware, Test and secure simulated Live Output routing with hotplug-safe shared-Port Address Walk.')
+  console.log('Electron smoke passed: Layout through deterministic Export with pixel-exact PNG, byte-identical JSON/CSV and unre-based shared-Port addresses.')
   console.log(`Project: ${projectPath}`)
 } finally {
   await close(running.app)

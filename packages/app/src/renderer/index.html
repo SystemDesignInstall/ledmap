@@ -16,7 +16,7 @@
           <button id="mapping-mode" type="button" class="mode">Mapping</button>
           <button id="hardware-mode" type="button" class="mode">Hardware</button>
           <button id="test-mode" type="button" class="mode">Test</button>
-          <button type="button" class="mode" disabled>Export</button>
+          <button id="export-mode" type="button" class="mode">Export</button>
         </nav>
         <div class="document-actions" aria-label="Project document">
           <button id="new-project" type="button">New</button>
@@ -132,6 +132,10 @@
           <button id="test-zoom-out" type="button" aria-label="Test zoom out">−</button>
           <button id="test-zoom-in" type="button" aria-label="Test zoom in">+</button>
         </div>
+      </div>
+      <div id="export-toolbar" class="layout-toolbar export-toolbar" aria-label="Export tools" hidden>
+        <div class="tool-group"><span class="tool-label">Deterministic output</span><strong id="export-pixel-count">Blocked</strong></div>
+        <div class="tool-group"><span>Generic Mapping v1</span><span>Identity Remap</span></div>
       </div>
     </header>
 
@@ -261,6 +265,70 @@
       </aside>
     </main>
 
+    <main id="export-workspace" class="workspace export-workspace" hidden>
+      <aside class="tree-panel export-types-panel">
+        <div class="panel-title-row">
+          <div><span class="eyebrow">DELIVERABLES</span><h1>Export Center</h1></div>
+        </div>
+        <div class="export-type active"><strong>PNG Test Pattern</strong><span>Pixel-exact TestFrame output</span></div>
+        <div class="export-type"><strong>Generic Mapping JSON</strong><span>Versioned full pixel trace</span></div>
+        <div class="export-type"><strong>Generic Mapping CSV</strong><span>Fixed semantic columns</span></div>
+        <div class="export-type disabled" aria-disabled="true"><strong>Vendor Hardware File</strong><span>No vendor Address Encoder is configured/supported.</span></div>
+      </aside>
+
+      <article class="export-center">
+        <div class="canvas-heading">
+          <div><span class="eyebrow">EXPORT WORKSPACE</span><h2>Deterministic deliverables</h2></div>
+          <span>Session output · project unchanged</span>
+        </div>
+        <div class="export-scroll">
+          <div id="export-result" class="export-result" role="status">No export has run in this session.</div>
+          <section class="export-card">
+            <div class="export-card-heading"><div><span class="eyebrow">TEST OUTPUT</span><h3>PNG Test Pattern</h3></div><span class="format-badge">PNG</span></div>
+            <p>Renders the deterministic TestFrame directly at actual pixel resolution. Editor chrome is never captured.</p>
+            <div class="export-form-grid">
+              <label>Pattern<select id="export-png-pattern" aria-label="Export PNG pattern"></select></label>
+              <label>Scope<select id="export-png-scope" aria-label="Export PNG scope">
+                <option value="composition">Entire Composition</option>
+                <option value="current-scope">Current Test scope</option>
+                <option value="screen">Selected Screen</option>
+                <option value="batch-screens">Batch per-Screen</option>
+              </select></label>
+              <label id="export-png-screen-field" class="wide">Screen<select id="export-png-screen" aria-label="Export PNG Screen"></select></label>
+            </div>
+            <div id="export-png-diagnostics" class="export-inline-status"></div>
+            <div class="export-actions"><button id="export-png-run" class="primary" type="button">Export PNG</button></div>
+          </section>
+
+          <section class="export-card">
+            <div class="export-card-heading"><div><span class="eyebrow">ADDRESS TRACE</span><h3>Generic Mapping</h3></div><span class="format-badge">v1</span></div>
+            <p>Every row preserves Input, Screen, Cabinet, Module and real Processor/Port/Receiver addressing.</p>
+            <div class="export-form-grid">
+              <label>Scope<select id="export-generic-scope" aria-label="Generic Mapping scope">
+                <option value="composition">Entire Project</option>
+                <option value="screen">Selected Screen</option>
+              </select></label>
+              <label id="export-generic-screen-field">Screen<select id="export-generic-screen" aria-label="Generic Mapping Screen"></select></label>
+            </div>
+            <div id="export-mapping-summary" class="export-inline-status"></div>
+            <div class="export-actions">
+              <button id="export-json-run" class="primary" type="button">Export JSON</button>
+              <button id="export-csv-run" type="button">Export CSV</button>
+            </div>
+          </section>
+        </div>
+      </article>
+
+      <aside class="properties-panel export-preflight-panel">
+        <div class="panel-heading"><span class="eyebrow">PREFLIGHT</span><h2>Export readiness</h2></div>
+        <div id="export-preflight" class="export-preflight"></div>
+        <div class="export-contract">
+          <strong>Fixed CSV columns</strong>
+          <p>inputCanvas, inputX, inputY, screen, screenX, screenY, cabinet, cabinetX, cabinetY, module, moduleX, moduleY, processor, port, receiver, dataIndex</p>
+        </div>
+      </aside>
+    </main>
+
     <footer class="statusbar">
       <span id="cursor-status" class="status-item layout-status">X 0 · Y 0</span>
       <span id="zoom-indicator" class="status-item layout-status">100%</span>
@@ -275,6 +343,7 @@
       <span id="test-cursor-status" class="status-item test-status" hidden>Composition X 0 · Y 0</span>
       <span id="test-zoom-indicator" class="status-item test-status" hidden>100%</span>
       <span id="test-health-status" class="status-item test-status" hidden>Test preview ready</span>
+      <span class="status-item export-status" hidden>Export does not change the project document or dirty state</span>
     </footer>
 
     <div id="document-error" role="alert" hidden></div>

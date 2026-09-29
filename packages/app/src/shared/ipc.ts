@@ -1,4 +1,6 @@
 import type { TestFrame } from './test-engine.js'
+import type { EditableProject } from '@ledmap/core'
+import type { GenericMappingFormat, GenericMappingScope } from './export-engine.js'
 
 export const ipcChannels = {
   openProject: 'project:open',
@@ -15,6 +17,9 @@ export const ipcChannels = {
   liveOutputStateChanged: 'live-output:state-changed',
   outputFrame: 'live-output:frame',
   simulateDisplayChange: 'live-output:simulate-display-change',
+  writeExportFiles: 'export:write-files',
+  writeGenericMapping: 'export:write-generic-mapping',
+  simulateExportCancel: 'export:simulate-cancel',
 } as const
 
 export type UnsavedChoice = 'save' | 'discard' | 'cancel'
@@ -100,6 +105,28 @@ export interface LedmapOutputApi {
   onFrame(callback: (update: LiveOutputFrameUpdate) => void): () => void
 }
 
+export interface ExportFilePayload {
+  readonly name: string
+  readonly bytes: Uint8Array
+}
+
+export interface WriteExportFilesRequest {
+  readonly mode: 'single' | 'batch'
+  readonly files: readonly ExportFilePayload[]
+}
+
+export interface WriteGenericMappingRequest {
+  readonly project: EditableProject
+  readonly scope: GenericMappingScope
+  readonly format: GenericMappingFormat
+  readonly name: string
+}
+
+export interface ExportWriteResult {
+  readonly canceled: boolean
+  readonly filePaths: readonly string[]
+}
+
 export interface LedmapDesktopApi {
   openProject(): Promise<OpenProjectResult>
   saveProject(request: SaveProjectRequest): Promise<SaveProjectResult>
@@ -114,4 +141,7 @@ export interface LedmapDesktopApi {
   onDisplaysChanged(callback: (displays: readonly DisplayDescriptor[]) => void): () => void
   onLiveOutputStateChanged(callback: (state: LiveOutputState) => void): () => void
   simulateDisplayChange(request: SimulateDisplayChangeRequest): Promise<boolean>
+  writeExportFiles(request: WriteExportFilesRequest): Promise<ExportWriteResult>
+  writeGenericMapping(request: WriteGenericMappingRequest): Promise<ExportWriteResult>
+  simulateExportCancel(): Promise<boolean>
 }

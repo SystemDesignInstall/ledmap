@@ -26,6 +26,7 @@ import { createMappingWorkspace, type MappingWorkspace } from './mapping-workspa
 import { createHardwareWorkspace, type HardwareWorkspace } from './hardware-workspace.js'
 import { createTestWorkspace, type TestWorkspace } from './test-workspace.js'
 import { createLiveOutputController, type LiveOutputController } from './live-output.js'
+import { createExportWorkspace, type ExportWorkspace } from './export-workspace.js'
 import type { Direction, Numbering } from '@ledmap/core'
 
 interface LedmapHook {
@@ -120,14 +121,19 @@ const hardwareWorkspaceElement = element<HTMLElement>('hardware-workspace')
 const testModeButton = element<HTMLButtonElement>('test-mode')
 const testToolbar = element<HTMLDivElement>('test-toolbar')
 const testWorkspaceElement = element<HTMLElement>('test-workspace')
+const exportModeButton = element<HTMLButtonElement>('export-mode')
+const exportToolbar = element<HTMLDivElement>('export-toolbar')
+const exportWorkspaceElement = element<HTMLElement>('export-workspace')
 
 let editorDocument: EditorDocumentState = createEditorDocument()
 let project: Project = createProject(editorDocument.project)
-let appMode: 'layout' | 'mapping' | 'hardware' | 'test' = 'layout'
+type AppMode = 'layout' | 'mapping' | 'hardware' | 'test' | 'export'
+let appMode: AppMode = 'layout'
 let mappingWorkspace: MappingWorkspace | null = null
 let hardwareWorkspace: HardwareWorkspace | null = null
 let testWorkspace: TestWorkspace | null = null
 let liveOutputController: LiveOutputController | null = null
+let exportWorkspace: ExportWorkspace | null = null
 let viewMode: 'all' | 'active' = 'all'
 let selection: SelectedObject | null = null
 let selectedScreenIds: readonly string[] = []
@@ -215,6 +221,7 @@ function replaceDocument(next: EditorDocumentState): void {
   if (appMode === 'mapping') mappingWorkspace?.activate()
   if (appMode === 'hardware') hardwareWorkspace?.activate()
   if (appMode === 'test') testWorkspace?.activate()
+  if (appMode === 'export') exportWorkspace?.activate()
 }
 
 async function saveDocument(saveAs: boolean): Promise<boolean> {
@@ -277,6 +284,7 @@ function render(): void {
   mappingWorkspace?.projectChanged()
   hardwareWorkspace?.projectChanged()
   testWorkspace?.projectChanged()
+  exportWorkspace?.projectChanged()
 }
 
 function draw(): void {
@@ -1328,23 +1336,33 @@ liveOutputController = createLiveOutputController({
   onOverlaysChanged: () => testWorkspace?.redraw(),
 })
 liveOutputController.frameChanged(testWorkspace.snapshot())
+exportWorkspace = createExportWorkspace({
+  getProject: () => project,
+  getTestSnapshot: () => testWorkspace!.snapshot(),
+  getSelectedScreenId: () => selectedScreenIds[0] ?? activeScreenId,
+  showError: showDocumentError,
+  clearError: clearDocumentError,
+})
 
-function setAppMode(mode: 'layout' | 'mapping' | 'hardware' | 'test'): void {
+function setAppMode(mode: AppMode): void {
   if (appMode === mode) return
   appMode = mode
   const layoutActive = mode === 'layout'
   const mappingActive = mode === 'mapping'
   const hardwareActive = mode === 'hardware'
   const testActive = mode === 'test'
+  const exportActive = mode === 'export'
   layoutModeButton.classList.toggle('active', layoutActive)
   mappingModeButton.classList.toggle('active', mappingActive)
   hardwareModeButton.classList.toggle('active', hardwareActive)
   testModeButton.classList.toggle('active', testActive)
+  exportModeButton.classList.toggle('active', exportActive)
   for (const [button, isActive] of [
     [layoutModeButton, layoutActive],
     [mappingModeButton, mappingActive],
     [hardwareModeButton, hardwareActive],
     [testModeButton, testActive],
+    [exportModeButton, exportActive],
   ] as const) {
     if (isActive) button.setAttribute('aria-current', 'page')
     else button.removeAttribute('aria-current')
@@ -1353,17 +1371,21 @@ function setAppMode(mode: 'layout' | 'mapping' | 'hardware' | 'test'): void {
   mappingToolbar.hidden = !mappingActive
   hardwareToolbar.hidden = !hardwareActive
   testToolbar.hidden = !testActive
+  exportToolbar.hidden = !exportActive
   layoutWorkspace.hidden = !layoutActive
   mappingWorkspaceElement.hidden = !mappingActive
   hardwareWorkspaceElement.hidden = !hardwareActive
   testWorkspaceElement.hidden = !testActive
+  exportWorkspaceElement.hidden = !exportActive
   document.querySelectorAll<HTMLElement>('.layout-status').forEach(item => { item.hidden = !layoutActive })
   document.querySelectorAll<HTMLElement>('.mapping-status').forEach(item => { item.hidden = !mappingActive })
   document.querySelectorAll<HTMLElement>('.hardware-status').forEach(item => { item.hidden = !hardwareActive })
   document.querySelectorAll<HTMLElement>('.test-status').forEach(item => { item.hidden = !testActive })
+  document.querySelectorAll<HTMLElement>('.export-status').forEach(item => { item.hidden = !exportActive })
   mappingWorkspace?.deactivate()
   hardwareWorkspace?.deactivate()
   testWorkspace?.deactivate()
+  exportWorkspace?.deactivate()
   endPointerGesture()
   if (layoutActive) {
     requestAnimationFrame(() => draw())
@@ -1371,12 +1393,14 @@ function setAppMode(mode: 'layout' | 'mapping' | 'hardware' | 'test'): void {
   if (mappingActive) mappingWorkspace?.activate()
   if (hardwareActive) hardwareWorkspace?.activate()
   if (testActive) testWorkspace?.activate()
+  if (exportActive) exportWorkspace?.activate()
 }
 
 layoutModeButton.addEventListener('click', () => setAppMode('layout'))
 mappingModeButton.addEventListener('click', () => setAppMode('mapping'))
 hardwareModeButton.addEventListener('click', () => setAppMode('hardware'))
 testModeButton.addEventListener('click', () => setAppMode('test'))
+exportModeButton.addEventListener('click', () => setAppMode('export'))
 
 function isEditableControl(target: EventTarget | null): boolean {
   return target instanceof HTMLElement && (

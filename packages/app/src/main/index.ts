@@ -13,6 +13,7 @@ import {
   type UpdateLiveOutputRequest,
 } from '../shared/ipc.js'
 import { LiveOutputManager } from './live-output.js'
+import { ExportFileService } from './export-files.js'
 
 interface WindowState {
   currentFilePath: string | null
@@ -24,6 +25,7 @@ interface WindowState {
 const windowStates = new Map<number, WindowState>()
 const ledmapFilter = [{ name: 'LedMAP Project', extensions: ['ledmap'] }]
 let liveOutputManager: LiveOutputManager | null = null
+const exportFileService = new ExportFileService()
 
 function stateFor(contents: WebContents): WindowState | undefined {
   return windowStates.get(contents.id)
@@ -151,6 +153,10 @@ function registerIpc(): void {
       ...(typeof request.displayId === 'string' ? { displayId: request.displayId } : {}),
     })
   })
+
+  ipcMain.handle(ipcChannels.writeExportFiles, (event, value: unknown) => exportFileService.writeFiles(event.sender, value))
+  ipcMain.handle(ipcChannels.writeGenericMapping, (event, value: unknown) => exportFileService.writeGenericMapping(event.sender, value))
+  ipcMain.handle(ipcChannels.simulateExportCancel, () => exportFileService.simulateCancel())
 }
 
 async function createWindow(): Promise<void> {

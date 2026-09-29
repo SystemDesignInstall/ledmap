@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { inspectEditableProject } from '@ledmap/core'
-import { addScreen, createProject, setScreenPosition, updateScreenCabinetConfig } from '../src/renderer/project.js'
+import { addScreen, createProject, setScreenPosition, setScreenPositions, updateScreenCabinetConfig } from '../src/renderer/project.js'
+import { alignScreens } from '../src/renderer/layout-interaction.js'
 import {
   createEditorDocument, loadEditorDocument, mutateEditorDocument, savedEditorDocument, serializeEditorDocument,
 } from '../src/renderer/document.js'
@@ -87,6 +88,24 @@ describe('Project document lifecycle', () => {
     expect(() => loadEditorDocument('{', 'broken.ledmap')).toThrow()
     expect(current.project.screens).toHaveLength(1)
     expect(current.dirty).toBe(true)
+  })
+
+  it('marks batch Layout mutations dirty and persists their exact source coordinates', () => {
+    let project = addScreen(addScreen(createProject()))
+    let state = savedEditorDocument(mutateEditorDocument(createEditorDocument(), project.source), 'layout.ledmap')
+    const positions = alignScreens(project.screens.map(screen => ({
+      id: screen.screen.id,
+      x: screen.x,
+      y: screen.y,
+      width: screen.screen.resolution.width,
+      height: screen.screen.resolution.height,
+    })), 'left')
+    project = setScreenPositions(project, positions)
+    state = mutateEditorDocument(state, project.source)
+    expect(state.dirty).toBe(true)
+    expect(state.project.editorLayout.screenPositions.map(placement => placement.position.x)).toEqual([0, 0])
+    const reopened = loadEditorDocument(serializeEditorDocument(state), 'layout.ledmap')
+    expect(reopened.project.editorLayout).toEqual(state.project.editorLayout)
   })
 
   it('loads schema v1 and serializes the migrated document as canonical v2', () => {

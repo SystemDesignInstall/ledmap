@@ -1,6 +1,7 @@
 import { cabinetIndex, cabinetOrder, type CabinetEngineConfig, type GridPosition } from '@ledmap/core'
 import { gridPixelSize } from './state.js'
 import type { Bounds, Project, ScreenView, SelectedObject } from './project.js'
+import type { AlignmentGuide, SelectionBox } from './layout-interaction.js'
 
 export interface Camera {
   readonly zoom: number
@@ -24,8 +25,11 @@ export interface ResizePreview {
 export interface View {
   readonly mode: 'all' | 'active'
   readonly selection: SelectedObject | null
+  readonly selectedScreenIds: readonly string[]
   readonly activeScreenId: string | null
   readonly resizePreview: ResizePreview | null
+  readonly alignmentGuides: readonly AlignmentGuide[]
+  readonly marquee: SelectionBox | null
 }
 
 const MIN_ZOOM = 0.02
@@ -329,6 +333,43 @@ function drawCabinetSelection(ctx: CanvasRenderingContext2D, camera: Camera, scr
   ctx.strokeRect(rect.left + cabinet.column * cw, rect.top + cabinet.row * ch, cw, ch)
 }
 
+function drawInteractionOverlay(
+  ctx: CanvasRenderingContext2D,
+  camera: Camera,
+  width: number,
+  height: number,
+  guides: readonly AlignmentGuide[],
+  marquee: SelectionBox | null,
+): void {
+  ctx.save()
+  ctx.strokeStyle = '#f3b55f'
+  ctx.lineWidth = 1
+  ctx.setLineDash([5, 4])
+  for (const guide of guides) {
+    ctx.beginPath()
+    if (guide.axis === 'x') {
+      const x = toScreen(camera, { x: guide.value, y: 0 }).x
+      ctx.moveTo(x, 0)
+      ctx.lineTo(x, height)
+    } else {
+      const y = toScreen(camera, { x: 0, y: guide.value }).y
+      ctx.moveTo(0, y)
+      ctx.lineTo(width, y)
+    }
+    ctx.stroke()
+  }
+  if (marquee) {
+    const start = toScreen(camera, { x: marquee.left, y: marquee.top })
+    const end = toScreen(camera, { x: marquee.right, y: marquee.bottom })
+    ctx.fillStyle = '#74e0c21a'
+    ctx.strokeStyle = '#74e0c2'
+    ctx.setLineDash([4, 3])
+    ctx.fillRect(start.x, start.y, end.x - start.x, end.y - start.y)
+    ctx.strokeRect(start.x, start.y, end.x - start.x, end.y - start.y)
+  }
+  ctx.restore()
+}
+
 const note = 'Cabinet labels and module marks are hidden at this scale. Zoom in to inspect.'
 
 export function drawProject(canvas: HTMLCanvasElement, project: Project, view: View, camera: Camera): string {
@@ -350,7 +391,7 @@ export function drawProject(canvas: HTMLCanvasElement, project: Project, view: V
       ? screenShape(screen, preview.columns, preview.rows)
       : screenShape(screen, screen.grid.columns, screen.grid.rows)
     if (drawCabinetGrid(ctx, camera, screen, shape)) hints += 1
-    const selectedScreen = view.selection?.type === 'screen' && view.selection.id === screen.screen.id
+    const selectedScreen = view.selectedScreenIds.includes(screen.screen.id)
     const selectedGrid = view.selection?.type === 'cabinetGrid' && view.selection.id === screen.grid.id
     const highlighted = selectedScreen || selectedGrid
     drawScreenOutline(ctx, camera, screen, shape, highlighted)
@@ -359,5 +400,6 @@ export function drawProject(canvas: HTMLCanvasElement, project: Project, view: V
       drawCabinetSelection(ctx, camera, screen, view.selection)
     }
   }
+  drawInteractionOverlay(ctx, camera, width, height, view.alignmentGuides, view.marquee)
   return hints > 0 ? note : ''
 }

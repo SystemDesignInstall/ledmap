@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { cabinetOrder } from '@ledmap/core'
 import {
   addScreen, findScreen, hitTest, moveScreen, projectBounds, screenBounds,
-  setScreenPosition,
+  setScreenPosition, setScreenPositions,
 } from '../src/renderer/project.js'
 import { createTestProject } from './project-fixtures.js'
 
@@ -50,6 +50,22 @@ describe('Project canvas state', () => {
     expect([moved.screens[0]!.x, moved.screens[0]!.y]).toEqual([-120, -80])
     expect(firstOrder(moved)).toEqual(firstOrder(original))
     expect(moved.screens[0]!.screen.id).toBe('screen-1')
+  })
+
+  it('updates several exact source positions atomically', () => {
+    const project = createTestProject()
+    const moved = setScreenPositions(project, {
+      'screen-1': { x: -301, y: 42 },
+      'screen-3': { x: 901, y: -77 },
+    })
+    expect(moved.screens.map(screen => [screen.x, screen.y])).toEqual([[-301, 42], [700, 120], [901, -77]])
+    expect(moved.source.editorLayout.screenPositions.map(placement => [placement.position.x, placement.position.y]))
+      .toEqual([[-301, 42], [700, 120], [901, -77]])
+    expect(() => setScreenPositions(project, {
+      'screen-1': { x: 0.5, y: 0 },
+      missing: { x: 0, y: 0 },
+    })).toThrow(/whole numbers/)
+    expect(project.screens.map(screen => [screen.x, screen.y])).toEqual([[0, 0], [700, 120], [320, 620]])
   })
 
   it('computes project bounds for the demo and after moving a screen into negative space', () => {

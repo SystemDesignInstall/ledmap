@@ -9,6 +9,8 @@ body { margin: 0; height: 100vh; display: flex; flex-direction: column; overflow
 .eyebrow { font-size: 10px; letter-spacing: 1.8px; }
 .toolbar { display: flex; gap: 8px; }
 .toolbar button { width: auto; padding: 8px 11px; }
+.toolbar-field { display: flex; align-items: center; gap: 5px; color: #98a9bd; font-size: 11px; }
+.toolbar-field input { width: 48px; padding: 7px 5px; border: 1px solid #354256; border-radius: 5px; background: #0f1620; color: #edf4fc; }
 button { background: #74e0c2; color: #102a26; border: 0; border-radius: 6px; padding: 9px 12px; font: inherit; font-size: 13px; font-weight: 650; cursor: pointer; }
 button:hover:enabled { background: #a4efdb; }
 button:disabled { color: #a9bacd; background: #263443; cursor: default; }

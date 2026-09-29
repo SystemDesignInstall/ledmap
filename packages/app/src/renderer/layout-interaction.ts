@@ -1,0 +1,204 @@
+export interface LayoutPoint {
+  readonly x: number
+  readonly y: number
+}
+
+export interface LayoutRect extends LayoutPoint {
+  readonly id: string
+  readonly width: number
+  readonly height: number
+}
+
+export interface SelectionBox {
+  readonly left: number
+  readonly top: number
+  readonly right: number
+  readonly bottom: number
+}
+
+export interface AlignmentGuide {
+  readonly axis: 'x' | 'y'
+  readonly value: number
+}
+
+export interface SnapResult {
+  readonly dx: number
+  readonly dy: number
+  readonly guides: readonly AlignmentGuide[]
+}
+
+export type AlignMode = 'left' | 'horizontal-center' | 'right' | 'top' | 'vertical-center' | 'bottom'
+export type DistributeAxis = 'horizontal' | 'vertical'
+
+export function integerCoordinate(value: number): number {
+  if (!Number.isFinite(value)) throw new Error('Coordinate must be finite.')
+  const rounded = Math.round(value)
+  if (!Number.isSafeInteger(rounded)) throw new Error('Coordinate exceeds the safe integer range.')
+  return rounded
+}
+
+export function replaceOrToggleSelection(
+  selectedIds: readonly string[],
+  id: string,
+  additive: boolean,
+): readonly string[] {
+  if (!additive) return [id]
+  return selectedIds.includes(id)
+    ? selectedIds.filter(selected => selected !== id)
+    : [...selectedIds, id]
+}
+
+export function normalizeSelectionBox(start: LayoutPoint, end: LayoutPoint): SelectionBox {
+  return {
+    left: Math.min(start.x, end.x),
+    top: Math.min(start.y, end.y),
+    right: Math.max(start.x, end.x),
+    bottom: Math.max(start.y, end.y),
+  }
+}
+
+function intersects(box: SelectionBox, rect: LayoutRect): boolean {
+  return rect.x < box.right && rect.x + rect.width > box.left && rect.y < box.bottom && rect.y + rect.height > box.top
+}
+
+export function marqueeSelection(
+  screens: readonly LayoutRect[],
+  start: LayoutPoint,
+  end: LayoutPoint,
+  baseSelection: readonly string[] = [],
+): readonly string[] {
+  const box = normalizeSelectionBox(start, end)
+  const selected = new Set(baseSelection)
+  for (const screen of screens) {
+    if (intersects(box, screen)) selected.add(screen.id)
+  }
+  return [...selected]
+}
+
+export function selectionBounds(screens: readonly LayoutRect[]): LayoutRect | null {
+  if (screens.length === 0) return null
+  const left = Math.min(...screens.map(screen => screen.x))
+  const top = Math.min(...screens.map(screen => screen.y))
+  const right = Math.max(...screens.map(screen => screen.x + screen.width))
+  const bottom = Math.max(...screens.map(screen => screen.y + screen.height))
+  return { id: 'selection', x: left, y: top, width: right - left, height: bottom - top }
+}
+
+export function snapCoordinateToGrid(value: number, step: number): number {
+  if (!Number.isSafeInteger(step) || step < 1) throw new Error('Grid step must be a positive whole number.')
+  return integerCoordinate(Math.round(value / step) * step)
+}
+
+interface AxisCandidate {
+  readonly correction: number
+  readonly guide: number
+}
+
+function bestAxisCandidate(
+  moving: readonly number[],
+  targets: readonly number[],
+  currentDelta: number,
+  tolerance: number,
+): AxisCandidate | null {
+  let best: AxisCandidate | null = null
+  for (const movingValue of moving) {
+    for (const target of targets) {
+      const correction = target - (movingValue + currentDelta)
+      if (Math.abs(correction) > tolerance || !Number.isSafeInteger(currentDelta + correction)) continue
+      if (!best || Math.abs(correction) < Math.abs(best.correction)) best = { correction, guide: target }
+    }
+  }
+  return best
+}
+
+export function snapTranslation(input: {
+  readonly moving: LayoutRect
+  readonly targets: readonly LayoutRect[]
+  readonly dx: number
+  readonly dy: number
+  readonly gridStep?: number
+  readonly smartSnap?: boolean
+  readonly tolerance?: number
+}): SnapResult {
+  let dx = integerCoordinate(input.dx)
+  let dy = integerCoordinate(input.dy)
+  if (input.gridStep !== undefined) {
+    dx = snapCoordinateToGrid(input.moving.x + dx, input.gridStep) - input.moving.x
+    dy = snapCoordinateToGrid(input.moving.y + dy, input.gridStep) - input.moving.y
+  }
+  const guides: AlignmentGuide[] = []
+  if (input.smartSnap !== false && input.targets.length > 0) {
+    const tolerance = input.tolerance ?? 8
+    const movingX = [input.moving.x, input.moving.x + input.moving.width / 2, input.moving.x + input.moving.width]
+    const movingY = [input.moving.y, input.moving.y + input.moving.height / 2, input.moving.y + input.moving.height]
+    const targetX = input.targets.flatMap(target => [target.x, target.x + target.width / 2, target.x + target.width])
+    const targetY = input.targets.flatMap(target => [target.y, target.y + target.height / 2, target.y + target.height])
+    const xCandidate = bestAxisCandidate(movingX, targetX, dx, tolerance)
+    const yCandidate = bestAxisCandidate(movingY, targetY, dy, tolerance)
+    if (xCandidate) {
+      dx += xCandidate.correction
+      guides.push({ axis: 'x', value: xCandidate.guide })
+    }
+    if (yCandidate) {
+      dy += yCandidate.correction
+      guides.push({ axis: 'y', value: yCandidate.guide })
+    }
+  }
+  return { dx: integerCoordinate(dx), dy: integerCoordinate(dy), guides }
+}
+
+export function nudgePositions(
+  positions: Readonly<Record<string, LayoutPoint>>,
+  selectedIds: readonly string[],
+  dx: number,
+  dy: number,
+): Readonly<Record<string, LayoutPoint>> {
+  const next = { ...positions }
+  for (const id of selectedIds) {
+    const position = positions[id]
+    if (position) next[id] = { x: integerCoordinate(position.x + dx), y: integerCoordinate(position.y + dy) }
+  }
+  return next
+}
+
+export function alignScreens(screens: readonly LayoutRect[], mode: AlignMode): Readonly<Record<string, LayoutPoint>> {
+  const bounds = selectionBounds(screens)
+  if (!bounds) return {}
+  const result: Record<string, LayoutPoint> = {}
+  for (const screen of screens) {
+    let x = screen.x
+    let y = screen.y
+    if (mode === 'left') x = bounds.x
+    if (mode === 'horizontal-center') x = bounds.x + (bounds.width - screen.width) / 2
+    if (mode === 'right') x = bounds.x + bounds.width - screen.width
+    if (mode === 'top') y = bounds.y
+    if (mode === 'vertical-center') y = bounds.y + (bounds.height - screen.height) / 2
+    if (mode === 'bottom') y = bounds.y + bounds.height - screen.height
+    result[screen.id] = { x: integerCoordinate(x), y: integerCoordinate(y) }
+  }
+  return result
+}
+
+export function distributeScreens(
+  screens: readonly LayoutRect[],
+  axis: DistributeAxis,
+): Readonly<Record<string, LayoutPoint>> {
+  const result = Object.fromEntries(screens.map(screen => [screen.id, { x: screen.x, y: screen.y }])) as Record<string, LayoutPoint>
+  if (screens.length < 3) return result
+  const horizontal = axis === 'horizontal'
+  const ordered = [...screens].sort((a, b) => horizontal ? a.x - b.x || a.id.localeCompare(b.id) : a.y - b.y || a.id.localeCompare(b.id))
+  const first = ordered[0]!
+  const last = ordered[ordered.length - 1]!
+  const firstStart = horizontal ? first.x : first.y
+  const lastEnd = horizontal ? last.x + last.width : last.y + last.height
+  const totalSize = ordered.reduce((sum, screen) => sum + (horizontal ? screen.width : screen.height), 0)
+  const gap = (lastEnd - firstStart - totalSize) / (ordered.length - 1)
+  let cursor = firstStart
+  for (const screen of ordered) {
+    result[screen.id] = horizontal
+      ? { x: integerCoordinate(cursor), y: screen.y }
+      : { x: screen.x, y: integerCoordinate(cursor) }
+    cursor += (horizontal ? screen.width : screen.height) + gap
+  }
+  return result
+}

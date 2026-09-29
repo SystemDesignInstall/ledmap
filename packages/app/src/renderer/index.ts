@@ -1,6 +1,7 @@
 import {
-  createProject, findScreen, hitTest, maxColumnsForRows, maxRowsForColumns, moveScreen, projectBounds,
-  resizeScreenGrid, screenBounds, screenHeight, screenWidth, setScreenPosition, updateScreenCabinetConfig,
+  createProject, findScreen, hitTest, maxColumnsForRows, maxRowsForColumns, projectBounds,
+  resizeScreenGrid, screenBounds, screenHeight, screenWidth, setScreenPosition, setScreenPositions,
+  updateScreenCabinetConfig,
   type Project, type ScreenCabinetConfigPatch, type ScreenView, type SelectedObject,
 } from './project.js'
 import { addScreen } from './project.js'
@@ -11,9 +12,15 @@ import {
 import { changeNumbering } from './state.js'
 import type { GridShape, Point, ResizeHandle, ResizePreview } from './canvas.js'
 import {
-  cabinetLabelHit, drawProject, fitCamera, resizeHandleCursor, resizeHandleHit, screenBoundaryHit,
+  drawProject, fitCamera, resizeHandleCursor, resizeHandleHit,
   screenResizeHandles, screenShape, toProject, toScreen, zoomAt, type Camera,
 } from './canvas.js'
+import {
+  alignScreens, distributeScreens, marqueeSelection, normalizeSelectionBox, nudgePositions,
+  replaceOrToggleSelection, selectionBounds, snapTranslation,
+  type AlignMode, type AlignmentGuide, type DistributeAxis, type LayoutPoint, type LayoutRect,
+  type SelectionBox,
+} from './layout-interaction.js'
 import type { Direction, Numbering } from '@ledmap/core'
 
 interface LedmapHook {
@@ -50,6 +57,9 @@ interface LedmapHook {
   preview(): ResizePreview | null
   resizeHandlesPx(id: string): ReadonlyArray<{ readonly handle: ResizeHandle; readonly x: number; readonly y: number }>
   document(): { readonly dirty: boolean; readonly currentFilePath: string | null; readonly sourceSchemaVersion: 1 | 2 }
+  selectedScreens(): readonly string[]
+  snap(): { readonly grid: boolean; readonly smart: boolean; readonly step: number }
+  guides(): readonly AlignmentGuide[]
 }
 
 function element<T extends HTMLElement>(id: string): T {
@@ -76,18 +86,37 @@ const openProjectButton = element<HTMLButtonElement>('open-project')
 const saveProjectButton = element<HTMLButtonElement>('save-project')
 const saveProjectAsButton = element<HTMLButtonElement>('save-project-as')
 const documentError = element<HTMLDivElement>('document-error')
+const gridSnapButton = element<HTMLButtonElement>('grid-snap')
+const smartSnapButton = element<HTMLButtonElement>('smart-snap')
+const gridStepInput = element<HTMLInputElement>('grid-step')
+const selectedCount = element<HTMLSpanElement>('selected-count')
 
 let editorDocument: EditorDocumentState = createEditorDocument()
 let project: Project = createProject(editorDocument.project)
 let viewMode: 'all' | 'active' = 'all'
 let selection: SelectedObject | null = null
+let selectedScreenIds: readonly string[] = []
 let activeScreenId: string | null = project.screens[0]?.screen.id ?? null
 let camera: Camera = fitCamera(projectBounds(project), 1, 1)
+let gridSnap = false
+let smartSnap = true
+let gridStep = 10
+let alignmentGuides: readonly AlignmentGuide[] = []
+let marqueeBox: SelectionBox | null = null
 let spaceDown = false
-type PointerMode = 'none' | 'drag' | 'pan' | 'resize'
+type PointerMode = 'none' | 'drag' | 'pan' | 'resize' | 'marquee'
 let pointerMode: PointerMode = 'none'
-let dragState: { screenId: string; lastProject: Point } | null = null
+let dragState: {
+  screenIds: readonly string[]
+  startProject: Point
+  positions: Readonly<Record<string, LayoutPoint>>
+  bounds: LayoutRect
+  targets: readonly LayoutRect[]
+  appliedDx: number
+  appliedDy: number
+} | null = null
 let panState: { lastX: number; lastY: number } | null = null
+let marqueeGesture: { start: Point; baseSelection: readonly string[] } | null = null
 let resizeGesture: {
   screenId: string
   handle: ResizeHandle
@@ -140,6 +169,7 @@ function replaceDocument(next: EditorDocumentState): void {
   editorDocument = next
   project = projection
   selection = null
+  selectedScreenIds = []
   activeScreenId = project.screens[0]?.screen.id ?? null
   viewMode = 'all'
   endPointerGesture()
@@ -208,7 +238,15 @@ function render(): void {
 }
 
 function draw(): void {
-  const note = drawProject(canvas, project, { mode: viewMode, selection, activeScreenId, resizePreview }, camera)
+  const note = drawProject(canvas, project, {
+    mode: viewMode,
+    selection,
+    selectedScreenIds,
+    activeScreenId,
+    resizePreview,
+    alignmentGuides,
+    marquee: marqueeBox,
+  }, camera)
   const b = projectBounds(project)
   bounds.textContent = `Project bounds ${format.format(b.width)} × ${format.format(b.height)} px`
   zoomIndicator.textContent = `${Math.round(camera.zoom * 100)}%`
@@ -236,6 +274,7 @@ function fitToProject(): void {
 }
 
 function chipText(): string {
+  if (selectedScreenIds.length > 1) return `${selectedScreenIds.length} Screens selected`
   const current = selection
   if (!current) return 'No selection'
   const screen = current.type === 'cabinet' ? findScreen(project, current.screenId) : (
@@ -254,8 +293,13 @@ function findScreenByGrid(gridId: string): ScreenView | undefined {
 
 function renderStatus(): void {
   chip.textContent = chipText()
+  selectedCount.textContent = `${selectedScreenIds.length} selected`
   toggleMode.textContent = viewMode === 'all' ? 'Active Screen' : 'All Screens'
   toggleMode.setAttribute('aria-pressed', String(viewMode === 'active'))
+  gridSnapButton.setAttribute('aria-pressed', String(gridSnap))
+  smartSnapButton.setAttribute('aria-pressed', String(smartSnap))
+  gridSnapButton.textContent = `Grid Snap ${gridSnap ? 'On' : 'Off'}`
+  smartSnapButton.textContent = `Smart Snap ${smartSnap ? 'On' : 'Off'}`
 }
 
 function renderTree(): void {
@@ -281,11 +325,12 @@ function renderTree(): void {
   group.className = 'tree-group'
   for (const screen of project.screens) {
     const node = makeTreeNode('screen', screen.screen.id, screen.screen.name, '▦', format.format(screen.cabinets.length), isSelected('screen', screen.screen.id))
-    node.addEventListener('click', () => selectScreen(screen.screen.id))
+    node.addEventListener('click', event => selectScreen(screen.screen.id, event.shiftKey || event.ctrlKey || event.metaKey))
     group.append(node)
     const gridNode = makeTreeNode('cabinetGrid', screen.grid.id, 'Cabinet Grid', '▣', format.format(screen.cabinets.length), isSelected('cabinetGrid', screen.grid.id))
     gridNode.addEventListener('click', () => {
       selection = { type: 'cabinetGrid', id: screen.grid.id }
+      selectedScreenIds = [screen.screen.id]
       activeScreenId = screen.screen.id
       render()
     })
@@ -298,6 +343,7 @@ function renderTree(): void {
 }
 
 function isSelected(type: SelectedObject['type'], id: string): boolean {
+  if (type === 'screen') return selectedScreenIds.includes(id)
   if (!selection || selection.type !== type) return false
   return selection.id === id
 }
@@ -321,8 +367,9 @@ function makeTreeNode(type: SelectedObject['type'], id: string, label: string, i
   return node
 }
 
-function selectScreen(screenId: string): void {
-  selection = { type: 'screen', id: screenId }
+function selectScreen(screenId: string, additive = false): void {
+  selectedScreenIds = replaceOrToggleSelection(selectedScreenIds, screenId, additive)
+  selection = selectedScreenIds.length === 1 ? { type: 'screen', id: selectedScreenIds[0]! } : null
   activeScreenId = screenId
   render()
 }
@@ -330,6 +377,14 @@ function selectScreen(screenId: string): void {
 function renderProperties(): void {
   properties.replaceChildren()
   const title = element<HTMLHeadingElement>('properties-title')
+  if (selectedScreenIds.length > 1) {
+    title.textContent = `${selectedScreenIds.length} Screens`
+    const summary = document.createElement('p')
+    summary.className = 'hint'
+    summary.textContent = 'Use Align, Distribute or the arrow keys to edit this selection.'
+    properties.append(summary)
+    return
+  }
   if (!selection) {
     title.textContent = 'Nothing selected'
     const hint = document.createElement('p')
@@ -610,6 +665,30 @@ function renderScreenProperties(screen: ScreenView): void {
   properties.append(container)
 }
 
+function layoutRects(screenIds: readonly string[] = project.screens.map(screen => screen.screen.id)): LayoutRect[] {
+  const included = new Set(screenIds)
+  return project.screens.filter(screen => included.has(screen.screen.id)).map(screen => ({
+    id: screen.screen.id,
+    x: screen.x,
+    y: screen.y,
+    width: screenWidth(screen),
+    height: screenHeight(screen),
+  }))
+}
+
+function selectedPositions(): Readonly<Record<string, LayoutPoint>> {
+  return Object.fromEntries(project.screens
+    .filter(screen => selectedScreenIds.includes(screen.screen.id))
+    .map(screen => [screen.screen.id, { x: screen.x, y: screen.y }]))
+}
+
+function applyScreenPositions(positions: Readonly<Record<string, LayoutPoint>>): boolean {
+  const next = setScreenPositions(project, positions)
+  if (next === project) return false
+  apply(next)
+  return true
+}
+
 function signedCoordinateProblem(value: number): string | null {
   return Number.isSafeInteger(value) ? null : 'Position must be a signed whole number.'
 }
@@ -683,7 +762,7 @@ function viewportPoint(event: { offsetX: number; offsetY: number }): { x: number
 }
 
 function selectedScreenShape(): { screen: ScreenView; shape: GridShape } | null {
-  if (selection?.type !== 'screen') return null
+  if (selection?.type !== 'screen' || selectedScreenIds.length !== 1) return null
   const screen = findScreen(project, selection.id)
   if (!screen) return null
   return { screen, shape: screenShape(screen, screen.grid.columns, screen.grid.rows) }
@@ -704,6 +783,9 @@ function endPointerGesture(): void {
   pointerMode = 'none'
   dragState = null
   panState = null
+  marqueeGesture = null
+  marqueeBox = null
+  alignmentGuides = []
   resizeGesture = null
   resizePreview = null
   canvas.classList.remove('dragging')
@@ -726,10 +808,12 @@ canvas.addEventListener('pointerdown', event => {
   }
   const px = viewportPoint(event)
   const projectPoint = toProject(camera, px)
+  const additive = event.shiftKey || event.ctrlKey || event.metaKey
   const resizeTarget = resizeTargetAt(px)
   if (resizeTarget) {
     const { screen, handle } = resizeTarget
     selection = { type: 'screen', id: screen.screen.id }
+    selectedScreenIds = [screen.screen.id]
     activeScreenId = screen.screen.id
     pointerMode = 'resize'
     resizeGesture = {
@@ -749,21 +833,42 @@ canvas.addEventListener('pointerdown', event => {
   const hit = hitTest(project, projectPoint)
   canvas.classList.add('dragging')
   if (hit) {
-    activeScreenId = hit.screen.screen.id
-    if (hit.cabinet && cabinetLabelHit(camera, hit.screen, hit.cabinet, px)) {
-      selection = { type: 'cabinet', id: hit.cabinet.id, screenId: hit.screen.screen.id }
-    } else if (screenBoundaryHit(camera, hit.screen, px)) {
-      selection = { type: 'screen', id: hit.screen.screen.id }
-    } else {
-      selection = hit.cabinet
-        ? { type: 'cabinet', id: hit.cabinet.id, screenId: hit.screen.screen.id }
-        : { type: 'screen', id: hit.screen.screen.id }
+    const screenId = hit.screen.screen.id
+    activeScreenId = screenId
+    const alreadySelected = selectedScreenIds.includes(screenId)
+    if (additive) {
+      selectedScreenIds = replaceOrToggleSelection(selectedScreenIds, screenId, true)
+      if (alreadySelected) {
+        selection = selectedScreenIds.length === 1 ? { type: 'screen', id: selectedScreenIds[0]! } : null
+        endPointerGesture()
+        render()
+        return
+      }
+    } else if (!alreadySelected || selectedScreenIds.length === 0) {
+      selectedScreenIds = [screenId]
     }
+    selection = selectedScreenIds.length === 1 ? { type: 'screen', id: selectedScreenIds[0]! } : null
+    const selectedRects = layoutRects(selectedScreenIds)
+    const bounds = selectionBounds(selectedRects)
+    if (!bounds) return
     pointerMode = 'drag'
-    dragState = { screenId: hit.screen.screen.id, lastProject: projectPoint }
+    dragState = {
+      screenIds: [...selectedScreenIds],
+      startProject: projectPoint,
+      positions: selectedPositions(),
+      bounds,
+      targets: layoutRects(project.screens.map(screen => screen.screen.id).filter(id => !selectedScreenIds.includes(id))),
+      appliedDx: 0,
+      appliedDy: 0,
+    }
     canvas.setPointerCapture(event.pointerId)
   } else {
     selection = null
+    selectedScreenIds = additive ? selectedScreenIds : []
+    pointerMode = 'marquee'
+    marqueeGesture = { start: projectPoint, baseSelection: additive ? [...selectedScreenIds] : [] }
+    marqueeBox = normalizeSelectionBox(projectPoint, projectPoint)
+    canvas.setPointerCapture(event.pointerId)
   }
   render()
 })
@@ -804,15 +909,36 @@ canvas.addEventListener('pointermove', event => {
     draw()
     return
   }
+  if (pointerMode === 'marquee' && marqueeGesture) {
+    const point = toProject(camera, viewportPoint(event))
+    marqueeBox = normalizeSelectionBox(marqueeGesture.start, point)
+    selectedScreenIds = marqueeSelection(layoutRects(), marqueeGesture.start, point, marqueeGesture.baseSelection)
+    selection = selectedScreenIds.length === 1 ? { type: 'screen', id: selectedScreenIds[0]! } : null
+    draw()
+    renderStatus()
+    return
+  }
   if (pointerMode === 'drag' && dragState) {
-    const px = viewportPoint(event)
-    const projectPoint = toProject(camera, px)
-    const dx = projectPoint.x - dragState.lastProject.x
-    const dy = projectPoint.y - dragState.lastProject.y
-    dragState.lastProject = projectPoint
-    apply(moveScreen(project, dragState.screenId, dx, dy))
-    const moved = findScreen(project, dragState.screenId)
-    if (moved) selection = { type: 'screen', id: moved.screen.id }
+    const projectPoint = toProject(camera, viewportPoint(event))
+    const snapped = snapTranslation({
+      moving: dragState.bounds,
+      targets: dragState.targets,
+      dx: projectPoint.x - dragState.startProject.x,
+      dy: projectPoint.y - dragState.startProject.y,
+      ...(gridSnap ? { gridStep } : {}),
+      smartSnap,
+      tolerance: 8 / camera.zoom,
+    })
+    alignmentGuides = snapped.guides
+    if (snapped.dx !== dragState.appliedDx || snapped.dy !== dragState.appliedDy) {
+      const positions = Object.fromEntries(dragState.screenIds.map(id => {
+        const start = dragState!.positions[id]!
+        return [id, { x: start.x + snapped.dx, y: start.y + snapped.dy }]
+      }))
+      applyScreenPositions(positions)
+      dragState.appliedDx = snapped.dx
+      dragState.appliedDy = snapped.dy
+    }
     render()
     return
   }
@@ -833,7 +959,14 @@ canvas.addEventListener('pointerup', () => {
     render()
     return
   }
+  if (pointerMode === 'marquee') {
+    endPointerGesture()
+    selection = selectedScreenIds.length === 1 ? { type: 'screen', id: selectedScreenIds[0]! } : null
+    render()
+    return
+  }
   endPointerGesture()
+  render()
 })
 
 canvas.addEventListener('pointercancel', () => {
@@ -879,6 +1012,7 @@ addScreenButton.addEventListener('click', () => {
   if (!fresh) return
   apply(next)
   selection = { type: 'screen', id: fresh.screen.id }
+  selectedScreenIds = [fresh.screen.id]
   activeScreenId = fresh.screen.id
   if (project.screens.length === 1) {
     viewMode = 'all'
@@ -889,6 +1023,45 @@ addScreenButton.addEventListener('click', () => {
     fitTo(screenBounds(fresh))
   }
   render()
+})
+
+function arrangeSelection(kind: AlignMode | DistributeAxis, distribute: boolean): void {
+  const minimum = distribute ? 3 : 2
+  if (selectedScreenIds.length < minimum) return
+  const screens = layoutRects(selectedScreenIds)
+  const positions = distribute
+    ? distributeScreens(screens, kind as DistributeAxis)
+    : alignScreens(screens, kind as AlignMode)
+  if (applyScreenPositions(positions)) render()
+}
+
+document.querySelectorAll<HTMLButtonElement>('[data-align]').forEach(button => {
+  button.addEventListener('click', () => arrangeSelection(button.dataset['align'] as AlignMode, false))
+})
+
+document.querySelectorAll<HTMLButtonElement>('[data-distribute]').forEach(button => {
+  button.addEventListener('click', () => arrangeSelection(button.dataset['distribute'] as DistributeAxis, true))
+})
+
+gridSnapButton.addEventListener('click', () => {
+  gridSnap = !gridSnap
+  renderStatus()
+})
+
+smartSnapButton.addEventListener('click', () => {
+  smartSnap = !smartSnap
+  renderStatus()
+})
+
+gridStepInput.addEventListener('change', () => {
+  const value = Number(gridStepInput.value)
+  if (!Number.isSafeInteger(value) || value < 1) {
+    gridStepInput.value = String(gridStep)
+    gridStepInput.setAttribute('aria-invalid', 'true')
+    return
+  }
+  gridStep = value
+  gridStepInput.removeAttribute('aria-invalid')
 })
 
 newProjectButton.addEventListener('click', () => { void newDocument() })
@@ -908,6 +1081,20 @@ function isPropertyControl(target: EventTarget | null): boolean {
 
 window.addEventListener('keydown', event => {
   if (isPropertyControl(event.target)) return
+  const arrows: Readonly<Record<string, readonly [number, number]>> = {
+    ArrowLeft: [-1, 0],
+    ArrowRight: [1, 0],
+    ArrowUp: [0, -1],
+    ArrowDown: [0, 1],
+  }
+  const direction = arrows[event.key]
+  if (direction && selectedScreenIds.length > 0) {
+    const step = event.shiftKey ? 10 : 1
+    const positions = nudgePositions(selectedPositions(), selectedScreenIds, direction[0] * step, direction[1] * step)
+    if (applyScreenPositions(positions)) render()
+    event.preventDefault()
+    return
+  }
   if (event.code === 'Space') {
     spaceDown = true
     canvas.classList.add('space-grab')
@@ -916,6 +1103,7 @@ window.addEventListener('keydown', event => {
   if (event.key === 'Escape') {
     endPointerGesture()
     selection = null
+    selectedScreenIds = []
     render()
   }
 })
@@ -999,6 +1187,9 @@ const hook: LedmapHook = {
     currentFilePath: editorDocument.currentFilePath,
     sourceSchemaVersion: editorDocument.sourceSchemaVersion,
   }),
+  selectedScreens: () => [...selectedScreenIds],
+  snap: () => ({ grid: gridSnap, smart: smartSnap, step: gridStep }),
+  guides: () => [...alignmentGuides],
 }
 
 ;(window as unknown as { __ledmap: LedmapHook }).__ledmap = hook

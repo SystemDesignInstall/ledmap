@@ -168,14 +168,31 @@ export function moveScreen(project: Project, screenId: string, dx: number, dy: n
 }
 
 export function setScreenPosition(project: Project, screenId: string, x: number, y: number): Project {
-  if (!Number.isSafeInteger(x) || !Number.isSafeInteger(y)) throw new Error('Screen position must use signed whole numbers.')
-  if (!findScreen(project, screenId)) throw new Error(`Unknown screen: ${screenId}`)
+  return setScreenPositions(project, { [screenId]: { x, y } })
+}
+
+export function setScreenPositions(
+  project: Project,
+  positions: Readonly<Record<string, { readonly x: number; readonly y: number }>>,
+): Project {
+  const entries = Object.entries(positions)
+  for (const [screenId, position] of entries) {
+    if (!Number.isSafeInteger(position.x) || !Number.isSafeInteger(position.y)) {
+      throw new Error('Screen position must use signed whole numbers.')
+    }
+    if (!findScreen(project, screenId)) throw new Error(`Unknown screen: ${screenId}`)
+  }
+  if (entries.every(([screenId, position]) => {
+    const screen = findScreen(project, screenId)!
+    return screen.x === position.x && screen.y === position.y
+  })) return project
   return replaceSource(project, {
     ...project.source,
     editorLayout: {
-      screenPositions: project.source.editorLayout.screenPositions.map(placement => placement.screen === screenId
-        ? { ...placement, position: { x, y } }
-        : placement),
+      screenPositions: project.source.editorLayout.screenPositions.map(placement => {
+        const position = positions[placement.screen]
+        return position ? { ...placement, position: { ...position } } : placement
+      }),
     },
   })
 }

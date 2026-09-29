@@ -18,6 +18,17 @@
         <button id="add-screen" type="button">+ Screen</button>
         <button id="toggle-mode" type="button">Active Screen</button>
         <button id="fit-project" type="button">Fit to Project</button>
+        <button id="grid-snap" type="button" aria-pressed="false">Grid Snap Off</button>
+        <label class="toolbar-field">Grid <input id="grid-step" type="number" min="1" step="1" value="10" aria-label="Grid snap step" /></label>
+        <button id="smart-snap" type="button" aria-pressed="true">Smart Snap On</button>
+        <button type="button" data-align="left" title="Align left">Align L</button>
+        <button type="button" data-align="horizontal-center" title="Align horizontal centers">Align HC</button>
+        <button type="button" data-align="right" title="Align right">Align R</button>
+        <button type="button" data-align="top" title="Align top">Align T</button>
+        <button type="button" data-align="vertical-center" title="Align vertical centers">Align VC</button>
+        <button type="button" data-align="bottom" title="Align bottom">Align B</button>
+        <button type="button" data-distribute="horizontal" title="Distribute horizontally">Distribute H</button>
+        <button type="button" data-distribute="vertical" title="Distribute vertically">Distribute V</button>
       </div>
       <span class="session-note">Project Document</span>
     </header>
@@ -49,6 +60,7 @@
     <footer class="statusbar">
       <span id="bounds" class="status-item">Project bounds · px</span>
       <span id="zoom-indicator" class="status-item">—</span>
+      <span id="selected-count" class="status-item">0 selected</span>
       <span id="canvas-note" class="status-note"></span>
       <span class="status-hints">Scroll: pan · Ctrl+Wheel: zoom · Middle / Space+drag: pan · Fit: all screens</span>
     </footer>

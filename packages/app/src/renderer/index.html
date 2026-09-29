@@ -14,7 +14,7 @@
         <nav class="mode-switcher" aria-label="Workflow mode">
           <button id="layout-mode" type="button" class="mode active" aria-current="page">Layout</button>
           <button id="mapping-mode" type="button" class="mode">Mapping</button>
-          <button type="button" class="mode" disabled>Hardware</button>
+          <button id="hardware-mode" type="button" class="mode">Hardware</button>
           <button type="button" class="mode" disabled>Test</button>
           <button type="button" class="mode" disabled>Export</button>
         </nav>
@@ -74,6 +74,34 @@
           <button id="mapping-actual-size" type="button">100%</button>
           <button id="mapping-zoom-out" type="button" aria-label="Mapping zoom out">−</button>
           <button id="mapping-zoom-in" type="button" aria-label="Mapping zoom in">+</button>
+        </div>
+      </div>
+      <div id="hardware-toolbar" class="layout-toolbar hardware-toolbar" aria-label="Hardware tools" hidden>
+        <div class="tool-group">
+          <button id="hardware-add-processor" class="primary" type="button">+ Processor</button>
+          <button id="hardware-add-port" type="button">+ Port</button>
+          <button id="hardware-add-receiver" type="button">+ Receiver</button>
+          <button id="hardware-delete" type="button">Delete</button>
+        </div>
+        <div class="tool-group">
+          <button id="hardware-order-up" type="button" title="Move earlier in signal order">Order ↑</button>
+          <button id="hardware-order-down" type="button" title="Move later in signal order">Order ↓</button>
+          <button id="hardware-assign" type="button">Assign</button>
+          <button id="hardware-unassign" type="button">Unassign</button>
+          <button id="hardware-auto-allocate" type="button">Auto Allocate</button>
+        </div>
+        <div class="tool-group hardware-overlay-tools" aria-label="Hardware canvas overlays">
+          <span class="tool-label">Overlays</span>
+          <button type="button" data-hardware-overlay="receiver" aria-pressed="true">Receiver</button>
+          <button type="button" data-hardware-overlay="port" aria-pressed="false">Port</button>
+          <button type="button" data-hardware-overlay="processor" aria-pressed="false">Processor</button>
+          <button type="button" data-hardware-overlay="dataFlow" aria-pressed="true">Data Flow</button>
+        </div>
+        <div class="tool-group hardware-view-tools">
+          <button id="hardware-fit" type="button">Fit All</button>
+          <button id="hardware-actual-size" type="button">100%</button>
+          <button id="hardware-zoom-out" type="button" aria-label="Hardware zoom out">−</button>
+          <button id="hardware-zoom-in" type="button" aria-label="Hardware zoom in">+</button>
         </div>
       </div>
     </header>
@@ -150,6 +178,34 @@
       </aside>
     </main>
 
+    <main id="hardware-workspace" class="workspace hardware-workspace" hidden>
+      <aside class="tree-panel hardware-project-panel">
+        <div class="panel-title-row">
+          <div><span class="eyebrow">GENERIC HARDWARE</span><h1>Topology</h1></div>
+        </div>
+        <div id="hardware-tree" class="hardware-tree" role="tree" aria-label="Hardware topology"></div>
+        <div class="mapping-diagnostics-heading"><span class="eyebrow">CAPACITY &amp; DIAGNOSTICS</span></div>
+        <div id="hardware-diagnostics" class="mapping-diagnostics"></div>
+      </aside>
+
+      <article class="canvas-workspace">
+        <div class="canvas-heading">
+          <div><span class="eyebrow">HARDWARE WORKSPACE</span><h2>Cabinet Assignment</h2></div>
+          <span id="hardware-selection-chip" role="status">0 Cabinets selected</span>
+        </div>
+        <div id="hardware-viewport">
+          <canvas id="hardware-canvas" role="img" aria-label="Hardware topology Cabinet assignment canvas"></canvas>
+        </div>
+      </article>
+
+      <aside class="properties-panel hardware-inspector">
+        <div class="panel-heading"><span class="eyebrow">INSPECTOR</span><h2 id="hardware-inspector-title">Hardware</h2></div>
+        <div id="hardware-properties" class="properties-body">
+          <p class="hint">Select a Processor, Port or Receiver.</p>
+        </div>
+      </aside>
+    </main>
+
     <footer class="statusbar">
       <span id="cursor-status" class="status-item layout-status">X 0 · Y 0</span>
       <span id="zoom-indicator" class="status-item layout-status">100%</span>
@@ -158,6 +214,9 @@
       <span id="mapping-cursor-status" class="status-item mapping-status" hidden>Input X 0 · Y 0</span>
       <span id="mapping-zoom-indicator" class="status-item mapping-status" hidden>100%</span>
       <span id="mapping-health-status" class="status-item mapping-status" hidden>Input Canvas not configured</span>
+      <span id="hardware-cursor-status" class="status-item hardware-status" hidden>Layout X 0 · Y 0</span>
+      <span id="hardware-zoom-indicator" class="status-item hardware-status" hidden>100%</span>
+      <span id="hardware-health-status" class="status-item hardware-status" hidden>Hardware not configured</span>
     </footer>
 
     <div id="document-error" role="alert" hidden></div>
@@ -182,6 +241,17 @@
           <button class="primary" type="submit">Add Screen</button>
         </div>
       </form>
+    </dialog>
+
+    <dialog id="allocation-preview-dialog" class="allocation-dialog">
+      <div class="allocation-dialog-body">
+        <div class="dialog-heading"><span class="eyebrow">AUTO ALLOCATE</span><h2>Allocation Preview</h2><p>Existing Cabinet assignments stay fixed. Apply adds only unassigned Cabinets.</p></div>
+        <div id="allocation-preview-body" class="allocation-preview-body"></div>
+        <div class="dialog-actions">
+          <button id="allocation-cancel" type="button">Cancel</button>
+          <button id="allocation-apply" class="primary" type="button">Apply Allocation</button>
+        </div>
+      </div>
     </dialog>
 
     <script type="module" src="./index.ts"></script>

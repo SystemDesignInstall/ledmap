@@ -87,7 +87,7 @@ try {
   assert.match(await page.locator('#empty').innerText(), /Add your first Screen/)
   assert.equal((await documentState()).dirty, false)
   assert.match(await page.locator('.mode-switcher').innerText(), /Layout\s+Mapping\s+Hardware\s+Test\s+Export/)
-  assert.equal((await page.locator('.mode-switcher .mode:disabled').count()), 3)
+  assert.equal((await page.locator('.mode-switcher .mode:disabled').count()), 2)
   assert.doesNotMatch(await page.locator('body').innerText(), /ALPHA|In-memory session/)
 
   await page.locator('#new-project').click()
@@ -335,8 +335,131 @@ try {
   )
   await mappingPage.screenshot({ path: resolve(output, 'mapping-workspace.png') })
 
+  await mappingPage.locator('#hardware-mode').click()
+  await mappingPage.locator('#hardware-workspace').waitFor({ state: 'visible' })
+  assert.equal(await mappingPage.locator('#mapping-workspace').isHidden(), true)
+  assert.match(await mappingPage.locator('#hardware-tree').innerText(), /Add a Processor/)
+
+  await mappingPage.locator('#hardware-add-processor').click()
+  for (let portIndex = 1; portIndex <= 4; portIndex += 1) {
+    await mappingPage.locator('[data-hardware-type="processor"][data-hardware-id="processor-1"]').click()
+    await mappingPage.locator('#hardware-add-port').click()
+    assert.equal(await mappingPage.locator('#hardware-add-receiver').isEnabled(), true)
+    await mappingPage.locator('#hardware-add-receiver').click()
+    await mappingPage.locator('#hardware-add-receiver').click()
+  }
+  await mappingPage.locator('#hardware-add-processor').click()
+  await mappingPage.locator('[data-hardware-type="processor"][data-hardware-id="processor-2"]').click()
+  await mappingPage.locator('#hardware-add-port').click()
+  await mappingPage.locator('#hardware-add-receiver').click()
+
+  let hardwareDump = await mappingPage.evaluate(() => window.__ledmapHardware.dump())
+  assert.equal(hardwareDump.processors.length, 2)
+  assert.equal(hardwareDump.ports.length, 5)
+  assert.equal(hardwareDump.receivers.length, 9)
+  assert.deepEqual(hardwareDump.processorOrder, ['processor-1', 'processor-2'])
+  assert.equal(hardwareDump.unassigned.length, 36)
+
+  await mappingPage.locator('[data-hardware-type="processor"][data-hardware-id="processor-2"]').click()
+  await mappingPage.locator('#hardware-order-up').click()
+  assert.deepEqual((await mappingPage.evaluate(() => window.__ledmapHardware.dump())).processorOrder, ['processor-2', 'processor-1'])
+  await mappingPage.locator('#hardware-order-down').click()
+  assert.deepEqual((await mappingPage.evaluate(() => window.__ledmapHardware.dump())).processorOrder, ['processor-1', 'processor-2'])
+
+  await mappingPage.locator('[data-hardware-type="receiver"][data-hardware-id="receiver-1"]').click()
+  await mappingPage.locator('[data-cabinet-id="screen-1/C01"]').click()
+  await mappingPage.locator('[data-cabinet-id="screen-1/C02"]').click({ modifiers: ['Control'] })
+  await mappingPage.locator('#hardware-assign').click()
+  await mappingPage.locator('[data-hardware-type="receiver"][data-hardware-id="receiver-2"]').click()
+  await mappingPage.locator('[data-cabinet-id="screen-2/C01"]').click()
+  await mappingPage.locator('[data-cabinet-id="screen-2/C02"]').click({ modifiers: ['Control'] })
+  await mappingPage.locator('#hardware-assign').click()
+  hardwareDump = await mappingPage.evaluate(() => window.__ledmapHardware.dump())
+  assert.deepEqual(hardwareDump.receivers[0].cabinets, ['screen-1/C01', 'screen-1/C02'])
+  assert.deepEqual(hardwareDump.receivers[1].cabinets, ['screen-2/C01', 'screen-2/C02'])
+  assert.equal(hardwareDump.unassigned.length, 32)
+
+  const beforeAllocationPreview = hardwareDump
+  await mappingPage.locator('#hardware-auto-allocate').click()
+  await mappingPage.locator('#allocation-preview-dialog').waitFor({ state: 'visible' })
+  assert.match(await mappingPage.locator('#allocation-preview-body').innerText(), /receiver-1[\s\S]*4 Cabinets/)
+  assert.deepEqual(await mappingPage.evaluate(() => window.__ledmapHardware.dump()), beforeAllocationPreview)
+  await mappingPage.locator('#allocation-cancel').click()
+  await mappingPage.locator('#allocation-preview-dialog').waitFor({ state: 'hidden' })
+  assert.deepEqual(await mappingPage.evaluate(() => window.__ledmapHardware.dump()), beforeAllocationPreview)
+  await mappingPage.locator('#hardware-auto-allocate').click()
+  await mappingPage.locator('#allocation-preview-dialog').waitFor({ state: 'visible' })
+  await mappingPage.locator('#allocation-apply').click()
+  await mappingPage.waitForFunction(() => window.__ledmapHardware.dump().unassigned.length === 0)
+  hardwareDump = await mappingPage.evaluate(() => window.__ledmapHardware.dump())
+  assert.equal(hardwareDump.unassigned.length, 0)
+  assert.equal(hardwareDump.receivers.every(receiver => receiver.cabinets.length <= 4), true)
+  assert.match(await mappingPage.locator('#hardware-diagnostics').innerText(), /Hardware ready/)
+
+  const firstScreenPixel = await mappingPage.evaluate(() => window.__ledmapHardware.inspectCabinet('screen-1/C01', 0, 0))
+  const secondScreenPixel = await mappingPage.evaluate(() => window.__ledmapHardware.inspectCabinet('screen-2/C01', 0, 0))
+  assert.equal(firstScreenPixel.receiver, 'receiver-1')
+  assert.equal(secondScreenPixel.receiver, 'receiver-2')
+  assert.equal(firstScreenPixel.port, 'port-1')
+  assert.equal(secondScreenPixel.port, 'port-1')
+  assert.equal(firstScreenPixel.processor, 'processor-1')
+  assert.equal(secondScreenPixel.processor, 'processor-1')
+  assert.ok(secondScreenPixel.dataIndex > firstScreenPixel.dataIndex)
+
+  await mappingPage.locator('#hardware-fit').click()
+  const hardwareCanvasBox = await mappingPage.locator('#hardware-canvas').boundingBox()
+  const hardwareCabinetCenter = await mappingPage.evaluate(() => window.__ledmapHardware.cabinetCenterPx('screen-2/C01'))
+  assert.ok(hardwareCanvasBox)
+  assert.ok(hardwareCabinetCenter)
+  await mappingPage.mouse.click(
+    hardwareCanvasBox.x + hardwareCabinetCenter.x,
+    hardwareCanvasBox.y + hardwareCabinetCenter.y,
+  )
+  const hardwareInspector = await mappingPage.locator('#hardware-properties').innerText()
+  assert.match(hardwareInspector, /Input[\s\S]*Screen[\s\S]*Cabinet[\s\S]*Module[\s\S]*Receiver[\s\S]*Port[\s\S]*Processor[\s\S]*dataIndex/)
+  await mappingPage.locator('[data-hardware-overlay="port"]').click()
+  await mappingPage.locator('[data-hardware-overlay="processor"]').click()
+  assert.equal(await mappingPage.locator('[data-hardware-overlay="port"]').getAttribute('aria-pressed'), 'true')
+  assert.equal(await mappingPage.locator('[data-hardware-overlay="processor"]').getAttribute('aria-pressed'), 'true')
+  await mappingPage.locator('[data-hardware-overlay="port"]').click()
+  await mappingPage.locator('[data-hardware-overlay="processor"]').click()
+
+  const hardwareBeforeSave = await mappingPage.evaluate(() => window.__ledmapHardware.dump())
+  await mappingPage.locator('#save-project').click()
+  await mappingPage.waitForFunction(() => window.__ledmap.document().dirty === false)
+  const hardwareStored = JSON.parse(await readFile(projectPath, 'utf8'))
+  assert.equal(hardwareStored.schemaVersion, 2)
+  assert.equal(hardwareStored.project.hardwareTopology.processors.length, 2)
+  assert.equal(hardwareStored.project.hardwareTopology.receivers.length, 9)
+  assert.doesNotMatch(JSON.stringify(hardwareStored.project.hardwareTopology), /HardwareProfile|profileRef/i)
+
+  await mappingPage.locator('#new-project').click()
+  await mappingPage.waitForFunction(() => window.__ledmapHardware.dump().processors.length === 0)
+  await mappingPage.locator('#open-project').click()
+  await mappingPage.waitForFunction(() => window.__ledmapHardware.dump().processors.length === 2)
+  assert.deepEqual(await mappingPage.evaluate(() => window.__ledmapHardware.dump()), hardwareBeforeSave)
+  assert.deepEqual(
+    await mappingPage.evaluate(() => window.__ledmapHardware.inspectCabinet('screen-1/C01', 0, 0)),
+    firstScreenPixel,
+  )
+  assert.deepEqual(
+    await mappingPage.evaluate(() => window.__ledmapHardware.inspectCabinet('screen-2/C01', 0, 0)),
+    secondScreenPixel,
+  )
+  await mappingPage.locator('#hardware-fit').click()
+  const reopenedHardwareCanvasBox = await mappingPage.locator('#hardware-canvas').boundingBox()
+  const reopenedHardwareCabinetCenter = await mappingPage.evaluate(() => window.__ledmapHardware.cabinetCenterPx('screen-2/C01'))
+  assert.ok(reopenedHardwareCanvasBox)
+  assert.ok(reopenedHardwareCabinetCenter)
+  await mappingPage.mouse.click(
+    reopenedHardwareCanvasBox.x + reopenedHardwareCabinetCenter.x,
+    reopenedHardwareCanvasBox.y + reopenedHardwareCabinetCenter.y,
+  )
+  assert.match(await mappingPage.locator('#hardware-properties').innerText(), /dataIndex/)
+  await mappingPage.screenshot({ path: resolve(output, 'hardware-workspace.png') })
+
   assert.deepEqual(failures, [])
-  console.log('Electron smoke passed: Layout interactions plus Input Canvas, three independent Mapping Regions, drag/resize, forward/reverse geometry inspection and Save/reopen.')
+  console.log('Electron smoke passed: Layout, Mapping and Generic Hardware topology with manual assignment, allocation preview/apply, full addressing and Save/reopen.')
   console.log(`Project: ${projectPath}`)
 } finally {
   await close(running.app)

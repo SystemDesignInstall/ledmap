@@ -1,3 +1,4 @@
+import type { LiveOutputRegion } from '../shared/ipc.js'
 import type { TestFrame, TestPoint, TestPrimitive } from '../shared/test-engine.js'
 import type { Camera } from './canvas.js'
 
@@ -81,4 +82,55 @@ export function drawTestFrame(canvas: HTMLCanvasElement, frame: TestFrame, camer
   ctx.fillStyle = frame.background
   ctx.fillRect(0, 0, width, height)
   for (const primitive of frame.primitives) drawPrimitive(ctx, camera, primitive)
+}
+
+export interface TestOutputOverlay {
+  readonly id: string
+  readonly region: LiveOutputRegion
+  readonly color: string
+}
+
+export function drawClippedTestFrame(
+  canvas: HTMLCanvasElement,
+  frame: TestFrame,
+  camera: Camera,
+  clip: LiveOutputRegion,
+): void {
+  const { width, height, dpr } = canvasSize(canvas)
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+  ctx.clearRect(0, 0, width, height)
+  ctx.fillStyle = '#000000'
+  ctx.fillRect(0, 0, width, height)
+  const origin = point(camera, clip)
+  ctx.save()
+  ctx.beginPath()
+  ctx.rect(origin.x, origin.y, clip.width * camera.zoom, clip.height * camera.zoom)
+  ctx.clip()
+  for (const primitive of frame.primitives) drawPrimitive(ctx, camera, primitive)
+  ctx.restore()
+}
+
+export function drawTestOutputOverlays(canvas: HTMLCanvasElement, overlays: readonly TestOutputOverlay[], camera: Camera): void {
+  if (overlays.length === 0) return
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+  const dpr = window.devicePixelRatio || 1
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+  for (const overlay of overlays) {
+    const origin = point(camera, overlay.region)
+    const width = overlay.region.width * camera.zoom
+    const height = overlay.region.height * camera.zoom
+    ctx.strokeStyle = overlay.color
+    ctx.lineWidth = 2
+    ctx.setLineDash([7, 5])
+    ctx.strokeRect(origin.x, origin.y, width, height)
+    ctx.setLineDash([])
+    ctx.fillStyle = overlay.color
+    ctx.font = '600 11px "Segoe UI", sans-serif'
+    ctx.textAlign = 'left'
+    ctx.textBaseline = 'bottom'
+    ctx.fillText(overlay.id, origin.x + 5, origin.y - 5)
+  }
 }

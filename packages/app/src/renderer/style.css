@@ -184,12 +184,31 @@ dialog::backdrop { background: #06090dc7; backdrop-filter: blur(2px); }
 .test-inspector .property .value { overflow-wrap: anywhere; white-space: normal; }
 .test-walk-chain { margin: 0; color: #dce8f3; font-size: 11px; line-height: 1.65; }
 .test-walk-chain strong { color: #7fdac0; font-weight: 600; }
+.live-output-dialog { width: min(1120px, calc(100vw - 32px)); max-width: none; }
+.live-output-dialog-body { padding: 20px; }
+.live-output-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+.live-output-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; max-height: 66vh; overflow-y: auto; padding: 2px; }
+.live-output-card { padding: 12px; border: 1px solid var(--line); border-radius: 7px; background: #101821; }
+.live-output-card.running { border-color: #3e8f79; box-shadow: inset 3px 0 #69d5b7; }
+.live-output-card-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.live-output-card-header h3 { margin: 0; color: #e8f0f8; font-size: 13px; }
+.live-output-state { color: var(--muted); font-size: 10px; }
+.live-output-card.running .live-output-state { color: #88ddc5; }
+.live-output-fields { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px; }
+.live-output-fields label { display: flex; flex-direction: column; gap: 4px; color: var(--muted); font-size: 9px; text-transform: uppercase; letter-spacing: .05em; }
+.live-output-fields .wide { grid-column: span 3; }
+.live-output-fields input, .live-output-fields select { width: 100%; min-width: 0; padding: 6px 7px; border: 1px solid var(--line); border-radius: 4px; background: #0b1118; color: var(--text); font-size: 10px; }
+.live-output-actions, .live-output-convenience { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 9px; }
+.live-output-actions { justify-content: flex-end; }
+.live-output-actions button, .live-output-convenience button { padding: 5px 7px; font-size: 10px; }
+.live-output-message { min-height: 15px; margin: 7px 0 0; color: #d5a16c; font-size: 9px; }
 
 @media (max-width: 1120px) {
   .workspace { grid-template-columns: 190px minmax(0, 1fr) 244px; }
   .mapping-workspace { grid-template-columns: 210px minmax(0, 1fr) 270px; }
   .hardware-workspace { grid-template-columns: 230px minmax(0, 1fr) 270px; }
   .test-workspace { grid-template-columns: 215px minmax(0, 1fr) 280px; }
+  .live-output-list { grid-template-columns: 1fr; }
   .titlebar { grid-template-columns: 150px minmax(380px, 1fr) auto; }
   .mode-switcher .mode { min-width: 66px; }
 }

@@ -1,5 +1,13 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import { ipcChannels, type DesktopDocumentState, type LedmapDesktopApi, type SaveProjectRequest } from '../shared/ipc.js'
+import {
+  ipcChannels,
+  type DesktopDocumentState,
+  type LedmapDesktopApi,
+  type SaveProjectRequest,
+  type SimulateDisplayChangeRequest,
+  type StartLiveOutputRequest,
+  type UpdateLiveOutputRequest,
+} from '../shared/ipc.js'
 
 const api: LedmapDesktopApi = {
   openProject: () => ipcRenderer.invoke(ipcChannels.openProject),
@@ -12,6 +20,21 @@ const api: LedmapDesktopApi = {
     ipcRenderer.on(ipcChannels.requestSaveBeforeClose, listener)
     return () => ipcRenderer.removeListener(ipcChannels.requestSaveBeforeClose, listener)
   },
+  listDisplays: () => ipcRenderer.invoke(ipcChannels.listDisplays),
+  startLiveOutput: (request: StartLiveOutputRequest) => ipcRenderer.invoke(ipcChannels.startLiveOutput, request),
+  updateLiveOutput: (request: UpdateLiveOutputRequest) => ipcRenderer.invoke(ipcChannels.updateLiveOutput, request),
+  stopLiveOutput: (outputId: string) => ipcRenderer.invoke(ipcChannels.stopLiveOutput, outputId),
+  onDisplaysChanged: callback => {
+    const listener = (_event: Electron.IpcRendererEvent, displays: Parameters<typeof callback>[0]): void => callback(displays)
+    ipcRenderer.on(ipcChannels.displaysChanged, listener)
+    return () => ipcRenderer.removeListener(ipcChannels.displaysChanged, listener)
+  },
+  onLiveOutputStateChanged: callback => {
+    const listener = (_event: Electron.IpcRendererEvent, state: Parameters<typeof callback>[0]): void => callback(state)
+    ipcRenderer.on(ipcChannels.liveOutputStateChanged, listener)
+    return () => ipcRenderer.removeListener(ipcChannels.liveOutputStateChanged, listener)
+  },
+  simulateDisplayChange: (request: SimulateDisplayChangeRequest) => ipcRenderer.invoke(ipcChannels.simulateDisplayChange, request),
 }
 
 contextBridge.exposeInMainWorld('ledmapDesktop', api)

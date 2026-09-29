@@ -107,7 +107,10 @@ export type TestPrimitive =
   | { readonly kind: 'pixel'; readonly point: TestPoint; readonly color: string }
 
 export interface TestFrame {
+  readonly pattern: TestPatternId
+  readonly scope: TestScope
   readonly bounds: TestBounds
+  readonly scopeBounds: TestBounds | null
   readonly background: string
   readonly scopedCabinets: readonly string[]
   readonly primitives: readonly TestPrimitive[]
@@ -229,6 +232,15 @@ function screenFrames(primitives: TestPrimitive[], scene: TestScene): void {
   for (const screen of scene.screens) {
     primitives.push({ kind: 'rect', bounds: screen.bounds, fill: '#080d13', stroke: '#314256', lineWidth: 2 })
   }
+}
+
+function unionBounds(regions: readonly TestBounds[]): TestBounds | null {
+  if (regions.length === 0) return null
+  const left = Math.min(...regions.map(bounds => bounds.x))
+  const top = Math.min(...regions.map(bounds => bounds.y))
+  const right = Math.max(...regions.map(bounds => bounds.x + bounds.width))
+  const bottom = Math.max(...regions.map(bounds => bounds.y + bounds.height))
+  return { x: left, y: top, width: right - left, height: bottom - top }
 }
 
 function addGeometryPattern(pattern: TestPatternId, regions: readonly TestBounds[], primitives: TestPrimitive[]): void {
@@ -360,7 +372,10 @@ export function evaluateTestPattern(scene: TestScene, config: TestPatternConfig)
   }
 
   return Object.freeze({
+    pattern: config.pattern,
+    scope: Object.freeze({ ...config.scope }),
     bounds: scene.bounds,
+    scopeBounds: unionBounds(regions),
     background: '#05080c',
     scopedCabinets: Object.freeze(cabinets.map(cabinet => cabinet.id)),
     primitives: Object.freeze(primitives),

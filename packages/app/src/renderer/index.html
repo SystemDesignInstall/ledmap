@@ -123,6 +123,9 @@
           <label class="toolbar-field">Direct index <input id="test-address-index" type="number" min="0" step="1" value="0"></label>
           <button id="test-address-go" type="button">Go</button>
         </div>
+        <div class="tool-group">
+          <button id="live-output-open" class="primary" type="button">Live Output <span id="live-output-count">0/4</span></button>
+        </div>
         <div class="tool-group test-view-tools">
           <button id="test-fit" type="button">Fit All</button>
           <button id="test-actual-size" type="button">100%</button>
@@ -305,6 +308,19 @@
         <div class="dialog-actions">
           <button id="allocation-cancel" type="button">Cancel</button>
           <button id="allocation-apply" class="primary" type="button">Apply Allocation</button>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog id="live-output-dialog" class="live-output-dialog">
+      <div class="live-output-dialog-body">
+        <div class="dialog-heading live-output-heading">
+          <div><span class="eyebrow">EXTERNAL DISPLAYS</span><h2>Live Output Routing</h2><p>Session-only Windows display routes. Hardware Processor/Port topology is unrelated.</p></div>
+          <button id="live-output-refresh" type="button">Refresh displays</button>
+        </div>
+        <div id="live-output-list" class="live-output-list"></div>
+        <div class="dialog-actions">
+          <button id="live-output-close" type="button">Close</button>
         </div>
       </div>
     </dialog>

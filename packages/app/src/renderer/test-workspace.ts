@@ -7,10 +7,11 @@ import {
   type TestPatternId,
   type TestScope,
   type TestScopeKind,
+  type TestScene,
   type TestWalkPixel,
 } from '../shared/test-engine.js'
 import { fitCamera, toProject, zoomAt, type Camera, type Point } from './canvas.js'
-import { drawTestFrame } from './test-canvas.js'
+import { drawTestFrame, drawTestOutputOverlays, type TestOutputOverlay } from './test-canvas.js'
 import {
   buildTestScene,
   buildTestWalkSpace,
@@ -22,12 +23,22 @@ import type { Project } from './project.js'
 
 interface TestWorkspaceOptions {
   readonly getProject: () => Project
+  readonly onFrameChanged?: (snapshot: TestWorkspaceSnapshot) => void
+  readonly getOutputOverlays?: () => readonly TestOutputOverlay[]
+}
+
+export interface TestWorkspaceSnapshot {
+  readonly frame: TestFrame
+  readonly scene: TestScene
+  readonly scope: TestScope
 }
 
 export interface TestWorkspace {
   activate(): void
   deactivate(): void
   projectChanged(): void
+  snapshot(): TestWorkspaceSnapshot
+  redraw(): void
 }
 
 interface TestHookDump {
@@ -168,6 +179,7 @@ export function createTestWorkspace(options: TestWorkspaceOptions): TestWorkspac
   function draw(): void {
     if (!active) return
     drawTestFrame(canvas, frame, camera)
+    drawTestOutputOverlays(canvas, options.getOutputOverlays?.() ?? [], camera)
     zoomStatus.textContent = `${Math.round(camera.zoom * 100)}%`
   }
 
@@ -296,6 +308,7 @@ export function createTestWorkspace(options: TestWorkspaceOptions): TestWorkspac
     empty.hidden = scene.screens.length > 0
     canvas.hidden = scene.screens.length === 0
     draw()
+    options.onFrameChanged?.({ frame, scene, scope: { ...scope } })
   }
 
   scopeSelect.addEventListener('change', () => {
@@ -434,5 +447,7 @@ export function createTestWorkspace(options: TestWorkspaceOptions): TestWorkspac
       scene = buildTestScene(project())
       render()
     },
+    snapshot: () => ({ frame, scene, scope: { ...scope } }),
+    redraw: draw,
   }
 }

@@ -88,6 +88,10 @@ describe('headless Test pattern engine', () => {
     expect(signal.primitives).toContainEqual(expect.objectContaining({ kind: 'line', from: { x: -50, y: 50 }, to: { x: 250, y: 50 } }))
     const order = evaluateTestPattern(scene, config('cabinet-order', { kind: 'cabinet', target: 'screen-1/C01' }))
     expect(order.primitives).toContainEqual(expect.objectContaining({ kind: 'text', text: '#1' }))
+    const port = evaluateTestPattern(scene, config('port-labels', { kind: 'port', target: 'port-1' }))
+    expect(port.pattern).toBe('port-labels')
+    expect(port.scope).toEqual({ kind: 'port', target: 'port-1' })
+    expect(port.scopeBounds).toEqual({ x: -100, y: 0, width: 400, height: 100 })
   })
 
   it.each([

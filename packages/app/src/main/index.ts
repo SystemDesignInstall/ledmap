@@ -7,8 +7,12 @@ import {
   type DesktopDocumentState,
   type SaveProjectRequest,
   type SaveProjectResult,
+  type SimulateDisplayChangeRequest,
+  type StartLiveOutputRequest,
   type UnsavedChoice,
+  type UpdateLiveOutputRequest,
 } from '../shared/ipc.js'
+import { LiveOutputManager } from './live-output.js'
 
 interface WindowState {
   currentFilePath: string | null
@@ -19,6 +23,7 @@ interface WindowState {
 
 const windowStates = new Map<number, WindowState>()
 const ledmapFilter = [{ name: 'LedMAP Project', extensions: ['ledmap'] }]
+let liveOutputManager: LiveOutputManager | null = null
 
 function stateFor(contents: WebContents): WindowState | undefined {
   return windowStates.get(contents.id)
@@ -117,6 +122,35 @@ function registerIpc(): void {
     state.allowClose = true
     window.close()
   })
+
+  ipcMain.handle(ipcChannels.listDisplays, () => liveOutputManager?.displays() ?? [])
+
+  ipcMain.handle(ipcChannels.startLiveOutput, (event, value: unknown) => {
+    if (!liveOutputManager) throw new Error('Live Output is unavailable.')
+    if (value === null || typeof value !== 'object') throw new Error('Invalid Live Output request.')
+    return liveOutputManager.start(event.sender, value as StartLiveOutputRequest)
+  })
+
+  ipcMain.handle(ipcChannels.updateLiveOutput, (event, value: unknown) => {
+    if (!liveOutputManager) throw new Error('Live Output is unavailable.')
+    if (value === null || typeof value !== 'object') throw new Error('Invalid Live Output update.')
+    return liveOutputManager.update(event.sender, value as UpdateLiveOutputRequest)
+  })
+
+  ipcMain.handle(ipcChannels.stopLiveOutput, (event, outputId: unknown) => {
+    if (!liveOutputManager) throw new Error('Live Output is unavailable.')
+    return liveOutputManager.stop(event.sender, outputId)
+  })
+
+  ipcMain.handle(ipcChannels.simulateDisplayChange, (_event, value: unknown) => {
+    if (!liveOutputManager || value === null || typeof value !== 'object') return false
+    const request = value as Partial<SimulateDisplayChangeRequest>
+    if (request.action !== 'add' && request.action !== 'remove') return false
+    return liveOutputManager.simulateDisplayChange({
+      action: request.action,
+      ...(typeof request.displayId === 'string' ? { displayId: request.displayId } : {}),
+    })
+  })
 }
 
 async function createWindow(): Promise<void> {
@@ -142,6 +176,7 @@ async function createWindow(): Promise<void> {
     allowClose: false,
     closePromptActive: false,
   })
+  liveOutputManager?.registerEditor(window.webContents)
   window.setMenuBarVisibility(false)
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   window.webContents.on('will-navigate', event => event.preventDefault())
@@ -165,7 +200,10 @@ async function createWindow(): Promise<void> {
       }
     })
   })
-  window.on('closed', () => windowStates.delete(webContentsId))
+  window.on('closed', () => {
+    liveOutputManager?.unregisterEditor(window.webContents)
+    windowStates.delete(webContentsId)
+  })
   const devUrl = process.env['ELECTRON_RENDERER_URL']
   if (!app.isPackaged && devUrl) {
     await window.loadURL(devUrl)
@@ -177,9 +215,11 @@ async function createWindow(): Promise<void> {
 registerIpc()
 
 app.whenReady().then(async () => {
+  liveOutputManager = new LiveOutputManager()
+  liveOutputManager.attachDisplayEvents()
   await createWindow()
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) void createWindow()
+    if (windowStates.size === 0) void createWindow()
   })
 }).catch(error => {
   console.error(error)

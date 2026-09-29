@@ -4,6 +4,15 @@ import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { _electron as electron } from 'playwright'
 
+process.on('uncaughtException', error => {
+  console.error(error)
+  process.exit(1)
+})
+process.on('unhandledRejection', error => {
+  console.error(error)
+  process.exit(1)
+})
+
 const appRoot = resolve(fileURLToPath(new URL('../', import.meta.url)))
 const output = fileURLToPath(new URL('../out/smoke/', import.meta.url))
 const projectPath = resolve(output, 'document-lifecycle.ledmap')
@@ -14,6 +23,7 @@ const env = {
   ...process.env,
   LEDMAP_SMOKE_PROJECT_PATH: projectPath,
   LEDMAP_SMOKE_UNSAVED_ACTION: 'discard',
+  LEDMAP_SMOKE_SIMULATED_DISPLAYS: '1',
 }
 delete env['ELECTRON_RUN_AS_NODE']
 delete env['ELECTRON_RENDERER_URL']
@@ -35,10 +45,20 @@ async function launch() {
 
 async function close(application) {
   const child = application.process()
-  await Promise.race([
-    application.close(),
-    new Promise(resolvePromise => setTimeout(resolvePromise, 3000)),
-  ])
+  if (application.windows().length > 0) {
+    const requestExit = application.evaluate(({ app }) => {
+      setTimeout(() => app.exit(0), 0)
+      return true
+    }).catch(() => false)
+    await Promise.race([
+      requestExit,
+      new Promise(resolvePromise => setTimeout(resolvePromise, 500)),
+    ])
+  }
+  const deadline = Date.now() + 3000
+  while (child.exitCode === null && Date.now() < deadline) {
+    await new Promise(resolvePromise => setTimeout(resolvePromise, 25))
+  }
   if (child.exitCode === null) child.kill()
 }
 
@@ -70,6 +90,14 @@ async function setMappingGeometry(page, values) {
   for (const [label, value] of fields) {
     if (value === undefined) continue
     const input = page.locator(`input[aria-label="${label}"]`)
+    await input.fill(String(value))
+    await input.blur()
+  }
+}
+
+async function setOutputRegion(page, outputId, values) {
+  for (const [key, value] of Object.entries(values)) {
+    const input = page.locator(`[data-output-id="${outputId}"] input[aria-label="${outputId} source ${key}"]`)
     await input.fill(String(value))
     await input.blur()
   }
@@ -534,17 +562,147 @@ try {
   await mappingPage.locator('#test-mode').click()
   assert.equal((await mappingPage.evaluate(() => window.__ledmapTest.dump())).walk.dataIndex, 65536)
   assert.equal((await mappingPage.evaluate(() => window.__ledmap.document())).dirty, false)
+
+  await mappingPage.locator('[data-test-pattern="white"]').click()
+  await mappingPage.locator('#live-output-open').click()
+  await mappingPage.locator('#live-output-dialog').waitFor({ state: 'visible' })
+  await mappingPage.waitForFunction(() => window.__ledmapLiveOutput.dump().displays.length === 2)
+  const liveInitial = await mappingPage.evaluate(() => window.__ledmapLiveOutput.dump())
+  assert.deepEqual(liveInitial.displays.map(display => display.id), ['sim-display-1', 'sim-display-2'])
+  assert.equal(liveInitial.displays[0].primary, true)
+  assert.deepEqual(liveInitial.displays[1], {
+    id: 'sim-display-2',
+    bounds: { x: 1920, y: 0, width: 1280, height: 720 },
+    resolution: { width: 1280, height: 720 },
+    scaleFactor: 1,
+    primary: false,
+  })
+  const outputOneCard = mappingPage.locator('[data-output-id="output-1"]')
+  await outputOneCard.locator('select[aria-label="output-1 Windows Display"]').selectOption('sim-display-2')
+  const outputOneWindow = running.app.waitForEvent('window')
+  await outputOneCard.getByRole('button', { name: 'Start', exact: true }).click()
+  const outputOnePage = await outputOneWindow
+  outputOnePage.on('pageerror', error => failures.push(error.message))
+  outputOnePage.on('console', message => { if (message.type() === 'error') failures.push(message.text()) })
+  await outputOnePage.waitForFunction(() => window.__ledmapOutput?.dump()?.pattern === 'white')
+  assert.deepEqual(await outputOnePage.evaluate(() => ({
+    displayId: window.__ledmapOutput.dump().displayId,
+    pattern: window.__ledmapOutput.dump().pattern,
+    scaleMode: window.__ledmapOutput.dump().scaleMode,
+  })), { displayId: 'sim-display-2', pattern: 'white', scaleMode: 'fit' })
+  assert.deepEqual(await outputOnePage.evaluate(() => ({
+    canvasCount: document.querySelectorAll('canvas').length,
+    bodyText: document.body.innerText,
+    background: getComputedStyle(document.body).backgroundColor,
+    nodeRequire: typeof window.require,
+    desktopApi: typeof window.ledmapDesktop,
+    outputApi: typeof window.ledmapOutput,
+  })), {
+    canvasCount: 1,
+    bodyText: '',
+    background: 'rgb(0, 0, 0)',
+    nodeRequire: 'undefined',
+    desktopApi: 'undefined',
+    outputApi: 'object',
+  })
+  const staticRevision = (await outputOnePage.evaluate(() => window.__ledmapOutput.dump())).revision
+  await outputOnePage.waitForTimeout(350)
+  assert.equal((await outputOnePage.evaluate(() => window.__ledmapOutput.dump())).revision, staticRevision)
+  const outputSecurity = await running.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()
+    .filter(window => window.getTitle() === 'LedMAP Live Output')
+    .map(window => {
+      const preferences = window.webContents.getLastWebPreferences()
+      return {
+        nodeIntegration: preferences.nodeIntegration,
+        contextIsolation: preferences.contextIsolation,
+        sandbox: preferences.sandbox,
+      }
+    }))
+  assert.deepEqual(outputSecurity, [{ nodeIntegration: false, contextIsolation: true, sandbox: true }])
+
+  await mappingPage.locator('#live-output-close').click()
+  for (const pattern of ['red', 'checkerboard', 'cabinet-labels']) {
+    await mappingPage.locator(`[data-test-pattern="${pattern}"]`).click()
+    await outputOnePage.waitForFunction(expected => window.__ledmapOutput.dump().pattern === expected, pattern)
+  }
+  const outputOneRevisionBeforeRegion = (await outputOnePage.evaluate(() => window.__ledmapOutput.dump())).revision
+  await mappingPage.locator('#live-output-open').click()
+  await setOutputRegion(mappingPage, 'output-1', { x: -160, y: 40, width: 900, height: 500 })
+  await outputOnePage.waitForFunction(revision => window.__ledmapOutput.dump().revision > revision, outputOneRevisionBeforeRegion)
+  assert.deepEqual((await outputOnePage.evaluate(() => window.__ledmapOutput.dump())).region, {
+    x: -160, y: 40, width: 900, height: 500,
+  })
+  const outputTwoCard = mappingPage.locator('[data-output-id="output-2"]')
+  await outputTwoCard.locator('select[aria-label="output-2 Windows Display"]').selectOption('sim-display-2')
+  await setOutputRegion(mappingPage, 'output-2', { x: 600, y: -120, width: 640, height: 480 })
+  await outputTwoCard.locator('select[aria-label="output-2 scale mode"]').selectOption('actual')
+  const outputTwoWindow = running.app.waitForEvent('window')
+  await outputTwoCard.getByRole('button', { name: 'Start', exact: true }).click()
+  const outputTwoPage = await outputTwoWindow
+  outputTwoPage.on('pageerror', error => failures.push(error.message))
+  outputTwoPage.on('console', message => { if (message.type() === 'error') failures.push(message.text()) })
+  await outputTwoPage.waitForFunction(() => window.__ledmapOutput?.dump()?.pattern === 'cabinet-labels')
+  assert.deepEqual(await outputTwoPage.evaluate(() => ({
+    region: window.__ledmapOutput.dump().region,
+    scaleMode: window.__ledmapOutput.dump().scaleMode,
+  })), { region: { x: 600, y: -120, width: 640, height: 480 }, scaleMode: 'actual' })
+  assert.equal((await mappingPage.evaluate(() => window.__ledmapLiveOutput.dump())).outputs.filter(route => route.running).length, 2)
+  await mappingPage.screenshot({ path: resolve(output, 'live-output-routing.png') })
+  await mappingPage.locator('#live-output-close').click()
+  await mappingPage.locator('#test-fit').click()
+  await mappingPage.screenshot({ path: resolve(output, 'live-output-regions.png') })
+
+  const outputOneClosed = outputOnePage.waitForEvent('close')
+  await mappingPage.locator('#live-output-open').click()
+  await mappingPage.locator('[data-output-id="output-1"]').getByRole('button', { name: 'Stop', exact: true }).click()
+  await outputOneClosed
+  assert.equal((await mappingPage.evaluate(() => window.__ledmapLiveOutput.dump())).outputs[0].running, false)
+  assert.equal((await mappingPage.evaluate(() => window.__ledmapLiveOutput.dump())).outputs[1].running, true)
+  await mappingPage.locator('#live-output-close').click()
+
+  await mappingPage.locator('[data-test-pattern="address-walk"]').click()
+  await mappingPage.locator('#test-address-index').fill('65535')
+  await mappingPage.locator('#test-address-go').click()
+  await outputTwoPage.waitForFunction(() => window.__ledmapOutput.dump().dataIndex === 65535)
+  await mappingPage.locator('#test-address-next').click()
+  await outputTwoPage.waitForFunction(() => window.__ledmapOutput.dump().dataIndex === 65536)
+  assert.deepEqual(await outputTwoPage.evaluate(() => ({
+    dataIndex: window.__ledmapOutput.dump().dataIndex,
+    pattern: window.__ledmapOutput.dump().pattern,
+  })), { dataIndex: 65536, pattern: 'address-walk' })
+  await outputTwoPage.screenshot({ path: resolve(output, 'live-output-window.png') })
+
+  assert.equal(await mappingPage.evaluate(() => window.__ledmapLiveOutput.simulateDisplayChange('add')), true)
+  await mappingPage.waitForFunction(() => window.__ledmapLiveOutput.dump().displays.length === 3)
+  assert.deepEqual((await mappingPage.evaluate(() => window.__ledmapLiveOutput.dump())).displays[2], {
+    id: 'sim-display-3',
+    bounds: { x: -1024, y: 0, width: 1024, height: 768 },
+    resolution: { width: 1280, height: 960 },
+    scaleFactor: 1.25,
+    primary: false,
+  })
+  const outputTwoClosed = outputTwoPage.waitForEvent('close')
+  assert.equal(await mappingPage.evaluate(() => window.__ledmapLiveOutput.simulateDisplayChange('remove', 'sim-display-2')), true)
+  await outputTwoClosed
+  await mappingPage.waitForFunction(() => window.__ledmapLiveOutput.dump().outputs[1].running === false)
+  assert.equal((await mappingPage.evaluate(() => window.__ledmapLiveOutput.dump())).displays.some(display => display.id === 'sim-display-2'), false)
+  assert.equal((await mappingPage.evaluate(() => window.__ledmap.document())).dirty, false)
+  await mappingPage.locator('#layout-mode').click()
+  await mappingPage.locator('#test-mode').click()
+  assert.equal((await mappingPage.evaluate(() => window.__ledmap.document())).dirty, false)
+
   await mappingPage.locator('#save-project-as').click()
   await mappingPage.waitForFunction(() => window.__ledmap.document().dirty === false)
   const projectAfterTestSave = JSON.parse(await readFile(projectPath, 'utf8')).project
   assert.deepEqual(projectAfterTestSave, projectBeforeTest)
-  assert.doesNotMatch(JSON.stringify(projectAfterTestSave), /address-walk|checkerboard|testPattern|walkOrdinal/i)
+  assert.doesNotMatch(JSON.stringify(projectAfterTestSave), /address-walk|checkerboard|testPattern|walkOrdinal|live-output|sim-display/i)
   await mappingPage.locator('#test-fit').click()
   await mappingPage.screenshot({ path: resolve(output, 'test-workspace.png') })
 
   assert.deepEqual(failures, [])
-  console.log('Electron smoke passed: Layout, Mapping, Hardware and deterministic Test patterns with scoped diagnostics, shared-Port Address Walk and session-only state.')
+  console.log('Electron smoke passed: Layout, Mapping, Hardware, Test and secure simulated Live Output routing with hotplug-safe shared-Port Address Walk.')
   console.log(`Project: ${projectPath}`)
 } finally {
   await close(running.app)
 }
+process.exit(0)

@@ -25,6 +25,7 @@ import {
 import { createMappingWorkspace, type MappingWorkspace } from './mapping-workspace.js'
 import { createHardwareWorkspace, type HardwareWorkspace } from './hardware-workspace.js'
 import { createTestWorkspace, type TestWorkspace } from './test-workspace.js'
+import { createLiveOutputController, type LiveOutputController } from './live-output.js'
 import type { Direction, Numbering } from '@ledmap/core'
 
 interface LedmapHook {
@@ -126,6 +127,7 @@ let appMode: 'layout' | 'mapping' | 'hardware' | 'test' = 'layout'
 let mappingWorkspace: MappingWorkspace | null = null
 let hardwareWorkspace: HardwareWorkspace | null = null
 let testWorkspace: TestWorkspace | null = null
+let liveOutputController: LiveOutputController | null = null
 let viewMode: 'all' | 'active' = 'all'
 let selection: SelectedObject | null = null
 let selectedScreenIds: readonly string[] = []
@@ -1310,7 +1312,22 @@ hardwareWorkspace = createHardwareWorkspace({
   clearError: clearDocumentError,
 })
 
-testWorkspace = createTestWorkspace({ getProject: () => project })
+testWorkspace = createTestWorkspace({
+  getProject: () => project,
+  onFrameChanged: snapshot => liveOutputController?.frameChanged(snapshot),
+  getOutputOverlays: () => liveOutputController?.overlays() ?? [],
+})
+liveOutputController = createLiveOutputController({
+  getSelectedScreenBounds: () => {
+    const id = selectedScreenIds[0] ?? activeScreenId
+    const screen = id ? findScreen(project, id) : undefined
+    if (!screen) return null
+    const bounds = screenBounds(screen)
+    return { x: bounds.left, y: bounds.top, width: bounds.width, height: bounds.height }
+  },
+  onOverlaysChanged: () => testWorkspace?.redraw(),
+})
+liveOutputController.frameChanged(testWorkspace.snapshot())
 
 function setAppMode(mode: 'layout' | 'mapping' | 'hardware' | 'test'): void {
   if (appMode === mode) return

@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { cabinetOrder } from '@ledmap/core'
 import {
-  addScreen, findScreen, hitTest, moveScreen, projectBounds, screenBounds,
-  setScreenPosition, setScreenPositions,
+  addScreen, createProject, deleteScreens, duplicateScreen, findScreen, hitTest, moveScreen, projectBounds, renameScreen,
+  screenBounds, setScreenPosition, setScreenPositions,
 } from '../src/renderer/project.js'
 import { createTestProject } from './project-fixtures.js'
+import { initialDraft } from '../src/renderer/state.js'
 
 function firstOrder(project: ReturnType<typeof createTestProject>): number[] {
   return project.screens[0]!.cabinets.map(c => c.index + 1)
@@ -112,5 +113,35 @@ describe('Project canvas state', () => {
     const project = createTestProject()
     expect(findScreen(project, 'screen-2')?.screen.name).toBe('Screen 2')
     expect(findScreen(project, 'missing')).toBeUndefined()
+  })
+
+  it('creates a source-backed Screen from exact creation fields', () => {
+    const project = addScreen(createProject(), { ...initialDraft, columns: '2', rows: '1' }, {
+      name: 'Lobby Ribbon',
+      position: { x: -512, y: 96 },
+    })
+    const screen = project.screens[0]!
+    expect(screen.screen.name).toBe('Lobby Ribbon')
+    expect([screen.x, screen.y]).toEqual([-512, 96])
+    expect([screen.grid.columns, screen.grid.rows]).toEqual([2, 1])
+    expect(project.source.hardwareTopology.cabinets).toHaveLength(2)
+  })
+
+  it('renames, duplicates and deletes Screens without broken source references', () => {
+    const original = createTestProject()
+    const renamed = renameScreen(original, 'screen-1', 'Main Wall')
+    expect(findScreen(renamed, 'screen-1')?.screen.name).toBe('Main Wall')
+    const duplicated = duplicateScreen(renamed, 'screen-1')
+    const copy = duplicated.screens[3]!
+    expect(copy.screen.name).toBe('Main Wall Copy')
+    expect([copy.x, copy.y]).toEqual([32, 32])
+    expect(copy.config).toEqual(renamed.screens[0]!.config)
+    expect(copy.cabinets.map(cabinet => cabinet.sourceId)).not.toEqual(renamed.screens[0]!.cabinets.map(cabinet => cabinet.sourceId))
+
+    const deleted = deleteScreens(duplicated, ['screen-1', 'screen-2'])
+    expect(deleted.screens.map(screen => screen.screen.id)).toEqual(['screen-3', copy.screen.id])
+    expect(deleted.source.cabinetGrids.every(grid => grid.screen !== 'screen-1' && grid.screen !== 'screen-2')).toBe(true)
+    const remainingCabinets = new Set(deleted.source.hardwareTopology.cabinets.map(cabinet => cabinet.id))
+    expect(deleted.source.hardwareTopology.modules.every(module => remainingCabinets.has(module.cabinet))).toBe(true)
   })
 })

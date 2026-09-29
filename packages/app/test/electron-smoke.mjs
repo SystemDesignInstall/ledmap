@@ -52,6 +52,14 @@ async function setScreenPosition(page, screenName, x, y) {
   await yInput.blur()
 }
 
+async function addScreen(page) {
+  const before = await page.evaluate(() => window.__ledmap.dump().length)
+  await page.locator('#add-screen').click()
+  await page.locator('#screen-dialog').waitFor({ state: 'visible' })
+  await page.locator('#screen-form button[type="submit"]').click()
+  await page.waitForFunction(count => window.__ledmap.dump().length === count + 1, before)
+}
+
 let running = await launch()
 try {
   const page = running.page
@@ -61,24 +69,27 @@ try {
 
   assert.equal((await dump()).length, 0)
   assert.equal(await page.locator('#empty h2').innerText(), 'No screens yet')
-  assert.equal(await page.locator('#empty p').innerText(), 'Add your first Screen')
+  assert.match(await page.locator('#empty').innerText(), /Add your first Screen/)
   assert.equal((await documentState()).dirty, false)
+  assert.match(await page.locator('.mode-switcher').innerText(), /Layout\s+Mapping\s+Hardware\s+Test\s+Export/)
+  assert.equal((await page.locator('.mode-switcher .mode:disabled').count()), 4)
+  assert.doesNotMatch(await page.locator('body').innerText(), /ALPHA|In-memory session/)
 
   await page.locator('#new-project').click()
-  await page.locator('#add-screen').click()
-  await page.locator('#add-screen').click()
-  await page.locator('#add-screen').click()
-  await page.locator('#add-screen').click()
-  await page.locator('#add-screen').click()
+  await addScreen(page)
+  await addScreen(page)
+  await addScreen(page)
+  await addScreen(page)
+  await addScreen(page)
   assert.deepEqual((await dump()).map(screen => screen.name), ['Screen 1', 'Screen 2', 'Screen 3', 'Screen 4', 'Screen 5'])
 
   await setScreenPosition(page, 'Screen 1', -240, 80)
   await setScreenPosition(page, 'Screen 2', 640, -120)
-  await page.locator('#project-tree [role="treeitem"]').filter({ hasText: 'Cabinet Grid' }).nth(2).click()
-  await page.locator('input[aria-label="Cabinet Grid Columns"]').fill('5')
-  await page.locator('input[aria-label="Cabinet Grid Columns"]').blur()
-  await page.locator('select[aria-label="Cabinet Grid Numbering"]').selectOption('column')
-  await page.locator('button[aria-label="Cabinet Grid Snake"]').click()
+  await page.locator('#project-tree [data-type="screen"]').filter({ hasText: 'Screen 3' }).click()
+  await page.locator('input[aria-label="Screen Columns"]').fill('5')
+  await page.locator('input[aria-label="Screen Columns"]').blur()
+  await page.locator('select[aria-label="Screen Numbering"]').selectOption('column')
+  await page.locator('button[aria-label="Screen Snake"]').click()
 
   const screenNode = name => page.locator('#project-tree [data-type="screen"]').filter({ hasText: name })
   await screenNode('Screen 1').click()
@@ -117,6 +128,31 @@ try {
   await page.mouse.up()
   assert.equal((await dump())[0].x, -412)
   assert.equal(Number.isSafeInteger((await dump())[0].x), true)
+
+  await screenNode('Screen 5').click()
+  await page.locator('#rename-screen').click()
+  const nameInput = page.locator('input[aria-label="Screen name"]')
+  await nameInput.fill('Stage Right')
+  await nameInput.blur()
+  assert.equal((await dump())[4].name, 'Stage Right')
+  await page.locator('#duplicate-screen').click()
+  assert.equal((await dump()).length, 6)
+  assert.equal((await dump())[5].name, 'Stage Right Copy')
+  await page.locator('#delete-screen').click()
+  assert.equal((await dump()).length, 5)
+
+  await page.locator('[data-overlay="modules"]').click()
+  await page.locator('[data-overlay="signal"]').click()
+  assert.equal(await page.locator('[data-overlay="modules"]').getAttribute('aria-pressed'), 'true')
+  assert.equal(await page.locator('[data-overlay="signal"]').getAttribute('aria-pressed'), 'true')
+  await page.locator('#fit-project').click()
+  await page.locator('#actual-size').click()
+  assert.equal((await page.evaluate(() => window.__ledmap.camera())).zoom, 1)
+  await page.locator('#zoom-in').click()
+  assert.ok((await page.evaluate(() => window.__ledmap.camera())).zoom > 1)
+  await page.locator('#fit-project').click()
+  assert.equal(await page.evaluate(() => window.scrollY), 0)
+  await page.screenshot({ path: resolve(output, 'layout-workspace.png') })
 
   const expected = await dump()
   assert.equal(expected.length, 5)

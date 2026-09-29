@@ -41,6 +41,11 @@ export interface ScreenCabinetConfigPatch {
   readonly snake?: boolean
 }
 
+export interface AddScreenOptions {
+  readonly name?: string
+  readonly position?: { readonly x: number; readonly y: number }
+}
+
 export type SelectedObject =
   | { readonly type: 'screen'; readonly id: string }
   | { readonly type: 'cabinetGrid'; readonly id: string }
@@ -364,15 +369,17 @@ function nextSerial(project: Project, prefix: string): number {
   return serial
 }
 
-export function addScreen(project: Project, draft: Draft = initialDraft): Project {
+export function addScreen(project: Project, draft: Draft = initialDraft, options: AddScreenOptions = {}): Project {
   const serial = nextSerial(project, 'screen-')
   const previous = project.screens[project.screens.length - 1]
-  const x = previous ? previous.x + 100 : 0
-  const y = previous ? previous.y + 100 : 0
+  const x = options.position?.x ?? (previous ? previous.x + 100 : 0)
+  const y = options.position?.y ?? (previous ? previous.y + 100 : 0)
+  if (!Number.isSafeInteger(x) || !Number.isSafeInteger(y)) throw new Error('Screen position must use signed whole numbers.')
+  const name = options.name?.trim() || `Screen ${serial}`
   const ids: SnapshotIds = {
     screenId: `screen-${serial}`,
     gridId: `grid-${serial}`,
-    screenName: `Screen ${serial}`,
+    screenName: name,
     gridName: 'Cabinet Grid',
   }
   const built = buildSnapshot(null, draft, ids)
@@ -392,6 +399,59 @@ export function addScreen(project: Project, draft: Draft = initialDraft): Projec
   const view = findScreen(withScreen, snapshot.screen.id)
   if (!view) throw new Error('Unable to project the new Screen.')
   return rebuildScreenSource(withScreen, view, draft)
+}
+
+export function renameScreen(project: Project, screenId: string, name: string): Project {
+  const normalized = name.trim()
+  if (!normalized) throw new Error('Screen name cannot be empty.')
+  const screen = findScreen(project, screenId)
+  if (!screen) throw new Error(`Unknown screen: ${screenId}`)
+  if (screen.screen.name === normalized) return project
+  return replaceSource(project, {
+    ...project.source,
+    screens: project.source.screens.map(source => source.id === screenId ? { ...source, name: normalized } : source),
+  })
+}
+
+export function duplicateScreen(project: Project, screenId: string): Project {
+  const screen = findScreen(project, screenId)
+  if (!screen) throw new Error(`Unknown screen: ${screenId}`)
+  return addScreen(
+    project,
+    draftFromConfig(screen.config, screen.grid.columns, screen.grid.rows),
+    { name: `${screen.screen.name} Copy`, position: { x: screen.x + 32, y: screen.y + 32 } },
+  )
+}
+
+export function deleteScreens(project: Project, screenIds: readonly string[]): Project {
+  const selected = new Set(screenIds)
+  if (selected.size === 0) return project
+  for (const screenId of selected) {
+    if (!findScreen(project, screenId)) throw new Error(`Unknown screen: ${screenId}`)
+  }
+  const gridIds = new Set(project.source.cabinetGrids.filter(grid => selected.has(grid.screen)).map(grid => grid.id))
+  const regionIds = new Set(project.source.mappingRegions.filter(region => selected.has(region.screen)).map(region => region.id))
+  const cabinetIds = new Set(project.source.hardwareTopology.cabinets.filter(cabinet => gridIds.has(cabinet.grid)).map(cabinet => cabinet.id))
+  return replaceSource(project, {
+    ...project.source,
+    screens: project.source.screens
+      .filter(screen => !selected.has(screen.id))
+      .map(screen => ({ ...screen, mappingRegions: screen.mappingRegions.filter(id => !regionIds.has(id)) })),
+    cabinetGrids: project.source.cabinetGrids.filter(grid => !gridIds.has(grid.id)),
+    mappingRegions: project.source.mappingRegions.filter(region => !regionIds.has(region.id)),
+    hardwareTopology: {
+      ...project.source.hardwareTopology,
+      cabinets: project.source.hardwareTopology.cabinets.filter(cabinet => !cabinetIds.has(cabinet.id)),
+      modules: project.source.hardwareTopology.modules.filter(module => !cabinetIds.has(module.cabinet)),
+      receivers: project.source.hardwareTopology.receivers.map(receiver => ({
+        ...receiver,
+        cabinets: receiver.cabinets.filter(cabinet => !cabinetIds.has(cabinet)),
+      })),
+    },
+    editorLayout: {
+      screenPositions: project.source.editorLayout.screenPositions.filter(placement => !selected.has(placement.screen)),
+    },
+  })
 }
 
 export function projectBounds(project: Project): Bounds {

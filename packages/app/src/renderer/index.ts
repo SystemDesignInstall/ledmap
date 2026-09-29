@@ -1,5 +1,6 @@
 import {
-  createProject, findScreen, hitTest, maxColumnsForRows, maxRowsForColumns, projectBounds,
+  createProject, deleteScreens, duplicateScreen, findScreen, hitTest, maxColumnsForRows, maxRowsForColumns,
+  projectBounds, renameScreen,
   resizeScreenGrid, screenBounds, screenHeight, screenWidth, setScreenPosition, setScreenPositions,
   updateScreenCabinetConfig,
   type Project, type ScreenCabinetConfigPatch, type ScreenView, type SelectedObject,
@@ -9,8 +10,8 @@ import {
   createEditorDocument, loadEditorDocument, mutateEditorDocument, savedEditorDocument, serializeEditorDocument,
   type EditorDocumentState,
 } from './document.js'
-import { changeNumbering } from './state.js'
-import type { GridShape, Point, ResizeHandle, ResizePreview } from './canvas.js'
+import { changeNumbering, initialDraft, type Draft } from './state.js'
+import type { GridShape, OverlayVisibility, Point, ResizeHandle, ResizePreview } from './canvas.js'
 import {
   drawProject, fitCamera, resizeHandleCursor, resizeHandleHit,
   screenResizeHandles, screenShape, toProject, toScreen, zoomAt, type Camera,
@@ -73,7 +74,6 @@ const viewport = element<HTMLDivElement>('viewport')
 const tree = element<HTMLDivElement>('project-tree')
 const properties = element<HTMLDivElement>('properties')
 const chip = element<HTMLSpanElement>('selection-chip')
-const bounds = element<HTMLSpanElement>('bounds')
 const zoomIndicator = element<HTMLSpanElement>('zoom-indicator')
 const canvasNote = element<HTMLSpanElement>('canvas-note')
 const canvasTitle = element<HTMLHeadingElement>('canvas-title')
@@ -90,6 +90,20 @@ const gridSnapButton = element<HTMLButtonElement>('grid-snap')
 const smartSnapButton = element<HTMLButtonElement>('smart-snap')
 const gridStepInput = element<HTMLInputElement>('grid-step')
 const selectedCount = element<HTMLSpanElement>('selected-count')
+const snapStatus = element<HTMLSpanElement>('snap-status')
+const cursorStatus = element<HTMLSpanElement>('cursor-status')
+const fitSelectionButton = element<HTMLButtonElement>('fit-selection')
+const actualSizeButton = element<HTMLButtonElement>('actual-size')
+const zoomInButton = element<HTMLButtonElement>('zoom-in')
+const zoomOutButton = element<HTMLButtonElement>('zoom-out')
+const duplicateScreenButton = element<HTMLButtonElement>('duplicate-screen')
+const deleteScreenButton = element<HTMLButtonElement>('delete-screen')
+const renameScreenButton = element<HTMLButtonElement>('rename-screen')
+const screenDialog = element<HTMLDialogElement>('screen-dialog')
+const screenForm = element<HTMLFormElement>('screen-form')
+const emptyAddScreenButton = element<HTMLButtonElement>('empty-add-screen')
+const treeScreenCount = element<HTMLSpanElement>('tree-screen-count')
+const screenFormError = element<HTMLParagraphElement>('screen-form-error')
 
 let editorDocument: EditorDocumentState = createEditorDocument()
 let project: Project = createProject(editorDocument.project)
@@ -103,6 +117,7 @@ let smartSnap = true
 let gridStep = 10
 let alignmentGuides: readonly AlignmentGuide[] = []
 let marqueeBox: SelectionBox | null = null
+let overlays: OverlayVisibility = { cabinets: true, modules: false, signal: false, coordinates: true }
 let spaceDown = false
 type PointerMode = 'none' | 'drag' | 'pan' | 'resize' | 'marquee'
 let pointerMode: PointerMode = 'none'
@@ -246,9 +261,8 @@ function draw(): void {
     resizePreview,
     alignmentGuides,
     marquee: marqueeBox,
+    overlays,
   }, camera)
-  const b = projectBounds(project)
-  bounds.textContent = `Project bounds ${format.format(b.width)} × ${format.format(b.height)} px`
   zoomIndicator.textContent = `${Math.round(camera.zoom * 100)}%`
   canvasNote.textContent = note
   const active = activeScreenId ? findScreen(project, activeScreenId) : undefined
@@ -294,52 +308,68 @@ function findScreenByGrid(gridId: string): ScreenView | undefined {
 function renderStatus(): void {
   chip.textContent = chipText()
   selectedCount.textContent = `${selectedScreenIds.length} selected`
-  toggleMode.textContent = viewMode === 'all' ? 'Active Screen' : 'All Screens'
+  toggleMode.textContent = viewMode === 'all' ? 'Focus Screen' : 'Show All'
   toggleMode.setAttribute('aria-pressed', String(viewMode === 'active'))
   gridSnapButton.setAttribute('aria-pressed', String(gridSnap))
   smartSnapButton.setAttribute('aria-pressed', String(smartSnap))
-  gridSnapButton.textContent = `Grid Snap ${gridSnap ? 'On' : 'Off'}`
-  smartSnapButton.textContent = `Smart Snap ${smartSnap ? 'On' : 'Off'}`
+  gridSnapButton.textContent = 'Grid'
+  smartSnapButton.textContent = 'Smart'
+  gridSnapButton.title = gridSnap ? 'Grid Snap is on' : 'Grid Snap is off'
+  smartSnapButton.title = smartSnap ? 'Smart Snap is on' : 'Smart Snap is off'
+  snapStatus.textContent = `${gridSnap ? `Grid ${gridStep}px` : 'Grid off'} · ${smartSnap ? 'Smart on' : 'Smart off'}`
+  fitSelectionButton.disabled = selectedScreenIds.length === 0
+  renameScreenButton.disabled = selectedScreenIds.length !== 1
+  duplicateScreenButton.disabled = selectedScreenIds.length === 0
+  deleteScreenButton.disabled = selectedScreenIds.length === 0
+  document.querySelectorAll<HTMLButtonElement>('[data-overlay]').forEach(button => {
+    const key = button.dataset['overlay'] as keyof OverlayVisibility
+    button.setAttribute('aria-pressed', String(overlays[key]))
+  })
+}
+
+function fitToSelection(): void {
+  const selected = selectionBounds(layoutRects(selectedScreenIds))
+  if (!selected) return
+  fitTo({
+    left: selected.x,
+    top: selected.y,
+    right: selected.x + selected.width,
+    bottom: selected.y + selected.height,
+    width: selected.width,
+    height: selected.height,
+  })
+}
+
+function zoomCanvas(factor: number): void {
+  const { width, height } = canvas.getBoundingClientRect()
+  camera = zoomAt(camera, { x: width / 2, y: height / 2 }, factor)
+  draw()
+}
+
+function setActualSize(): void {
+  const { width, height } = canvas.getBoundingClientRect()
+  const center = toProject(camera, { x: width / 2, y: height / 2 })
+  camera = { zoom: 1, offsetX: width / 2 - center.x, offsetY: height / 2 - center.y }
+  draw()
 }
 
 function renderTree(): void {
   tree.replaceChildren()
-  const root = document.createElement('div')
-  root.className = 'tree-root'
-  root.textContent = 'PROJECT'
-  tree.append(root)
-  const screensLabel = document.createElement('div')
-  screensLabel.className = 'tree-node'
-  screensLabel.innerHTML = ''
-  const screenIcon = document.createElement('span')
-  screenIcon.className = 'tree-icon'
-  screenIcon.textContent = '▦'
-  const screenText = document.createElement('span')
-  screenText.textContent = `Screens (${project.screens.length})`
-  const screenCount = document.createElement('span')
-  screenCount.className = 'count'
-  screenCount.textContent = format.format(project.screens.length)
-  screensLabel.append(screenIcon, screenText, screenCount)
-  tree.append(screensLabel)
-  const group = document.createElement('div')
-  group.className = 'tree-group'
-  for (const screen of project.screens) {
-    const node = makeTreeNode('screen', screen.screen.id, screen.screen.name, '▦', format.format(screen.cabinets.length), isSelected('screen', screen.screen.id))
-    node.addEventListener('click', event => selectScreen(screen.screen.id, event.shiftKey || event.ctrlKey || event.metaKey))
-    group.append(node)
-    const gridNode = makeTreeNode('cabinetGrid', screen.grid.id, 'Cabinet Grid', '▣', format.format(screen.cabinets.length), isSelected('cabinetGrid', screen.grid.id))
-    gridNode.addEventListener('click', () => {
-      selection = { type: 'cabinetGrid', id: screen.grid.id }
-      selectedScreenIds = [screen.screen.id]
-      activeScreenId = screen.screen.id
-      render()
-    })
-    const gridGroup = document.createElement('div')
-    gridGroup.className = 'tree-group'
-    gridGroup.append(gridNode)
-    group.append(gridGroup)
+  treeScreenCount.textContent = String(project.screens.length)
+  if (project.screens.length === 0) {
+    const emptyTree = document.createElement('p')
+    emptyTree.className = 'hint'
+    emptyTree.textContent = 'No Screens in this project.'
+    tree.append(emptyTree)
+    return
   }
-  tree.append(group)
+  for (const screen of project.screens) {
+    const resolution = `${format.format(screenWidth(screen))} × ${format.format(screenHeight(screen))}`
+    const node = makeTreeNode('screen', screen.screen.id, screen.screen.name, '▦', resolution, isSelected('screen', screen.screen.id))
+    node.addEventListener('click', event => selectScreen(screen.screen.id, event.shiftKey || event.ctrlKey || event.metaKey))
+    node.addEventListener('dblclick', () => focusScreenName())
+    tree.append(node)
+  }
 }
 
 function isSelected(type: SelectedObject['type'], id: string): boolean {
@@ -378,11 +408,7 @@ function renderProperties(): void {
   properties.replaceChildren()
   const title = element<HTMLHeadingElement>('properties-title')
   if (selectedScreenIds.length > 1) {
-    title.textContent = `${selectedScreenIds.length} Screens`
-    const summary = document.createElement('p')
-    summary.className = 'hint'
-    summary.textContent = 'Use Align, Distribute or the arrow keys to edit this selection.'
-    properties.append(summary)
+    renderMultiProperties(title)
     return
   }
   if (!selection) {
@@ -455,6 +481,25 @@ function numberField(
       input.setAttribute('aria-invalid', 'true')
       input.title = commitProblem
       input.value = String(initial)
+      return
+    }
+    input.removeAttribute('aria-invalid')
+    input.removeAttribute('title')
+  })
+  return input
+}
+
+function textField(initial: string, ariaLabel: string, onCommit: (value: string) => string | null | void): HTMLInputElement {
+  const input = document.createElement('input')
+  input.type = 'text'
+  input.value = initial
+  input.setAttribute('aria-label', ariaLabel)
+  input.addEventListener('change', () => {
+    const problem = onCommit(input.value) ?? null
+    if (problem) {
+      input.setAttribute('aria-invalid', 'true')
+      input.title = problem
+      input.value = initial
       return
     }
     input.removeAttribute('aria-invalid')
@@ -619,13 +664,16 @@ function renderScreenProperties(screen: ScreenView): void {
   element<HTMLHeadingElement>('properties-title').textContent = 'Screen'
   const container = document.createElement('div')
   container.className = 'properties-body'
-  const name = document.createElement('div')
-  name.className = 'property'
-  const nameLabel = document.createElement('label')
-  nameLabel.textContent = 'Name'
-  const nameValue = valueNode(screen.screen.name)
-  name.append(nameLabel, nameValue)
-  container.append(name)
+  const nameInput = textField(screen.screen.name, 'Screen name', value => {
+    try {
+      apply(renameScreen(project, screen.screen.id, value))
+      render()
+      return null
+    } catch (error) {
+      return error instanceof Error ? error.message : 'Unable to rename Screen.'
+    }
+  })
+  container.append(propertyRow('Name', nameInput))
 
   const positionBox = document.createElement('div')
   const xInput = numberField(screen.x, 'Screen X position', value => {
@@ -663,6 +711,56 @@ function renderScreenProperties(screen: ScreenView): void {
 
   appendCabinetConfigGroups(container, screen, 'Screen')
   properties.append(container)
+}
+
+function renderMultiProperties(title: HTMLHeadingElement): void {
+  title.textContent = `${selectedScreenIds.length} Screens`
+  const screens = layoutRects(selectedScreenIds)
+  const bounds = selectionBounds(screens)
+  const container = document.createElement('div')
+  container.className = 'properties-body'
+  const selectionBox = document.createElement('div')
+  selectionBox.append(
+    propertyRow('Selected', valueNode(String(selectedScreenIds.length))),
+    propertyRow('Bounds', valueNode(bounds ? `${format.format(bounds.width)} × ${format.format(bounds.height)} px` : '—')),
+  )
+  container.append(group('Selection', selectionBox))
+
+  const alignBox = document.createElement('div')
+  alignBox.className = 'inspector-actions'
+  const actions: readonly [string, AlignMode][] = [
+    ['Left', 'left'], ['Center X', 'horizontal-center'], ['Right', 'right'],
+    ['Top', 'top'], ['Center Y', 'vertical-center'], ['Bottom', 'bottom'],
+  ]
+  for (const [label, mode] of actions) {
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.textContent = label
+    button.addEventListener('click', () => arrangeSelection(mode, false))
+    alignBox.append(button)
+  }
+  container.append(group('Align', alignBox))
+
+  if (selectedScreenIds.length >= 3) {
+    const distributeBox = document.createElement('div')
+    distributeBox.className = 'inspector-actions'
+    for (const [label, axis] of [['Horizontal', 'horizontal'], ['Vertical', 'vertical']] as const) {
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.textContent = label
+      button.addEventListener('click', () => arrangeSelection(axis, true))
+      distributeBox.append(button)
+    }
+    container.append(group('Distribute', distributeBox))
+  }
+  properties.append(container)
+}
+
+function focusScreenName(): void {
+  if (selectedScreenIds.length !== 1) return
+  const input = properties.querySelector<HTMLInputElement>('input[aria-label="Screen name"]')
+  input?.focus()
+  input?.select()
 }
 
 function layoutRects(screenIds: readonly string[] = project.screens.map(screen => screen.screen.id)): LayoutRect[] {
@@ -874,6 +972,8 @@ canvas.addEventListener('pointerdown', event => {
 })
 
 canvas.addEventListener('pointermove', event => {
+  const cursor = toProject(camera, viewportPoint(event))
+  cursorStatus.textContent = `X ${Math.round(cursor.x)} · Y ${Math.round(cursor.y)}`
   if (pointerMode === 'pan' && panState) {
     camera = { ...camera, offsetX: camera.offsetX + event.offsetX - panState.lastX, offsetY: camera.offsetY + event.offsetY - panState.lastY }
     panState = { lastX: event.offsetX, lastY: event.offsetY }
@@ -1006,8 +1106,7 @@ fitProject.addEventListener('click', () => {
   renderStatus()
 })
 
-addScreenButton.addEventListener('click', () => {
-  const next = addScreen(project)
+function finishAddingScreen(next: Project): void {
   const fresh = next.screens[next.screens.length - 1]
   if (!fresh) return
   apply(next)
@@ -1023,6 +1122,58 @@ addScreenButton.addEventListener('click', () => {
     fitTo(screenBounds(fresh))
   }
   render()
+}
+
+function dialogInput(id: string): HTMLInputElement {
+  return element<HTMLInputElement>(id)
+}
+
+function openScreenDialog(): void {
+  const previous = project.screens[project.screens.length - 1]
+  dialogInput('new-screen-name').value = `Screen ${project.screens.length + 1}`
+  dialogInput('new-screen-x').value = String(previous ? previous.x + 100 : 0)
+  dialogInput('new-screen-y').value = String(previous ? previous.y + 100 : 0)
+  dialogInput('new-screen-columns').value = initialDraft.columns
+  dialogInput('new-screen-rows').value = initialDraft.rows
+  dialogInput('new-screen-module-columns').value = initialDraft.moduleColumns
+  dialogInput('new-screen-module-rows').value = initialDraft.moduleRows
+  dialogInput('new-screen-module-width').value = initialDraft.modulePixelWidth
+  dialogInput('new-screen-module-height').value = initialDraft.modulePixelHeight
+  screenFormError.hidden = true
+  screenFormError.textContent = ''
+  screenDialog.showModal()
+  dialogInput('new-screen-name').select()
+}
+
+addScreenButton.addEventListener('click', openScreenDialog)
+emptyAddScreenButton.addEventListener('click', openScreenDialog)
+element<HTMLButtonElement>('screen-cancel').addEventListener('click', () => screenDialog.close())
+
+screenForm.addEventListener('submit', event => {
+  event.preventDefault()
+  const draft: Draft = {
+    columns: dialogInput('new-screen-columns').value,
+    rows: dialogInput('new-screen-rows').value,
+    moduleColumns: dialogInput('new-screen-module-columns').value,
+    moduleRows: dialogInput('new-screen-module-rows').value,
+    modulePixelWidth: dialogInput('new-screen-module-width').value,
+    modulePixelHeight: dialogInput('new-screen-module-height').value,
+    ordering: { ...initialDraft.ordering },
+  }
+  try {
+    const next = addScreen(project, draft, {
+      name: dialogInput('new-screen-name').value,
+      position: {
+        x: Number(dialogInput('new-screen-x').value),
+        y: Number(dialogInput('new-screen-y').value),
+      },
+    })
+    screenDialog.close()
+    finishAddingScreen(next)
+  } catch (error) {
+    screenFormError.textContent = error instanceof Error ? error.message : 'Unable to add Screen.'
+    screenFormError.hidden = false
+  }
 })
 
 function arrangeSelection(kind: AlignMode | DistributeAxis, distribute: boolean): void {
@@ -1064,6 +1215,53 @@ gridStepInput.addEventListener('change', () => {
   gridStepInput.removeAttribute('aria-invalid')
 })
 
+fitSelectionButton.addEventListener('click', fitToSelection)
+actualSizeButton.addEventListener('click', setActualSize)
+zoomInButton.addEventListener('click', () => zoomCanvas(1.2))
+zoomOutButton.addEventListener('click', () => zoomCanvas(1 / 1.2))
+
+document.querySelectorAll<HTMLButtonElement>('[data-overlay]').forEach(button => {
+  button.addEventListener('click', () => {
+    const key = button.dataset['overlay'] as keyof OverlayVisibility
+    overlays = { ...overlays, [key]: !overlays[key] }
+    renderStatus()
+    draw()
+  })
+})
+
+renameScreenButton.addEventListener('click', focusScreenName)
+
+duplicateScreenButton.addEventListener('click', () => {
+  const sourceIds = [...selectedScreenIds]
+  if (sourceIds.length === 0) return
+  let next = project
+  const duplicates: string[] = []
+  for (const screenId of sourceIds) {
+    next = duplicateScreen(next, screenId)
+    const fresh = next.screens[next.screens.length - 1]
+    if (fresh) duplicates.push(fresh.screen.id)
+  }
+  apply(next)
+  selectedScreenIds = duplicates
+  activeScreenId = duplicates[duplicates.length - 1] ?? null
+  selection = duplicates.length === 1 ? { type: 'screen', id: duplicates[0]! } : null
+  fitToSelection()
+  render()
+})
+
+function deleteSelection(): void {
+  if (selectedScreenIds.length === 0) return
+  apply(deleteScreens(project, selectedScreenIds))
+  selectedScreenIds = []
+  selection = null
+  activeScreenId = project.screens[0]?.screen.id ?? null
+  viewMode = 'all'
+  fitToProject()
+  render()
+}
+
+deleteScreenButton.addEventListener('click', deleteSelection)
+
 newProjectButton.addEventListener('click', () => { void newDocument() })
 openProjectButton.addEventListener('click', () => { void openDocument() })
 saveProjectButton.addEventListener('click', () => { void saveDocument(false) })
@@ -1073,14 +1271,14 @@ window.ledmapDesktop.onRequestSaveBeforeClose(() => {
   void saveDocument(false).then(saved => window.ledmapDesktop.finishCloseAfterSave(saved))
 })
 
-function isPropertyControl(target: EventTarget | null): boolean {
-  return target instanceof HTMLElement && properties.contains(target) && (
-    target.matches('input, select, button, textarea') || target.isContentEditable
+function isEditableControl(target: EventTarget | null): boolean {
+  return target instanceof HTMLElement && (
+    target.matches('input, select, textarea') || target.isContentEditable
   )
 }
 
 window.addEventListener('keydown', event => {
-  if (isPropertyControl(event.target)) return
+  if (isEditableControl(event.target)) return
   const arrows: Readonly<Record<string, readonly [number, number]>> = {
     ArrowLeft: [-1, 0],
     ArrowRight: [1, 0],
@@ -1105,6 +1303,11 @@ window.addEventListener('keydown', event => {
     selection = null
     selectedScreenIds = []
     render()
+  }
+  if (event.key === 'Delete' || event.key === 'Backspace') {
+    deleteSelection()
+    event.preventDefault()
+    return
   }
 })
 

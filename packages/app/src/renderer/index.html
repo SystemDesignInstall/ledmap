@@ -4,67 +4,132 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' ws://localhost:* ws://127.0.0.1:*" />
-    <title>LedMAP — Project Canvas</title>
+    <title>LedMAP</title>
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
-    <header class="topbar">
-      <div class="brand"><span class="brand-mark">▦</span> LedMAP <span class="badge">ALPHA</span></div>
-      <div class="toolbar">
-        <button id="new-project" type="button">New</button>
-        <button id="open-project" type="button">Open</button>
-        <button id="save-project" type="button">Save</button>
-        <button id="save-project-as" type="button">Save As</button>
-        <button id="add-screen" type="button">+ Screen</button>
-        <button id="toggle-mode" type="button">Active Screen</button>
-        <button id="fit-project" type="button">Fit to Project</button>
-        <button id="grid-snap" type="button" aria-pressed="false">Grid Snap Off</button>
-        <label class="toolbar-field">Grid <input id="grid-step" type="number" min="1" step="1" value="10" aria-label="Grid snap step" /></label>
-        <button id="smart-snap" type="button" aria-pressed="true">Smart Snap On</button>
-        <button type="button" data-align="left" title="Align left">Align L</button>
-        <button type="button" data-align="horizontal-center" title="Align horizontal centers">Align HC</button>
-        <button type="button" data-align="right" title="Align right">Align R</button>
-        <button type="button" data-align="top" title="Align top">Align T</button>
-        <button type="button" data-align="vertical-center" title="Align vertical centers">Align VC</button>
-        <button type="button" data-align="bottom" title="Align bottom">Align B</button>
-        <button type="button" data-distribute="horizontal" title="Distribute horizontally">Distribute H</button>
-        <button type="button" data-distribute="vertical" title="Distribute vertically">Distribute V</button>
+    <header class="app-chrome">
+      <div class="titlebar">
+        <div class="brand"><span class="brand-mark">▦</span><span>LedMAP</span></div>
+        <nav class="mode-switcher" aria-label="Workflow mode">
+          <button type="button" class="mode active" aria-current="page">Layout</button>
+          <button type="button" class="mode" disabled>Mapping</button>
+          <button type="button" class="mode" disabled>Hardware</button>
+          <button type="button" class="mode" disabled>Test</button>
+          <button type="button" class="mode" disabled>Export</button>
+        </nav>
+        <div class="document-actions" aria-label="Project document">
+          <button id="new-project" type="button">New</button>
+          <button id="open-project" type="button">Open</button>
+          <button id="save-project" type="button">Save</button>
+          <button id="save-project-as" type="button">Save As</button>
+        </div>
       </div>
-      <span class="session-note">Project Document</span>
+      <div class="layout-toolbar" aria-label="Layout tools">
+        <div class="tool-group primary-tools">
+          <button id="add-screen" class="primary" type="button">+ Screen</button>
+          <button id="fit-project" type="button">Fit All</button>
+          <button id="fit-selection" type="button">Fit Selection</button>
+          <button id="actual-size" type="button">100%</button>
+          <button id="zoom-out" type="button" aria-label="Zoom out">−</button>
+          <button id="zoom-in" type="button" aria-label="Zoom in">+</button>
+        </div>
+        <div class="tool-group snap-tools">
+          <button id="grid-snap" type="button" aria-pressed="false">Grid</button>
+          <label class="toolbar-field"><input id="grid-step" type="number" min="1" step="1" value="10" aria-label="Grid snap step" /><span>px</span></label>
+          <button id="smart-snap" type="button" aria-pressed="true">Smart</button>
+        </div>
+        <div class="tool-group alignment-tools" aria-label="Align and distribute">
+          <button type="button" data-align="left" title="Align left">L</button>
+          <button type="button" data-align="horizontal-center" title="Align horizontal centers">Cˣ</button>
+          <button type="button" data-align="right" title="Align right">R</button>
+          <button type="button" data-align="top" title="Align top">T</button>
+          <button type="button" data-align="vertical-center" title="Align vertical centers">Cʸ</button>
+          <button type="button" data-align="bottom" title="Align bottom">B</button>
+          <button type="button" data-distribute="horizontal" title="Distribute horizontally">Dˣ</button>
+          <button type="button" data-distribute="vertical" title="Distribute vertically">Dʸ</button>
+        </div>
+        <div class="tool-group overlay-tools" aria-label="Canvas overlays">
+          <span class="tool-label">Overlays</span>
+          <button type="button" data-overlay="cabinets" aria-pressed="true">Cabinets</button>
+          <button type="button" data-overlay="modules" aria-pressed="false">Modules</button>
+          <button type="button" data-overlay="signal" aria-pressed="false">Signal</button>
+          <button type="button" data-overlay="coordinates" aria-pressed="true">Coordinates</button>
+        </div>
+        <button id="toggle-mode" class="focus-toggle" type="button">Focus Screen</button>
+      </div>
     </header>
-    <main>
+
+    <main class="workspace">
       <aside class="tree-panel">
-        <div class="panel-heading"><span class="eyebrow">PROJECT</span><h1>Layout</h1><p>One canvas, many screens.</p></div>
-        <div id="project-tree" role="tree" aria-label="Project screens"></div>
+        <div class="panel-title-row">
+          <div><span class="eyebrow">PROJECT</span><h1>Screens</h1></div>
+          <span class="panel-count" id="tree-screen-count">0</span>
+        </div>
+        <div class="tree-actions" aria-label="Screen actions">
+          <button id="rename-screen" type="button" disabled>Rename</button>
+          <button id="duplicate-screen" type="button" disabled>Duplicate</button>
+          <button id="delete-screen" type="button" disabled>Delete</button>
+        </div>
+        <div id="project-tree" role="tree" aria-label="Project Screens"></div>
       </aside>
-      <article>
-        <div class="preview-heading">
-          <div>
-            <span class="eyebrow">CANVAS — PROJECT LAYOUT</span>
-            <h2 id="canvas-title">All Screens</h2>
-          </div>
+
+      <article class="canvas-workspace">
+        <div class="canvas-heading">
+          <div><span class="eyebrow">LAYOUT WORKSPACE</span><h2 id="canvas-title">All Screens</h2></div>
           <span id="selection-chip" role="status">No selection</span>
         </div>
         <div id="viewport">
-          <div id="empty" hidden><span class="empty-icon">▦</span><h2>No screens yet</h2><p>Add your first Screen</p></div>
-          <canvas id="project-canvas" role="img" aria-label="Project canvas. No screens."></canvas>
+          <div id="empty" hidden>
+            <span class="empty-icon">▦</span>
+            <h2>No screens yet</h2>
+            <p>Add your first Screen to start the composition.</p>
+            <button id="empty-add-screen" class="primary" type="button">Add your first Screen</button>
+          </div>
+          <canvas id="project-canvas" role="img" aria-label="Project canvas. No Screens."></canvas>
+          <span id="canvas-note" class="canvas-note"></span>
         </div>
       </article>
+
       <aside class="properties-panel">
-        <div class="panel-heading"><span class="eyebrow">PROPERTIES</span><h2 id="properties-title">Nothing selected</h2></div>
+        <div class="panel-heading"><span class="eyebrow">INSPECTOR</span><h2 id="properties-title">Nothing selected</h2></div>
         <div id="properties" class="properties-body">
-          <p class="hint">Select a Screen, a Cabinet Grid or a Cabinet on the canvas or in the project tree.</p>
+          <p class="hint">Select a Screen on the canvas or in the Project panel.</p>
         </div>
       </aside>
     </main>
+
     <footer class="statusbar">
-      <span id="bounds" class="status-item">Project bounds · px</span>
-      <span id="zoom-indicator" class="status-item">—</span>
+      <span id="cursor-status" class="status-item">X 0 · Y 0</span>
+      <span id="zoom-indicator" class="status-item">100%</span>
       <span id="selected-count" class="status-item">0 selected</span>
-      <span id="canvas-note" class="status-note"></span>
-      <span class="status-hints">Scroll: pan · Ctrl+Wheel: zoom · Middle / Space+drag: pan · Fit: all screens</span>
+      <span id="snap-status" class="status-item">Grid off · Smart on</span>
     </footer>
+
     <div id="document-error" role="alert" hidden></div>
+
+    <dialog id="screen-dialog">
+      <form id="screen-form" method="dialog">
+        <div class="dialog-heading"><span class="eyebrow">NEW SCREEN</span><h2>Add Screen</h2><p>Create source-backed Screen and Cabinet Grid geometry.</p></div>
+        <div class="dialog-grid">
+          <label class="wide">Name<input id="new-screen-name" name="name" type="text" value="Screen" required /></label>
+          <label>X<input id="new-screen-x" name="x" type="number" step="1" value="0" required /></label>
+          <label>Y<input id="new-screen-y" name="y" type="number" step="1" value="0" required /></label>
+          <label>Grid columns<input id="new-screen-columns" name="columns" type="number" min="1" step="1" value="4" required /></label>
+          <label>Grid rows<input id="new-screen-rows" name="rows" type="number" min="1" step="1" value="3" required /></label>
+          <label>Module columns<input id="new-screen-module-columns" name="moduleColumns" type="number" min="1" step="1" value="4" required /></label>
+          <label>Module rows<input id="new-screen-module-rows" name="moduleRows" type="number" min="1" step="1" value="4" required /></label>
+          <label>Module width, px<input id="new-screen-module-width" name="modulePixelWidth" type="number" min="1" step="1" value="32" required /></label>
+          <label>Module height, px<input id="new-screen-module-height" name="modulePixelHeight" type="number" min="1" step="1" value="32" required /></label>
+        </div>
+        <p id="screen-form-error" class="form-error" role="alert" hidden></p>
+        <div class="dialog-actions">
+          <button id="screen-cancel" type="button">Cancel</button>
+          <button class="primary" type="submit">Add Screen</button>
+        </div>
+      </form>
+    </dialog>
+
     <script type="module" src="./index.ts"></script>
   </body>
 </html>

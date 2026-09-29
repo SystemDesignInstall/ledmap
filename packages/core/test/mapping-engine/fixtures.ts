@@ -1,7 +1,7 @@
 import {
   asCabinetGridId, asMappingRegionId, asScreenId, createCabinetGrid, createInputCanvas, createMappingRegion,
   createPort, createProcessor, createReceiver, createScreen,
-  type HardwareTopologyInput, type MappedPixel, type ResolveMappingInput,
+  type HardwareTopologyInput, type MappedPixel, type ResolveGeometryMappingInput, type ResolveMappingInput,
   asCabinetId, asModuleId, asPortId, asProcessorId, asReceiverId,
 } from '../../src/index.js'
 import { cabinetFixture, referenceTopology } from '../hardware-engine/fixtures.js'
@@ -21,6 +21,17 @@ export function referenceMapping(offset = false): ResolveMappingInput {
   const base = mappingInput(referenceTopology(), 4, 3, 128, 128, offset ? 100 : 0, offset ? 50 : 0)
   const input = { ...base, grid: { ...base.grid, ordering: { ...base.grid.ordering, snake: true } } }
   return offset ? { ...input, inputCanvas: { ...input.inputCanvas, resolution: { width: 1920, height: 1080 } } } : input
+}
+
+export function geometryInput(input: ResolveMappingInput): ResolveGeometryMappingInput {
+  return {
+    inputCanvas: input.inputCanvas,
+    screen: input.screen,
+    grid: input.grid,
+    region: input.region,
+    cabinets: input.hardwareTopology.cabinets,
+    modules: input.hardwareTopology.modules,
+  }
 }
 
 export function smallMapping(columns = 2, rows = 2, moduleColumns = 3, moduleRows = 2, pixelWidth = 5, pixelHeight = 7): ResolveMappingInput {

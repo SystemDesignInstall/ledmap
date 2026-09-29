@@ -35,3 +35,9 @@ export function assertMembership(label: string, members: readonly string[], expe
   if (members.length > 1) fail('UNSUPPORTED_PROFILE', `${label}: only one member is supported`)
   assertReference(label, members[0]!, expected)
 }
+
+export function assertContains(label: string, members: readonly string[], expected: string): void {
+  const matches = members.filter(member => member === expected).length
+  if (matches === 0) fail('INCOMPLETE', `${label}: missing ${expected}`)
+  if (matches > 1) fail('DUPLICATE', `${label}: duplicate ${expected}`)
+}

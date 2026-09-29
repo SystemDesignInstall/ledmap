@@ -22,6 +22,7 @@ import {
   type AlignMode, type AlignmentGuide, type DistributeAxis, type LayoutPoint, type LayoutRect,
   type SelectionBox,
 } from './layout-interaction.js'
+import { createMappingWorkspace, type MappingWorkspace } from './mapping-workspace.js'
 import type { Direction, Numbering } from '@ledmap/core'
 
 interface LedmapHook {
@@ -104,9 +105,17 @@ const screenForm = element<HTMLFormElement>('screen-form')
 const emptyAddScreenButton = element<HTMLButtonElement>('empty-add-screen')
 const treeScreenCount = element<HTMLSpanElement>('tree-screen-count')
 const screenFormError = element<HTMLParagraphElement>('screen-form-error')
+const layoutModeButton = element<HTMLButtonElement>('layout-mode')
+const mappingModeButton = element<HTMLButtonElement>('mapping-mode')
+const layoutToolbar = element<HTMLDivElement>('layout-toolbar')
+const mappingToolbar = element<HTMLDivElement>('mapping-toolbar')
+const layoutWorkspace = element<HTMLElement>('layout-workspace')
+const mappingWorkspaceElement = element<HTMLElement>('mapping-workspace')
 
 let editorDocument: EditorDocumentState = createEditorDocument()
 let project: Project = createProject(editorDocument.project)
+let appMode: 'layout' | 'mapping' = 'layout'
+let mappingWorkspace: MappingWorkspace | null = null
 let viewMode: 'all' | 'active' = 'all'
 let selection: SelectedObject | null = null
 let selectedScreenIds: readonly string[] = []
@@ -188,9 +197,10 @@ function replaceDocument(next: EditorDocumentState): void {
   activeScreenId = project.screens[0]?.screen.id ?? null
   viewMode = 'all'
   endPointerGesture()
-  fitToProject()
+  if (appMode === 'layout') fitToProject()
   syncDocumentState()
   render()
+  if (appMode === 'mapping') mappingWorkspace?.activate()
 }
 
 async function saveDocument(saveAs: boolean): Promise<boolean> {
@@ -249,7 +259,8 @@ function render(): void {
   renderTree()
   renderProperties()
   renderStatus()
-  draw()
+  if (appMode === 'layout') draw()
+  mappingWorkspace?.projectChanged()
 }
 
 function draw(): void {
@@ -1271,6 +1282,44 @@ window.ledmapDesktop.onRequestSaveBeforeClose(() => {
   void saveDocument(false).then(saved => window.ledmapDesktop.finishCloseAfterSave(saved))
 })
 
+mappingWorkspace = createMappingWorkspace({
+  getProject: () => project,
+  updateProject: next => apply(next),
+  showError: showDocumentError,
+  clearError: clearDocumentError,
+})
+
+function setAppMode(mode: 'layout' | 'mapping'): void {
+  if (appMode === mode) return
+  appMode = mode
+  const layoutActive = mode === 'layout'
+  layoutModeButton.classList.toggle('active', layoutActive)
+  mappingModeButton.classList.toggle('active', !layoutActive)
+  if (layoutActive) {
+    layoutModeButton.setAttribute('aria-current', 'page')
+    mappingModeButton.removeAttribute('aria-current')
+  } else {
+    mappingModeButton.setAttribute('aria-current', 'page')
+    layoutModeButton.removeAttribute('aria-current')
+  }
+  layoutToolbar.hidden = !layoutActive
+  mappingToolbar.hidden = layoutActive
+  layoutWorkspace.hidden = !layoutActive
+  mappingWorkspaceElement.hidden = layoutActive
+  document.querySelectorAll<HTMLElement>('.layout-status').forEach(item => { item.hidden = !layoutActive })
+  document.querySelectorAll<HTMLElement>('.mapping-status').forEach(item => { item.hidden = layoutActive })
+  if (layoutActive) {
+    mappingWorkspace?.deactivate()
+    requestAnimationFrame(() => draw())
+  } else {
+    endPointerGesture()
+    mappingWorkspace?.activate()
+  }
+}
+
+layoutModeButton.addEventListener('click', () => setAppMode('layout'))
+mappingModeButton.addEventListener('click', () => setAppMode('mapping'))
+
 function isEditableControl(target: EventTarget | null): boolean {
   return target instanceof HTMLElement && (
     target.matches('input, select, textarea') || target.isContentEditable
@@ -1278,6 +1327,7 @@ function isEditableControl(target: EventTarget | null): boolean {
 }
 
 window.addEventListener('keydown', event => {
+  if (appMode !== 'layout') return
   if (isEditableControl(event.target)) return
   const arrows: Readonly<Record<string, readonly [number, number]>> = {
     ArrowLeft: [-1, 0],
@@ -1312,6 +1362,7 @@ window.addEventListener('keydown', event => {
 })
 
 window.addEventListener('keyup', event => {
+  if (appMode !== 'layout') return
   if (event.code === 'Space') {
     spaceDown = false
     canvas.classList.remove('space-grab')
@@ -1327,7 +1378,7 @@ function fitOnFirstPaint(): void {
 }
 
 new ResizeObserver(fitOnFirstPaint).observe(viewport)
-window.addEventListener('resize', draw)
+window.addEventListener('resize', () => { if (appMode === 'layout') draw() })
 
 function watchPixelRatio(): void {
   const query = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`)

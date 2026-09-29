@@ -12,8 +12,8 @@
       <div class="titlebar">
         <div class="brand"><span class="brand-mark">▦</span><span>LedMAP</span></div>
         <nav class="mode-switcher" aria-label="Workflow mode">
-          <button type="button" class="mode active" aria-current="page">Layout</button>
-          <button type="button" class="mode" disabled>Mapping</button>
+          <button id="layout-mode" type="button" class="mode active" aria-current="page">Layout</button>
+          <button id="mapping-mode" type="button" class="mode">Mapping</button>
           <button type="button" class="mode" disabled>Hardware</button>
           <button type="button" class="mode" disabled>Test</button>
           <button type="button" class="mode" disabled>Export</button>
@@ -25,7 +25,7 @@
           <button id="save-project-as" type="button">Save As</button>
         </div>
       </div>
-      <div class="layout-toolbar" aria-label="Layout tools">
+      <div id="layout-toolbar" class="layout-toolbar" aria-label="Layout tools">
         <div class="tool-group primary-tools">
           <button id="add-screen" class="primary" type="button">+ Screen</button>
           <button id="fit-project" type="button">Fit All</button>
@@ -58,9 +58,27 @@
         </div>
         <button id="toggle-mode" class="focus-toggle" type="button">Focus Screen</button>
       </div>
+      <div id="mapping-toolbar" class="layout-toolbar mapping-toolbar" aria-label="Mapping tools" hidden>
+        <div class="tool-group input-tools">
+          <span class="tool-label">Input Canvas</span>
+          <label class="toolbar-field"><input id="mapping-input-width" type="number" min="1" step="1" value="1920" aria-label="Input Canvas width" /><span>×</span><input id="mapping-input-height" type="number" min="1" step="1" value="1080" aria-label="Input Canvas height" /><span>px</span></label>
+          <button id="mapping-apply-input" type="button">Apply</button>
+        </div>
+        <div class="tool-group">
+          <button id="mapping-create-region" class="primary" type="button">+ Mapping Region</button>
+          <button id="mapping-from-layout" type="button">Map from Layout Position</button>
+          <button id="mapping-delete-region" type="button">Delete</button>
+        </div>
+        <div class="tool-group mapping-view-tools">
+          <button id="mapping-fit" type="button">Fit Input</button>
+          <button id="mapping-actual-size" type="button">100%</button>
+          <button id="mapping-zoom-out" type="button" aria-label="Mapping zoom out">−</button>
+          <button id="mapping-zoom-in" type="button" aria-label="Mapping zoom in">+</button>
+        </div>
+      </div>
     </header>
 
-    <main class="workspace">
+    <main id="layout-workspace" class="workspace">
       <aside class="tree-panel">
         <div class="panel-title-row">
           <div><span class="eyebrow">PROJECT</span><h1>Screens</h1></div>
@@ -99,11 +117,47 @@
       </aside>
     </main>
 
+    <main id="mapping-workspace" class="workspace mapping-workspace" hidden>
+      <aside class="tree-panel mapping-project-panel">
+        <div class="panel-title-row">
+          <div><span class="eyebrow">MAPPING</span><h1>Screens &amp; Regions</h1></div>
+        </div>
+        <div id="mapping-tree" class="mapping-tree" role="tree" aria-label="Mapping Screens and Regions"></div>
+        <div class="mapping-diagnostics-heading"><span class="eyebrow">DIAGNOSTICS</span></div>
+        <div id="mapping-diagnostics" class="mapping-diagnostics"></div>
+      </aside>
+
+      <article class="canvas-workspace">
+        <div class="canvas-heading">
+          <div><span class="eyebrow">MAPPING WORKSPACE</span><h2>Input Canvas</h2></div>
+          <span id="mapping-selection-chip" role="status">No selection</span>
+        </div>
+        <div id="mapping-viewport">
+          <div id="mapping-empty">
+            <span class="empty-icon">▧</span>
+            <h2>Configure Input Canvas</h2>
+            <p>Set the source resolution in the toolbar to begin mapping.</p>
+          </div>
+          <canvas id="mapping-canvas" role="img" aria-label="Input Canvas and Mapping Regions"></canvas>
+        </div>
+      </article>
+
+      <aside class="properties-panel mapping-inspector">
+        <div class="panel-heading"><span class="eyebrow">INSPECTOR</span><h2 id="mapping-inspector-title">Mapping</h2></div>
+        <div id="mapping-properties" class="properties-body">
+          <p class="hint">Select a Screen or Mapping Region.</p>
+        </div>
+      </aside>
+    </main>
+
     <footer class="statusbar">
-      <span id="cursor-status" class="status-item">X 0 · Y 0</span>
-      <span id="zoom-indicator" class="status-item">100%</span>
-      <span id="selected-count" class="status-item">0 selected</span>
-      <span id="snap-status" class="status-item">Grid off · Smart on</span>
+      <span id="cursor-status" class="status-item layout-status">X 0 · Y 0</span>
+      <span id="zoom-indicator" class="status-item layout-status">100%</span>
+      <span id="selected-count" class="status-item layout-status">0 selected</span>
+      <span id="snap-status" class="status-item layout-status">Grid off · Smart on</span>
+      <span id="mapping-cursor-status" class="status-item mapping-status" hidden>Input X 0 · Y 0</span>
+      <span id="mapping-zoom-indicator" class="status-item mapping-status" hidden>100%</span>
+      <span id="mapping-health-status" class="status-item mapping-status" hidden>Input Canvas not configured</span>
     </footer>
 
     <div id="document-error" role="alert" hidden></div>

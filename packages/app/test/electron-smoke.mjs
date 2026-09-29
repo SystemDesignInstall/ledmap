@@ -60,6 +60,21 @@ async function addScreen(page) {
   await page.waitForFunction(count => window.__ledmap.dump().length === count + 1, before)
 }
 
+async function setMappingGeometry(page, values) {
+  const fields = [
+    ['Mapping Region X', values.x],
+    ['Mapping Region Y', values.y],
+    ['Mapping Region Width', values.width],
+    ['Mapping Region Height', values.height],
+  ]
+  for (const [label, value] of fields) {
+    if (value === undefined) continue
+    const input = page.locator(`input[aria-label="${label}"]`)
+    await input.fill(String(value))
+    await input.blur()
+  }
+}
+
 let running = await launch()
 try {
   const page = running.page
@@ -72,7 +87,7 @@ try {
   assert.match(await page.locator('#empty').innerText(), /Add your first Screen/)
   assert.equal((await documentState()).dirty, false)
   assert.match(await page.locator('.mode-switcher').innerText(), /Layout\s+Mapping\s+Hardware\s+Test\s+Export/)
-  assert.equal((await page.locator('.mode-switcher .mode:disabled').count()), 4)
+  assert.equal((await page.locator('.mode-switcher .mode:disabled').count()), 3)
   assert.doesNotMatch(await page.locator('body').innerText(), /ALPHA|In-memory session/)
 
   await page.locator('#new-project').click()
@@ -199,8 +214,129 @@ try {
   await running.page.waitForFunction(() => window.__ledmap.dump().length === 5)
   assert.deepEqual(await running.page.evaluate(() => window.__ledmap.dump()), expected)
 
+  const mappingPage = running.page
+  await mappingPage.locator('#new-project').click()
+  await mappingPage.waitForFunction(() => window.__ledmap.dump().length === 0)
+  await addScreen(mappingPage)
+  await addScreen(mappingPage)
+  await addScreen(mappingPage)
+  await setScreenPosition(mappingPage, 'Screen 1', 100, 100)
+  await setScreenPosition(mappingPage, 'Screen 2', 700, 100)
+  await setScreenPosition(mappingPage, 'Screen 3', 100, 600)
+  const layoutBeforeMapping = await mappingPage.evaluate(() => window.__ledmap.dump().map(screen => ({ id: screen.id, x: screen.x, y: screen.y })))
+
+  await mappingPage.locator('#mapping-mode').click()
+  await mappingPage.locator('#mapping-workspace').waitFor({ state: 'visible' })
+  assert.equal(await mappingPage.locator('#layout-workspace').isHidden(), true)
+  await mappingPage.locator('#mapping-input-width').fill('1920')
+  await mappingPage.locator('#mapping-input-height').fill('1080')
+  await mappingPage.locator('#mapping-apply-input').click()
+  assert.deepEqual(await mappingPage.evaluate(() => window.__ledmapMapping.dump().inputCanvas), { width: 1920, height: 1080 })
+
+  await mappingPage.locator('#mapping-tree [data-screen-id="screen-1"]').click()
+  await mappingPage.locator('#mapping-create-region').click()
+  await setMappingGeometry(mappingPage, { x: 80, y: 70 })
+  await mappingPage.locator('#mapping-tree [data-screen-id="screen-2"]').click()
+  await mappingPage.locator('#mapping-create-region').click()
+  await setMappingGeometry(mappingPage, { x: 720, y: 90 })
+  await mappingPage.locator('#mapping-tree [data-screen-id="screen-3"]').click()
+  await mappingPage.locator('#mapping-create-region').click()
+  await mappingPage.locator('#mapping-from-layout').click()
+  assert.deepEqual(
+    (await mappingPage.evaluate(() => window.__ledmapMapping.dump().regions))[2],
+    { id: 'region-3', screen: 'screen-3', grid: 'grid-3', x: 100, y: 600, width: 512, height: 384, status: 'complete' },
+  )
+  await setMappingGeometry(mappingPage, { x: 300, y: 600 })
+
+  let mappingDump = await mappingPage.evaluate(() => window.__ledmapMapping.dump())
+  assert.equal(mappingDump.regions.length, 3)
+  assert.deepEqual(mappingDump.regions.map(region => region.status), ['complete', 'complete', 'complete'])
+  assert.notDeepEqual(
+    mappingDump.regions.map(region => ({ id: region.screen, x: region.x, y: region.y })),
+    layoutBeforeMapping,
+  )
+
+  await mappingPage.locator('#mapping-tree [data-region-id="region-1"]').click()
+  await mappingPage.locator('#mapping-fit').click()
+  const mappingCanvasBox = await mappingPage.locator('#mapping-canvas').boundingBox()
+  assert.ok(mappingCanvasBox)
+  let mappingCamera = await mappingPage.evaluate(() => window.__ledmapMapping.camera())
+  let regionOne = (await mappingPage.evaluate(() => window.__ledmapMapping.dump().regions))[0]
+  const dragStart = {
+    x: mappingCanvasBox.x + (regionOne.x + regionOne.width / 2) * mappingCamera.zoom + mappingCamera.offsetX,
+    y: mappingCanvasBox.y + (regionOne.y + regionOne.height / 2) * mappingCamera.zoom + mappingCamera.offsetY,
+  }
+  await mappingPage.mouse.move(dragStart.x, dragStart.y)
+  await mappingPage.mouse.down()
+  await mappingPage.mouse.move(dragStart.x + 60 * mappingCamera.zoom, dragStart.y + 30 * mappingCamera.zoom, { steps: 4 })
+  await mappingPage.mouse.up()
+  regionOne = (await mappingPage.evaluate(() => window.__ledmapMapping.dump().regions))[0]
+  assert.equal(Number.isSafeInteger(regionOne.x) && Number.isSafeInteger(regionOne.y), true)
+  assert.notDeepEqual([regionOne.x, regionOne.y], [80, 70])
+
+  mappingCamera = await mappingPage.evaluate(() => window.__ledmapMapping.camera())
+  const resizeStart = {
+    x: mappingCanvasBox.x + (regionOne.x + regionOne.width) * mappingCamera.zoom + mappingCamera.offsetX,
+    y: mappingCanvasBox.y + (regionOne.y + regionOne.height) * mappingCamera.zoom + mappingCamera.offsetY,
+  }
+  await mappingPage.mouse.move(resizeStart.x, resizeStart.y)
+  await mappingPage.mouse.down()
+  await mappingPage.mouse.move(resizeStart.x + 40 * mappingCamera.zoom, resizeStart.y + 24 * mappingCamera.zoom, { steps: 4 })
+  await mappingPage.mouse.up()
+  const resized = (await mappingPage.evaluate(() => window.__ledmapMapping.dump().regions))[0]
+  assert.ok(resized.width > 512 && resized.height > 384)
+  assert.equal(resized.status, 'invalid')
+  await setMappingGeometry(mappingPage, { x: 120, y: 80, width: 512, height: 384 })
+
+  mappingCamera = await mappingPage.evaluate(() => window.__ledmapMapping.camera())
+  const inspectPoint = { x: 130, y: 100 }
+  await mappingPage.mouse.click(
+    mappingCanvasBox.x + inspectPoint.x * mappingCamera.zoom + mappingCamera.offsetX,
+    mappingCanvasBox.y + inspectPoint.y * mappingCamera.zoom + mappingCamera.offsetY,
+  )
+  const inspectorText = await mappingPage.locator('#mapping-properties').innerText()
+  assert.match(inspectorText, /Input X\/Y\s+130, 100/)
+  assert.match(inspectorText, /Screen X\/Y\s+10, 20/)
+  assert.match(inspectorText, /Cabinet\s+screen-1\/C01/)
+  assert.match(inspectorText, /Module\s+screen-1\/C01\/M1x1/)
+  assert.match(inspectorText, /Hardware\s+Not configured/)
+
+  await mappingPage.locator('input[aria-label="Reverse pixel X"]').fill('10')
+  await mappingPage.locator('input[aria-label="Reverse pixel X"]').blur()
+  await mappingPage.locator('input[aria-label="Reverse pixel Y"]').fill('20')
+  await mappingPage.locator('input[aria-label="Reverse pixel Y"]').blur()
+  await mappingPage.getByRole('button', { name: 'Locate on Input Canvas' }).click()
+  assert.match(await mappingPage.locator('#mapping-properties').innerText(), /Input X\/Y\s+130, 100/)
+  const forward = await mappingPage.evaluate(() => window.__ledmapMapping.forward('region-1', 130, 100))
+  const reverse = await mappingPage.evaluate(pixel => window.__ledmapMapping.reverseModule(
+    'region-1', pixel.cabinet, pixel.module, pixel.modulePixel.x, pixel.modulePixel.y,
+  ), forward)
+  assert.deepEqual(reverse, forward)
+
+  mappingDump = await mappingPage.evaluate(() => window.__ledmapMapping.dump())
+  await mappingPage.locator('#save-project').click()
+  await mappingPage.waitForFunction(() => window.__ledmap.document().dirty === false)
+  const mappingStored = JSON.parse(await readFile(projectPath, 'utf8'))
+  assert.equal(mappingStored.project.inputCanvas.resolution.width, 1920)
+  assert.equal(mappingStored.project.mappingRegions.length, 3)
+  await mappingPage.locator('#new-project').click()
+  await mappingPage.waitForFunction(() => window.__ledmapMapping.dump().regions.length === 0)
+  await mappingPage.locator('#open-project').click()
+  await mappingPage.waitForFunction(() => window.__ledmapMapping.dump().regions.length === 3)
+  assert.deepEqual(await mappingPage.evaluate(() => window.__ledmapMapping.dump()), mappingDump)
+  await mappingPage.locator('#mapping-tree [data-region-id="region-1"]').click()
+  await mappingPage.locator('#mapping-fit').click()
+  const reopenedCanvasBox = await mappingPage.locator('#mapping-canvas').boundingBox()
+  const reopenedCamera = await mappingPage.evaluate(() => window.__ledmapMapping.camera())
+  assert.ok(reopenedCanvasBox)
+  await mappingPage.mouse.click(
+    reopenedCanvasBox.x + 130 * reopenedCamera.zoom + reopenedCamera.offsetX,
+    reopenedCanvasBox.y + 100 * reopenedCamera.zoom + reopenedCamera.offsetY,
+  )
+  await mappingPage.screenshot({ path: resolve(output, 'mapping-workspace.png') })
+
   assert.deepEqual(failures, [])
-  console.log('Electron smoke passed: five Screens, multi-select, integer drag, Grid/Smart Snap guides, align/distribute, nudge, exact X/Y and Save/reopen.')
+  console.log('Electron smoke passed: Layout interactions plus Input Canvas, three independent Mapping Regions, drag/resize, forward/reverse geometry inspection and Save/reopen.')
   console.log(`Project: ${projectPath}`)
 } finally {
   await close(running.app)

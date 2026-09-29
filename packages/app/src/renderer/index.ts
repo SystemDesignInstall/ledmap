@@ -24,6 +24,7 @@ import {
 } from './layout-interaction.js'
 import { createMappingWorkspace, type MappingWorkspace } from './mapping-workspace.js'
 import { createHardwareWorkspace, type HardwareWorkspace } from './hardware-workspace.js'
+import { createTestWorkspace, type TestWorkspace } from './test-workspace.js'
 import type { Direction, Numbering } from '@ledmap/core'
 
 interface LedmapHook {
@@ -115,12 +116,16 @@ const mappingWorkspaceElement = element<HTMLElement>('mapping-workspace')
 const hardwareModeButton = element<HTMLButtonElement>('hardware-mode')
 const hardwareToolbar = element<HTMLDivElement>('hardware-toolbar')
 const hardwareWorkspaceElement = element<HTMLElement>('hardware-workspace')
+const testModeButton = element<HTMLButtonElement>('test-mode')
+const testToolbar = element<HTMLDivElement>('test-toolbar')
+const testWorkspaceElement = element<HTMLElement>('test-workspace')
 
 let editorDocument: EditorDocumentState = createEditorDocument()
 let project: Project = createProject(editorDocument.project)
-let appMode: 'layout' | 'mapping' | 'hardware' = 'layout'
+let appMode: 'layout' | 'mapping' | 'hardware' | 'test' = 'layout'
 let mappingWorkspace: MappingWorkspace | null = null
 let hardwareWorkspace: HardwareWorkspace | null = null
+let testWorkspace: TestWorkspace | null = null
 let viewMode: 'all' | 'active' = 'all'
 let selection: SelectedObject | null = null
 let selectedScreenIds: readonly string[] = []
@@ -207,6 +212,7 @@ function replaceDocument(next: EditorDocumentState): void {
   render()
   if (appMode === 'mapping') mappingWorkspace?.activate()
   if (appMode === 'hardware') hardwareWorkspace?.activate()
+  if (appMode === 'test') testWorkspace?.activate()
 }
 
 async function saveDocument(saveAs: boolean): Promise<boolean> {
@@ -268,6 +274,7 @@ function render(): void {
   if (appMode === 'layout') draw()
   mappingWorkspace?.projectChanged()
   hardwareWorkspace?.projectChanged()
+  testWorkspace?.projectChanged()
 }
 
 function draw(): void {
@@ -1303,19 +1310,24 @@ hardwareWorkspace = createHardwareWorkspace({
   clearError: clearDocumentError,
 })
 
-function setAppMode(mode: 'layout' | 'mapping' | 'hardware'): void {
+testWorkspace = createTestWorkspace({ getProject: () => project })
+
+function setAppMode(mode: 'layout' | 'mapping' | 'hardware' | 'test'): void {
   if (appMode === mode) return
   appMode = mode
   const layoutActive = mode === 'layout'
   const mappingActive = mode === 'mapping'
   const hardwareActive = mode === 'hardware'
+  const testActive = mode === 'test'
   layoutModeButton.classList.toggle('active', layoutActive)
   mappingModeButton.classList.toggle('active', mappingActive)
   hardwareModeButton.classList.toggle('active', hardwareActive)
+  testModeButton.classList.toggle('active', testActive)
   for (const [button, isActive] of [
     [layoutModeButton, layoutActive],
     [mappingModeButton, mappingActive],
     [hardwareModeButton, hardwareActive],
+    [testModeButton, testActive],
   ] as const) {
     if (isActive) button.setAttribute('aria-current', 'page')
     else button.removeAttribute('aria-current')
@@ -1323,25 +1335,31 @@ function setAppMode(mode: 'layout' | 'mapping' | 'hardware'): void {
   layoutToolbar.hidden = !layoutActive
   mappingToolbar.hidden = !mappingActive
   hardwareToolbar.hidden = !hardwareActive
+  testToolbar.hidden = !testActive
   layoutWorkspace.hidden = !layoutActive
   mappingWorkspaceElement.hidden = !mappingActive
   hardwareWorkspaceElement.hidden = !hardwareActive
+  testWorkspaceElement.hidden = !testActive
   document.querySelectorAll<HTMLElement>('.layout-status').forEach(item => { item.hidden = !layoutActive })
   document.querySelectorAll<HTMLElement>('.mapping-status').forEach(item => { item.hidden = !mappingActive })
   document.querySelectorAll<HTMLElement>('.hardware-status').forEach(item => { item.hidden = !hardwareActive })
+  document.querySelectorAll<HTMLElement>('.test-status').forEach(item => { item.hidden = !testActive })
   mappingWorkspace?.deactivate()
   hardwareWorkspace?.deactivate()
+  testWorkspace?.deactivate()
   endPointerGesture()
   if (layoutActive) {
     requestAnimationFrame(() => draw())
   }
   if (mappingActive) mappingWorkspace?.activate()
   if (hardwareActive) hardwareWorkspace?.activate()
+  if (testActive) testWorkspace?.activate()
 }
 
 layoutModeButton.addEventListener('click', () => setAppMode('layout'))
 mappingModeButton.addEventListener('click', () => setAppMode('mapping'))
 hardwareModeButton.addEventListener('click', () => setAppMode('hardware'))
+testModeButton.addEventListener('click', () => setAppMode('test'))
 
 function isEditableControl(target: EventTarget | null): boolean {
   return target instanceof HTMLElement && (

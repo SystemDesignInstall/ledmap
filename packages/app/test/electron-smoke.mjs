@@ -87,8 +87,15 @@ try {
   assert.match(await page.locator('#empty').innerText(), /Add your first Screen/)
   assert.equal((await documentState()).dirty, false)
   assert.match(await page.locator('.mode-switcher').innerText(), /Layout\s+Mapping\s+Hardware\s+Test\s+Export/)
-  assert.equal((await page.locator('.mode-switcher .mode:disabled').count()), 2)
+  assert.equal((await page.locator('.mode-switcher .mode:disabled').count()), 1)
   assert.doesNotMatch(await page.locator('body').innerText(), /ALPHA|In-memory session/)
+  await page.locator('#test-mode').click()
+  await page.locator('#test-workspace').waitFor({ state: 'visible' })
+  assert.equal(await page.locator('[data-test-pattern="white"]').isEnabled(), true)
+  assert.equal(await page.locator('[data-test-pattern="receiver-labels"]').isDisabled(), true)
+  assert.match(await page.locator('[data-test-pattern="receiver-labels"]').getAttribute('title'), /Hardware|Cabinet assignment/i)
+  assert.equal(await page.locator('#test-scope option[value="receiver"]').isDisabled(), true)
+  await page.locator('#layout-mode').click()
 
   await page.locator('#new-project').click()
   await addScreen(page)
@@ -458,8 +465,85 @@ try {
   assert.match(await mappingPage.locator('#hardware-properties').innerText(), /dataIndex/)
   await mappingPage.screenshot({ path: resolve(output, 'hardware-workspace.png') })
 
+  const projectBeforeTest = JSON.parse(await readFile(projectPath, 'utf8')).project
+  assert.equal((await mappingPage.evaluate(() => window.__ledmap.document())).dirty, false)
+  await mappingPage.locator('#test-mode').click()
+  await mappingPage.locator('#test-workspace').waitFor({ state: 'visible' })
+  assert.equal(await mappingPage.locator('#hardware-workspace').isHidden(), true)
+  assert.deepEqual(await mappingPage.evaluate(() => ({
+    hardwareReady: window.__ledmapTest.dump().hardwareReady,
+    mappingReady: window.__ledmapTest.dump().mappingReady,
+  })), { hardwareReady: true, mappingReady: true })
+
+  for (const [pattern, color] of [
+    ['white', '#ffffff'],
+    ['red', '#ff2028'],
+    ['green', '#20e070'],
+    ['blue', '#2488ff'],
+  ]) {
+    await mappingPage.locator(`[data-test-pattern="${pattern}"]`).click()
+    const testDump = await mappingPage.evaluate(() => window.__ledmapTest.dump())
+    assert.equal(testDump.pattern, pattern)
+    assert.ok(testDump.solidColors.includes(color))
+  }
+  await mappingPage.locator('[data-test-pattern="checkerboard"]').click()
+  assert.ok((await mappingPage.evaluate(() => window.__ledmapTest.dump().primitiveKinds.filter(kind => kind === 'rect').length)) > 50)
+  await mappingPage.locator('[data-test-pattern="borders"]').click()
+  assert.equal((await mappingPage.evaluate(() => window.__ledmapTest.dump())).pattern, 'borders')
+  await mappingPage.locator('[data-test-pattern="cabinet-labels"]').click()
+  assert.equal((await mappingPage.evaluate(() => window.__ledmapTest.dump())).scopedCabinets.length, 36)
+  await mappingPage.locator('[data-test-pattern="cabinet-order"]').click()
+  assert.equal((await mappingPage.evaluate(() => window.__ledmapTest.dump())).pattern, 'cabinet-order')
+
+  await mappingPage.locator('#test-scope').selectOption('receiver')
+  assert.equal((await mappingPage.evaluate(() => window.__ledmapTest.dump())).scope.target, 'receiver-1')
+  assert.deepEqual(
+    (await mappingPage.evaluate(() => window.__ledmapTest.dump())).scopedCabinets,
+    hardwareBeforeSave.receivers[0].cabinets,
+  )
+  await mappingPage.locator('[data-test-pattern="receiver-labels"]').click()
+  assert.equal((await mappingPage.evaluate(() => window.__ledmapTest.dump())).pattern, 'receiver-labels')
+
+  await mappingPage.locator('#test-scope').selectOption('port')
+  await mappingPage.locator('#test-target').selectOption('port-1')
+  const sharedPortCabinets = (await mappingPage.evaluate(() => window.__ledmapTest.dump())).scopedCabinets
+  assert.equal(sharedPortCabinets.some(id => id.startsWith('screen-1/')), true)
+  assert.equal(sharedPortCabinets.some(id => id.startsWith('screen-2/')), true)
+  await mappingPage.locator('[data-test-pattern="port-labels"]').click()
+  assert.equal((await mappingPage.evaluate(() => window.__ledmapTest.dump())).pattern, 'port-labels')
+
+  await mappingPage.locator('[data-test-pattern="address-walk"]').click()
+  await mappingPage.locator('#test-address-index').fill('65535')
+  await mappingPage.locator('#test-address-go').click()
+  const walkBeforeBoundary = (await mappingPage.evaluate(() => window.__ledmapTest.dump())).walk
+  assert.equal(walkBeforeBoundary.dataIndex, 65535)
+  assert.equal(walkBeforeBoundary.port, 'port-1')
+  assert.equal(walkBeforeBoundary.screen, 'screen-1')
+  await mappingPage.locator('#test-address-next').click()
+  const walkAfterBoundary = (await mappingPage.evaluate(() => window.__ledmapTest.dump())).walk
+  assert.equal(walkAfterBoundary.dataIndex, 65536)
+  assert.equal(walkAfterBoundary.port, 'port-1')
+  assert.equal(walkAfterBoundary.screen, 'screen-2')
+  assert.ok(walkAfterBoundary.input.x !== walkBeforeBoundary.input.x || walkAfterBoundary.input.y !== walkBeforeBoundary.input.y)
+  assert.match(await mappingPage.locator('#test-properties').innerText(), /Input[\s\S]*Screen[\s\S]*Cabinet[\s\S]*Module[\s\S]*Receiver[\s\S]*Port[\s\S]*Processor[\s\S]*dataIndex/)
+  assert.equal((await mappingPage.evaluate(() => window.__ledmap.document())).dirty, false)
+
+  await mappingPage.locator('#layout-mode').click()
+  await mappingPage.locator('#mapping-mode').click()
+  await mappingPage.locator('#hardware-mode').click()
+  await mappingPage.locator('#test-mode').click()
+  assert.equal((await mappingPage.evaluate(() => window.__ledmapTest.dump())).walk.dataIndex, 65536)
+  assert.equal((await mappingPage.evaluate(() => window.__ledmap.document())).dirty, false)
+  await mappingPage.locator('#save-project-as').click()
+  await mappingPage.waitForFunction(() => window.__ledmap.document().dirty === false)
+  const projectAfterTestSave = JSON.parse(await readFile(projectPath, 'utf8')).project
+  assert.deepEqual(projectAfterTestSave, projectBeforeTest)
+  assert.doesNotMatch(JSON.stringify(projectAfterTestSave), /address-walk|checkerboard|testPattern|walkOrdinal/i)
+  await mappingPage.locator('#test-fit').click()
+  await mappingPage.screenshot({ path: resolve(output, 'test-workspace.png') })
+
   assert.deepEqual(failures, [])
-  console.log('Electron smoke passed: Layout, Mapping and Generic Hardware topology with manual assignment, allocation preview/apply, full addressing and Save/reopen.')
+  console.log('Electron smoke passed: Layout, Mapping, Hardware and deterministic Test patterns with scoped diagnostics, shared-Port Address Walk and session-only state.')
   console.log(`Project: ${projectPath}`)
 } finally {
   await close(running.app)

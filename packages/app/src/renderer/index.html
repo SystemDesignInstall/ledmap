@@ -15,7 +15,7 @@
           <button id="layout-mode" type="button" class="mode active" aria-current="page">Layout</button>
           <button id="mapping-mode" type="button" class="mode">Mapping</button>
           <button id="hardware-mode" type="button" class="mode">Hardware</button>
-          <button type="button" class="mode" disabled>Test</button>
+          <button id="test-mode" type="button" class="mode">Test</button>
           <button type="button" class="mode" disabled>Export</button>
         </nav>
         <div class="document-actions" aria-label="Project document">
@@ -102,6 +102,32 @@
           <button id="hardware-actual-size" type="button">100%</button>
           <button id="hardware-zoom-out" type="button" aria-label="Hardware zoom out">−</button>
           <button id="hardware-zoom-in" type="button" aria-label="Hardware zoom in">+</button>
+        </div>
+      </div>
+      <div id="test-toolbar" class="layout-toolbar test-toolbar" aria-label="Test tools" hidden>
+        <div class="tool-group test-scope-tools">
+          <span class="tool-label">Scope</span>
+          <select id="test-scope" aria-label="Test scope">
+            <option value="composition">Entire Composition</option>
+            <option value="screen">Screen</option>
+            <option value="cabinet">Cabinet</option>
+            <option value="module">Module</option>
+            <option value="receiver">Receiver</option>
+            <option value="port">Port</option>
+          </select>
+          <select id="test-target" aria-label="Test scope target" disabled><option>Entire Composition</option></select>
+        </div>
+        <div id="test-address-controls" class="tool-group test-address-tools" hidden>
+          <button id="test-address-previous" type="button">Previous</button>
+          <button id="test-address-next" type="button">Next</button>
+          <label class="toolbar-field">Direct index <input id="test-address-index" type="number" min="0" step="1" value="0"></label>
+          <button id="test-address-go" type="button">Go</button>
+        </div>
+        <div class="tool-group test-view-tools">
+          <button id="test-fit" type="button">Fit All</button>
+          <button id="test-actual-size" type="button">100%</button>
+          <button id="test-zoom-out" type="button" aria-label="Test zoom out">−</button>
+          <button id="test-zoom-in" type="button" aria-label="Test zoom in">+</button>
         </div>
       </div>
     </header>
@@ -206,6 +232,32 @@
       </aside>
     </main>
 
+    <main id="test-workspace" class="workspace test-workspace" hidden>
+      <aside class="tree-panel test-pattern-panel">
+        <div class="panel-title-row">
+          <div><span class="eyebrow">DIAGNOSTIC OUTPUT</span><h1>Test Patterns</h1></div>
+        </div>
+        <div id="test-pattern-list" class="test-pattern-list"></div>
+        <div id="test-pattern-reason" class="test-pattern-reason" role="status"></div>
+      </aside>
+
+      <article class="canvas-workspace">
+        <div class="canvas-heading">
+          <div><span class="eyebrow">TEST WORKSPACE</span><h2 id="test-canvas-title">White · Entire Composition</h2></div>
+          <span id="test-session-chip" role="status">Session only</span>
+        </div>
+        <div id="test-viewport">
+          <canvas id="test-canvas" role="img" aria-label="Deterministic Test pattern preview"></canvas>
+          <div id="test-empty" class="canvas-empty" hidden><h2>No screens to test</h2><p>Build the Layout first.</p></div>
+        </div>
+      </article>
+
+      <aside class="properties-panel test-inspector">
+        <div class="panel-heading"><span class="eyebrow">INSPECTOR</span><h2 id="test-inspector-title">Test Output</h2></div>
+        <div id="test-properties" class="properties-body"></div>
+      </aside>
+    </main>
+
     <footer class="statusbar">
       <span id="cursor-status" class="status-item layout-status">X 0 · Y 0</span>
       <span id="zoom-indicator" class="status-item layout-status">100%</span>
@@ -217,6 +269,9 @@
       <span id="hardware-cursor-status" class="status-item hardware-status" hidden>Layout X 0 · Y 0</span>
       <span id="hardware-zoom-indicator" class="status-item hardware-status" hidden>100%</span>
       <span id="hardware-health-status" class="status-item hardware-status" hidden>Hardware not configured</span>
+      <span id="test-cursor-status" class="status-item test-status" hidden>Composition X 0 · Y 0</span>
+      <span id="test-zoom-indicator" class="status-item test-status" hidden>100%</span>
+      <span id="test-health-status" class="status-item test-status" hidden>Test preview ready</span>
     </footer>
 
     <div id="document-error" role="alert" hidden></div>

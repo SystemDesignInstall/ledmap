@@ -244,15 +244,40 @@ try {
   assert.deepEqual(await page.evaluate(() => window.__ledmap.snap()), { grid: true, smart: true, step: 10 })
   const canvasBox = await page.locator('#project-canvas').boundingBox()
   assert.ok(canvasBox)
-  const start = await page.evaluate(() => window.__ledmap.screenCenterPx('screen-1'))
-  const end = await page.evaluate(() => window.__ledmap.projectToPx({ x: -153, y: 192 }))
-  await page.mouse.move(canvasBox.x + start.x, canvasBox.y + start.y)
+  const snapDrag = await page.evaluate(() => {
+    const screens = window.__ledmap.dump()
+    const moving = screens.find(screen => screen.id === 'screen-1')
+    const target = screens.find(screen => screen.id === 'screen-2')
+    if (!moving || !target) throw new Error('Smart Snap smoke Screens are missing.')
+    const expectedX = target.x - moving.width
+    const deltaX = expectedX - moving.x
+    return {
+      start: window.__ledmap.screenCenterPx(moving.id),
+      end: window.__ledmap.projectToPx({
+        x: moving.x + moving.width / 2 + deltaX,
+        y: moving.y + moving.height / 2,
+      }),
+      expectedX,
+      guideX: target.x,
+    }
+  })
+  assert.equal(snapDrag.guideX, 100)
+  await page.mouse.move(canvasBox.x + snapDrag.start.x, canvasBox.y + snapDrag.start.y)
   await page.mouse.down()
-  await page.mouse.move(canvasBox.x + end.x, canvasBox.y + end.y, { steps: 5 })
+  await page.mouse.move(canvasBox.x + snapDrag.end.x, canvasBox.y + snapDrag.end.y, { steps: 5 })
+  await page.waitForFunction(({ guideX, expectedX }) => (
+    window.__ledmap.guides().some(guide => guide.axis === 'x' && guide.value === guideX)
+    && window.__ledmap.dump().find(screen => screen.id === 'screen-1')?.x === expectedX
+  ), snapDrag)
   assert.ok((await page.evaluate(() => window.__ledmap.guides())).some(guide => guide.axis === 'x' && guide.value === 100))
+  assert.equal((await dump()).find(screen => screen.id === 'screen-1')?.x, snapDrag.expectedX)
   await page.mouse.up()
-  assert.equal((await dump())[0].x, -412)
-  assert.equal(Number.isSafeInteger((await dump())[0].x), true)
+  await page.waitForFunction(expectedX => (
+    window.__ledmap.dump().find(screen => screen.id === 'screen-1')?.x === expectedX
+  ), snapDrag.expectedX)
+  const committedScreen = (await dump()).find(screen => screen.id === 'screen-1')
+  assert.equal(committedScreen?.x, snapDrag.expectedX)
+  assert.equal(Number.isSafeInteger(committedScreen?.x), true)
 
   await screenNode('Screen 5').click()
   await page.locator('#rename-screen').click()

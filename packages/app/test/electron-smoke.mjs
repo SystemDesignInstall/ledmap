@@ -242,6 +242,7 @@ try {
   await screenNode('Screen 1').click()
   await page.locator('#grid-snap').click()
   assert.deepEqual(await page.evaluate(() => window.__ledmap.snap()), { grid: true, smart: true, step: 10 })
+  await page.locator('#fit-project').click()
   const canvasBox = await page.locator('#project-canvas').boundingBox()
   assert.ok(canvasBox)
   const snapDrag = await page.evaluate(() => {

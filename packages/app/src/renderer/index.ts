@@ -1,9 +1,13 @@
 import {
-  createDemoProject, findScreen, hitTest, maxColumnsForRows, maxRowsForColumns, moveScreen, projectBounds,
+  createProject, findScreen, hitTest, maxColumnsForRows, maxRowsForColumns, moveScreen, projectBounds,
   resizeScreenGrid, screenBounds, screenHeight, screenWidth, setScreenPosition, updateScreenCabinetConfig,
   type Project, type ScreenCabinetConfigPatch, type ScreenView, type SelectedObject,
 } from './project.js'
 import { addScreen } from './project.js'
+import {
+  createEditorDocument, loadEditorDocument, mutateEditorDocument, savedEditorDocument, serializeEditorDocument,
+  type EditorDocumentState,
+} from './document.js'
 import { changeNumbering } from './state.js'
 import type { GridShape, Point, ResizeHandle, ResizePreview } from './canvas.js'
 import {
@@ -45,6 +49,7 @@ interface LedmapHook {
   projectToPx(point: Point): Point
   preview(): ResizePreview | null
   resizeHandlesPx(id: string): ReadonlyArray<{ readonly handle: ResizeHandle; readonly x: number; readonly y: number }>
+  document(): { readonly dirty: boolean; readonly currentFilePath: string | null; readonly sourceSchemaVersion: 1 | 2 }
 }
 
 function element<T extends HTMLElement>(id: string): T {
@@ -66,8 +71,14 @@ const empty = element<HTMLDivElement>('empty')
 const toggleMode = element<HTMLButtonElement>('toggle-mode')
 const fitProject = element<HTMLButtonElement>('fit-project')
 const addScreenButton = element<HTMLButtonElement>('add-screen')
+const newProjectButton = element<HTMLButtonElement>('new-project')
+const openProjectButton = element<HTMLButtonElement>('open-project')
+const saveProjectButton = element<HTMLButtonElement>('save-project')
+const saveProjectAsButton = element<HTMLButtonElement>('save-project-as')
+const documentError = element<HTMLDivElement>('document-error')
 
-let project: Project = createDemoProject()
+let editorDocument: EditorDocumentState = createEditorDocument()
+let project: Project = createProject(editorDocument.project)
 let viewMode: 'all' | 'active' = 'all'
 let selection: SelectedObject | null = null
 let activeScreenId: string | null = project.screens[0]?.screen.id ?? null
@@ -102,6 +113,91 @@ function directionLabel(direction: Direction): string {
 
 function apply(next: Project): void {
   project = next
+  editorDocument = mutateEditorDocument(editorDocument, next.source)
+  syncDocumentState()
+}
+
+function syncDocumentState(): void {
+  window.ledmapDesktop.setDocumentState({
+    currentFilePath: editorDocument.currentFilePath,
+    dirty: editorDocument.dirty,
+  })
+  saveProjectButton.disabled = !editorDocument.dirty
+}
+
+function showDocumentError(error: unknown, fallback: string): void {
+  documentError.textContent = error instanceof Error ? error.message : fallback
+  documentError.hidden = false
+}
+
+function clearDocumentError(): void {
+  documentError.textContent = ''
+  documentError.hidden = true
+}
+
+function replaceDocument(next: EditorDocumentState): void {
+  const projection = createProject(next.project)
+  editorDocument = next
+  project = projection
+  selection = null
+  activeScreenId = project.screens[0]?.screen.id ?? null
+  viewMode = 'all'
+  endPointerGesture()
+  fitToProject()
+  syncDocumentState()
+  render()
+}
+
+async function saveDocument(saveAs: boolean): Promise<boolean> {
+  clearDocumentError()
+  let text: string
+  try {
+    text = serializeEditorDocument(editorDocument)
+  } catch (error) {
+    showDocumentError(error, 'Unable to serialize the project.')
+    return false
+  }
+  try {
+    const result = await window.ledmapDesktop.saveProject({
+      currentFilePath: editorDocument.currentFilePath,
+      text,
+      saveAs,
+    })
+    if (result.canceled || !result.filePath) return false
+    editorDocument = savedEditorDocument(editorDocument, result.filePath)
+    syncDocumentState()
+    return true
+  } catch (error) {
+    showDocumentError(error, 'Unable to save the project.')
+    return false
+  }
+}
+
+async function canReplaceDocument(): Promise<boolean> {
+  if (!editorDocument.dirty) return true
+  const choice = await window.ledmapDesktop.confirmUnsavedChanges()
+  if (choice === 'cancel') return false
+  if (choice === 'discard') return true
+  return saveDocument(false)
+}
+
+async function newDocument(): Promise<void> {
+  if (!await canReplaceDocument()) return
+  clearDocumentError()
+  replaceDocument(createEditorDocument())
+}
+
+async function openDocument(): Promise<void> {
+  if (!await canReplaceDocument()) return
+  clearDocumentError()
+  try {
+    const opened = await window.ledmapDesktop.openProject()
+    if (opened.canceled || !opened.filePath || opened.text === undefined) return
+    const next = loadEditorDocument(opened.text, opened.filePath)
+    replaceDocument(next)
+  } catch (error) {
+    showDocumentError(error, 'Unable to open the project.')
+  }
 }
 
 function render(): void {
@@ -480,11 +576,13 @@ function renderScreenProperties(screen: ScreenView): void {
   const xInput = numberField(screen.x, 'Screen X position', value => {
     apply(setScreenPosition(project, screen.screen.id, value, screen.y))
     render()
-  })
+  }, signedCoordinateProblem)
   const yInput = numberField(screen.y, 'Screen Y position', value => {
     apply(setScreenPosition(project, screen.screen.id, screen.x, value))
     render()
-  })
+  }, signedCoordinateProblem)
+  xInput.removeAttribute('min')
+  yInput.removeAttribute('min')
   positionBox.append(
     propertyRow('X', xInput),
     propertyRow('Y', yInput),
@@ -510,6 +608,10 @@ function renderScreenProperties(screen: ScreenView): void {
 
   appendCabinetConfigGroups(container, screen, 'Screen')
   properties.append(container)
+}
+
+function signedCoordinateProblem(value: number): string | null {
+  return Number.isSafeInteger(value) ? null : 'Position must be a signed whole number.'
 }
 
 function commitResize(screenId: string, columns: number, rows: number): string | null {
@@ -708,7 +810,7 @@ canvas.addEventListener('pointermove', event => {
     const dx = projectPoint.x - dragState.lastProject.x
     const dy = projectPoint.y - dragState.lastProject.y
     dragState.lastProject = projectPoint
-    project = moveScreen(project, dragState.screenId, dx, dy)
+    apply(moveScreen(project, dragState.screenId, dx, dy))
     const moved = findScreen(project, dragState.screenId)
     if (moved) selection = { type: 'screen', id: moved.screen.id }
     render()
@@ -775,7 +877,7 @@ addScreenButton.addEventListener('click', () => {
   const next = addScreen(project)
   const fresh = next.screens[next.screens.length - 1]
   if (!fresh) return
-  project = next
+  apply(next)
   selection = { type: 'screen', id: fresh.screen.id }
   activeScreenId = fresh.screen.id
   if (project.screens.length === 1) {
@@ -787,6 +889,15 @@ addScreenButton.addEventListener('click', () => {
     fitTo(screenBounds(fresh))
   }
   render()
+})
+
+newProjectButton.addEventListener('click', () => { void newDocument() })
+openProjectButton.addEventListener('click', () => { void openDocument() })
+saveProjectButton.addEventListener('click', () => { void saveDocument(false) })
+saveProjectAsButton.addEventListener('click', () => { void saveDocument(true) })
+
+window.ledmapDesktop.onRequestSaveBeforeClose(() => {
+  void saveDocument(false).then(saved => window.ledmapDesktop.finishCloseAfterSave(saved))
 })
 
 function isPropertyControl(target: EventTarget | null): boolean {
@@ -837,6 +948,7 @@ function watchPixelRatio(): void {
 
 watchPixelRatio()
 fitOnFirstPaint()
+syncDocumentState()
 render()
 
 const hook: LedmapHook = {
@@ -882,6 +994,11 @@ const hook: LedmapHook = {
     return screenResizeHandles(camera, screen, screenShape(screen, screen.grid.columns, screen.grid.rows))
       .map(({ handle, point }) => ({ handle, x: point.x, y: point.y }))
   },
+  document: () => ({
+    dirty: editorDocument.dirty,
+    currentFilePath: editorDocument.currentFilePath,
+    sourceSchemaVersion: editorDocument.sourceSchemaVersion,
+  }),
 }
 
 ;(window as unknown as { __ledmap: LedmapHook }).__ledmap = hook

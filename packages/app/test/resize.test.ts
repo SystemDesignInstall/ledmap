@@ -4,8 +4,9 @@ import {
   applyDraft, buildCabinets, gridPixelSize, initialDraft, maxPreviewColumns, maxPreviewRows,
 } from '../src/renderer/state.js'
 import {
-  createDemoProject, findScreen, hitTest, projectBounds, resizeScreenGrid, screenBounds, screenHeight, screenWidth,
+  findScreen, hitTest, projectBounds, resizeScreenGrid, screenBounds, screenHeight, screenWidth,
 } from '../src/renderer/project.js'
+import { createTestProject } from './project-fixtures.js'
 
 const demo = () => applyDraft(null, initialDraft).snapshot!
 
@@ -124,7 +125,7 @@ describe('nextCabinetSerial allocates identity, not numbering', () => {
 
 describe('resizeScreenGrid is the only structural mutation', () => {
   it('changes the selected screen and leaves other screens untouched', () => {
-    const project = createDemoProject()
+    const project = createTestProject()
     const next = resizeScreenGrid(project, 'screen-1', 5, 4)
     const resizedScreen = next.screens[0]!
     expect([resizedScreen.grid.columns, resizedScreen.grid.rows]).toEqual([5, 4])
@@ -132,14 +133,14 @@ describe('resizeScreenGrid is the only structural mutation', () => {
     expect(resizedScreen.screen.resolution).toEqual(gridPixelSize(resizedScreen.grid))
     expect(resizedScreen.cabinets).toHaveLength(20)
     expect(resizedScreen.path).toEqual(cabinetOrder(resizedScreen.config))
-    expect(next.screens[1]).toBe(project.screens[1])
-    expect(next.screens[2]).toBe(project.screens[2])
+    expect(next.screens[1]).toEqual(project.screens[1])
+    expect(next.screens[2]).toEqual(project.screens[2])
     expect(project.screens[0]!.grid.columns).toBe(4)
     expect(project.screens[0]!.cabinets).toHaveLength(12)
   })
 
   it('preserves identity, position, name and screen id of surviving cabinets', () => {
-    const project = createDemoProject()
+    const project = createTestProject()
     const next = resizeScreenGrid(project, 'screen-1', 5, 3)
     const before = project.screens[0]!
     const after = next.screens[0]!
@@ -155,7 +156,7 @@ describe('resizeScreenGrid is the only structural mutation', () => {
   })
 
   it('recalculates bounds, hit testing and reported size from the new grid', () => {
-    const project = createDemoProject()
+    const project = createTestProject()
     const next = resizeScreenGrid(project, 'screen-1', 9, 3)
     const screen = next.screens[0]!
     expect(screenWidth(screen)).toBe(1152)
@@ -175,7 +176,7 @@ describe('resizeScreenGrid is the only structural mutation', () => {
   })
 
   it('rejects non-integer and out-of-range dimensions without mutating the project', () => {
-    const project = createDemoProject()
+    const project = createTestProject()
     expect(() => resizeScreenGrid(project, 'screen-1', 0, 3)).toThrow(/at least 1/)
     expect(() => resizeScreenGrid(project, 'screen-1', 4, -1)).toThrow(/at least 1/)
     expect(() => resizeScreenGrid(project, 'screen-1', 1.5, 3)).toThrow(/whole number/)
@@ -188,7 +189,7 @@ describe('resizeScreenGrid is the only structural mutation', () => {
   })
 
   it('keeps a 1x1 grid and reports the minimum reachable size', () => {
-    const project = resizeScreenGrid(createDemoProject(), 'screen-1', 1, 1)
+    const project = resizeScreenGrid(createTestProject(), 'screen-1', 1, 1)
     const screen = findScreen(project, 'screen-1')!
     expect(screen.cabinets).toHaveLength(1)
     expect(screen.screen.resolution).toEqual({ width: 128, height: 128 })

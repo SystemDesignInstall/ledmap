@@ -11,11 +11,15 @@
     <header class="topbar">
       <div class="brand"><span class="brand-mark">▦</span> LedMAP <span class="badge">ALPHA</span></div>
       <div class="toolbar">
+        <button id="new-project" type="button">New</button>
+        <button id="open-project" type="button">Open</button>
+        <button id="save-project" type="button">Save</button>
+        <button id="save-project-as" type="button">Save As</button>
+        <button id="add-screen" type="button">+ Screen</button>
         <button id="toggle-mode" type="button">Active Screen</button>
         <button id="fit-project" type="button">Fit to Project</button>
-        <button id="add-screen" type="button">+ Screen</button>
       </div>
-      <span class="session-note">In-memory session</span>
+      <span class="session-note">Project Document</span>
     </header>
     <main>
       <aside class="tree-panel">
@@ -31,7 +35,7 @@
           <span id="selection-chip" role="status">No selection</span>
         </div>
         <div id="viewport">
-          <div id="empty" hidden><span class="empty-icon">▦</span><h2>No screens</h2><p>Add a screen to start laying out your LED project.</p></div>
+          <div id="empty" hidden><span class="empty-icon">▦</span><h2>No screens yet</h2><p>Add your first Screen</p></div>
           <canvas id="project-canvas" role="img" aria-label="Project canvas. No screens."></canvas>
         </div>
       </article>
@@ -48,6 +52,7 @@
       <span id="canvas-note" class="status-note"></span>
       <span class="status-hints">Scroll: pan · Ctrl+Wheel: zoom · Middle / Space+drag: pan · Fit: all screens</span>
     </footer>
+    <div id="document-error" role="alert" hidden></div>
     <script type="module" src="./index.ts"></script>
   </body>
 </html>

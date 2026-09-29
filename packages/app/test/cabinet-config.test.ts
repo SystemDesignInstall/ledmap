@@ -2,17 +2,18 @@ import { describe, expect, it } from 'vitest'
 import { cabinetIndex, cabinetOrder } from '@ledmap/core'
 import { changeNumbering } from '../src/renderer/state.js'
 import {
-  createDemoProject, findScreen, hitTest, projectBounds, resizeScreenGrid, screenBounds,
+  findScreen, hitTest, projectBounds, resizeScreenGrid, screenBounds,
   updateScreenCabinetConfig,
 } from '../src/renderer/project.js'
+import { createTestProject } from './project-fixtures.js'
 
-function cells(screen: ReturnType<typeof createDemoProject>['screens'][number]): Array<[string, number, number]> {
+function cells(screen: ReturnType<typeof createTestProject>['screens'][number]): Array<[string, number, number]> {
   return screen.cabinets.map(cabinet => [cabinet.id, cabinet.column, cabinet.row])
 }
 
 describe('Cabinet geometry and ordering editor state', () => {
   it('recomputes cabinet and screen geometry from module geometry', () => {
-    const base = resizeScreenGrid(createDemoProject(), 'screen-1', 5, 2)
+    const base = resizeScreenGrid(createTestProject(), 'screen-1', 5, 2)
     const widerModules = updateScreenCabinetConfig(base, 'screen-1', { moduleColumns: 5 })
     const screen = findScreen(widerModules, 'screen-1')!
     expect([screen.grid.cabinetWidth, screen.grid.cabinetHeight]).toEqual([160, 128])
@@ -33,7 +34,7 @@ describe('Cabinet geometry and ordering editor state', () => {
   })
 
   it('preserves physical identity and the allocator across geometry changes', () => {
-    const project = createDemoProject()
+    const project = createTestProject()
     const before = findScreen(project, 'screen-1')!
     const next = updateScreenCabinetConfig(project, 'screen-1', {
       moduleColumns: 5,
@@ -50,7 +51,7 @@ describe('Cabinet geometry and ordering editor state', () => {
   })
 
   it('changes logical order without moving or renaming cabinets', () => {
-    const project = createDemoProject()
+    const project = createTestProject()
     const before = findScreen(project, 'screen-1')!
     const c04Before = before.cabinets.find(c => c.id === 'C04')!
     expect(c04Before.index).toBe(3)
@@ -68,13 +69,13 @@ describe('Cabinet geometry and ordering editor state', () => {
   })
 
   it('keeps the REF-001 traversal unchanged when no ordering patch is supplied', () => {
-    const project = updateScreenCabinetConfig(createDemoProject(), 'screen-1', { modulePixelWidth: 48 })
+    const project = updateScreenCabinetConfig(createTestProject(), 'screen-1', { modulePixelWidth: 48 })
     expect(findScreen(project, 'screen-1')!.cabinets.map(c => c.index + 1))
       .toEqual([1, 2, 3, 4, 8, 7, 6, 5, 9, 10, 11, 12])
   })
 
   it('translates reverse direction when numbering switches axis', () => {
-    const project = createDemoProject()
+    const project = createTestProject()
     const screen = findScreen(project, 'screen-1')!
     const reversed = { ...screen.grid.ordering, direction: 'right-to-left' as const }
     const ordering = changeNumbering(reversed, 'column')
@@ -88,7 +89,7 @@ describe('Cabinet geometry and ordering editor state', () => {
   })
 
   it('keeps geometry and ordering orthogonal', () => {
-    const project = createDemoProject()
+    const project = createTestProject()
     const before = findScreen(project, 'screen-1')!
     const reordered = findScreen(
       updateScreenCabinetConfig(project, 'screen-1', { snake: false }),
@@ -110,7 +111,7 @@ describe('Cabinet geometry and ordering editor state', () => {
   it.each([0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER + 1])(
     'rejects invalid module dimensions atomically: %s',
     value => {
-      const project = createDemoProject()
+      const project = createTestProject()
       const before = findScreen(project, 'screen-1')!
       expect(() => updateScreenCabinetConfig(project, 'screen-1', {
         moduleColumns: 5,
@@ -121,7 +122,7 @@ describe('Cabinet geometry and ordering editor state', () => {
   )
 
   it('rejects incompatible ordering atomically', () => {
-    const project = createDemoProject()
+    const project = createTestProject()
     const before = findScreen(project, 'screen-1')!
     expect(() => updateScreenCabinetConfig(project, 'screen-1', { numbering: 'column' }))
       .toThrow(/UNSUPPORTED_ORDERING/)
@@ -129,7 +130,7 @@ describe('Cabinet geometry and ordering editor state', () => {
   })
 
   it('enforces the total module preview limit', () => {
-    const project = resizeScreenGrid(createDemoProject(), 'screen-1', 32, 32)
+    const project = resizeScreenGrid(createTestProject(), 'screen-1', 32, 32)
     expect(() => updateScreenCabinetConfig(project, 'screen-1', {
       moduleColumns: 17,
       moduleRows: 4,
@@ -138,15 +139,15 @@ describe('Cabinet geometry and ordering editor state', () => {
   })
 
   it('changes only the selected screen', () => {
-    const project = createDemoProject()
+    const project = createTestProject()
     const next = updateScreenCabinetConfig(project, 'screen-1', { moduleColumns: 5, snake: false })
-    expect(next.screens[1]).toBe(project.screens[1])
-    expect(next.screens[2]).toBe(project.screens[2])
+    expect(next.screens[1]).toEqual(project.screens[1])
+    expect(next.screens[2]).toEqual(project.screens[2])
     expect(next.screens[0]).not.toBe(project.screens[0])
   })
 
   it('recalculates project bounds and hit testing from cabinet geometry', () => {
-    const project = updateScreenCabinetConfig(createDemoProject(), 'screen-1', { modulePixelWidth: 128 })
+    const project = updateScreenCabinetConfig(createTestProject(), 'screen-1', { modulePixelWidth: 128 })
     const screen = findScreen(project, 'screen-1')!
     expect(screenBounds(screen)).toEqual({ left: 0, top: 0, right: 2048, bottom: 384, width: 2048, height: 384 })
     expect(projectBounds(project).right).toBe(2048)
@@ -157,7 +158,7 @@ describe('Cabinet geometry and ordering editor state', () => {
   })
 
   it('rejects unknown screens without changing the project', () => {
-    const project = createDemoProject()
+    const project = createTestProject()
     expect(() => updateScreenCabinetConfig(project, 'missing', { snake: false })).toThrow(/Unknown screen/)
     expect(project.screens).toHaveLength(3)
   })

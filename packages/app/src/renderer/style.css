@@ -8,7 +8,7 @@ body { margin: 0; height: 100vh; display: flex; flex-direction: column; overflow
 .session-note, .eyebrow, .limits, .hint { color: #98a9bd; font-size: 12px; }
 .eyebrow { font-size: 10px; letter-spacing: 1.8px; }
 .toolbar { display: flex; gap: 8px; }
-.toolbar button { width: auto; padding: 8px 14px; }
+.toolbar button { width: auto; padding: 8px 11px; }
 button { background: #74e0c2; color: #102a26; border: 0; border-radius: 6px; padding: 9px 12px; font: inherit; font-size: 13px; font-weight: 650; cursor: pointer; }
 button:hover:enabled { background: #a4efdb; }
 button:disabled { color: #a9bacd; background: #263443; cursor: default; }
@@ -60,5 +60,6 @@ input[aria-invalid=true] { border-color: #ff9494; }
 .status-item { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .status-note { color: #e8ba79; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .status-hints { margin-left: auto; white-space: nowrap; }
+#document-error { position: fixed; left: 50%; bottom: 52px; transform: translateX(-50%); max-width: min(680px, calc(100vw - 48px)); padding: 11px 15px; border: 1px solid #b85d5d; border-radius: 6px; background: #3b2024; color: #ffd7d7; font-size: 12px; box-shadow: 0 8px 30px #0008; z-index: 10; }
 @media (max-width: 1180px) { main { grid-template-columns: 260px minmax(0, 1fr) 240px; } .status-hints { display: none; } }
 @media (max-width: 960px) { main { grid-template-columns: 240px minmax(0, 1fr); } .properties-panel { display: none; } }

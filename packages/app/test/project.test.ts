@@ -1,17 +1,18 @@
 import { describe, expect, it } from 'vitest'
 import { cabinetOrder } from '@ledmap/core'
 import {
-  addScreen, createDemoProject, findScreen, hitTest, moveScreen, projectBounds, screenBounds,
+  addScreen, findScreen, hitTest, moveScreen, projectBounds, screenBounds,
   setScreenPosition,
 } from '../src/renderer/project.js'
+import { createTestProject } from './project-fixtures.js'
 
-function firstOrder(project: ReturnType<typeof createDemoProject>): number[] {
+function firstOrder(project: ReturnType<typeof createTestProject>): number[] {
   return project.screens[0]!.cabinets.map(c => c.index + 1)
 }
 
 describe('Project canvas state', () => {
   it('builds the demo project: 3 screens with positions and sizes', () => {
-    const project = createDemoProject()
+    const project = createTestProject()
     expect(project.screens).toHaveLength(3)
     expect(project.screens.map(s => s.screen.name)).toEqual(['Screen 1', 'Screen 2', 'Screen 3'])
     expect(project.screens.map(s => [s.x, s.y])).toEqual([[0, 0], [700, 120], [320, 620]])
@@ -21,7 +22,7 @@ describe('Project canvas state', () => {
   })
 
   it('preserves the REF-001 snake order on Screen 1 and shares the core path', () => {
-    const project = createDemoProject()
+    const project = createTestProject()
     const screen = project.screens[0]!
     expect(screen.cabinets.map(c => c.index + 1)).toEqual([1, 2, 3, 4, 8, 7, 6, 5, 9, 10, 11, 12])
     expect(screen.cabinets.map(c => c.id)).toEqual(['C01', 'C02', 'C03', 'C04', 'C05', 'C06', 'C07', 'C08', 'C09', 'C10', 'C11', 'C12'])
@@ -31,7 +32,7 @@ describe('Project canvas state', () => {
   })
 
   it('moves a screen without touching cabinet IDs, order or geometry', () => {
-    const original = createDemoProject()
+    const original = createTestProject()
     const moved = moveScreen(original, 'screen-1', 50, 90)
     const screen = moved.screens[0]!
     expect([screen.x, screen.y]).toEqual([50, 90])
@@ -44,7 +45,7 @@ describe('Project canvas state', () => {
   })
 
   it('supports negative project coordinates without changing signal order', () => {
-    const original = createDemoProject()
+    const original = createTestProject()
     const moved = setScreenPosition(original, 'screen-1', -120, -80)
     expect([moved.screens[0]!.x, moved.screens[0]!.y]).toEqual([-120, -80])
     expect(firstOrder(moved)).toEqual(firstOrder(original))
@@ -52,19 +53,19 @@ describe('Project canvas state', () => {
   })
 
   it('computes project bounds for the demo and after moving a screen into negative space', () => {
-    const project = createDemoProject()
+    const project = createTestProject()
     expect(projectBounds(project)).toEqual({ left: 0, top: 0, right: 1084, bottom: 876, width: 1084, height: 876 })
     const moved = setScreenPosition(project, 'screen-1', -100, -50)
     expect(projectBounds(moved)).toEqual({ left: -100, top: -50, right: 1084, bottom: 876, width: 1184, height: 926 })
   })
 
   it('offers per-screen bounds from the derived resolution', () => {
-    const project = createDemoProject()
+    const project = createTestProject()
     expect(screenBounds(project.screens[1]!)).toEqual({ left: 700, top: 120, right: 1084, bottom: 376, width: 384, height: 256 })
   })
 
   it('hit-tests the topmost screen and resolves cabinets inside the grid', () => {
-    const project = createDemoProject()
+    const project = createTestProject()
     const first = hitTest(project, { x: 10, y: 10 })!
     expect(first.screen.screen.name).toBe('Screen 1')
     expect(first.cabinet?.id).toBe('C01')
@@ -80,7 +81,7 @@ describe('Project canvas state', () => {
   })
 
   it('adds a screen offset from the previous one with default grid parameters', () => {
-    const project = addScreen(createDemoProject())
+    const project = addScreen(createTestProject())
     expect(project.screens).toHaveLength(4)
     const fresh = project.screens[3]!
     expect(fresh.screen.id).toBe('screen-4')
@@ -92,7 +93,7 @@ describe('Project canvas state', () => {
   })
 
   it('keeps findScreen usable for selection lookups', () => {
-    const project = createDemoProject()
+    const project = createTestProject()
     expect(findScreen(project, 'screen-2')?.screen.name).toBe('Screen 2')
     expect(findScreen(project, 'missing')).toBeUndefined()
   })

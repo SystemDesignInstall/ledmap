@@ -11,6 +11,14 @@ function cells(screen: ReturnType<typeof createTestProject>['screens'][number]):
   return screen.cabinets.map(cabinet => [cabinet.id, cabinet.column, cabinet.row])
 }
 
+function orderOf(project: ReturnType<typeof createTestProject>, screenId: string): string[] {
+  return findScreen(project, screenId)!
+    .cabinets
+    .slice()
+    .sort((a, b) => a.index - b.index)
+    .map(cabinet => cabinet.id)
+}
+
 describe('Cabinet geometry and ordering editor state', () => {
   it('recomputes cabinet and screen geometry from module geometry', () => {
     const base = resizeScreenGrid(createTestProject(), 'screen-1', 5, 2)
@@ -161,5 +169,49 @@ describe('Cabinet geometry and ordering editor state', () => {
     const project = createTestProject()
     expect(() => updateScreenCabinetConfig(project, 'missing', { snake: false })).toThrow(/Unknown screen/)
     expect(project.screens).toHaveLength(3)
+  })
+})
+
+describe('cabinet traversal order fixtures', () => {
+  it.each([
+    {
+      name: 'column numbering, top to bottom, snake off matches LEDMAP-REF-003 §3',
+      patch: { numbering: 'column', direction: 'top-to-bottom', snake: false } as const,
+      expected: ['C01', 'C05', 'C09', 'C02', 'C06', 'C10', 'C03', 'C07', 'C11', 'C04', 'C08', 'C12'],
+    },
+    {
+      name: 'column numbering, top to bottom, snake on matches LEDMAP-REF-003 §4',
+      patch: { numbering: 'column', direction: 'top-to-bottom', snake: true } as const,
+      expected: ['C01', 'C05', 'C09', 'C10', 'C06', 'C02', 'C03', 'C07', 'C11', 'C12', 'C08', 'C04'],
+    },
+    {
+      name: 'column numbering, bottom to top, snake off matches LEDMAP-REF-004 §3',
+      patch: { numbering: 'column', direction: 'bottom-to-top', snake: false } as const,
+      expected: ['C09', 'C05', 'C01', 'C10', 'C06', 'C02', 'C11', 'C07', 'C03', 'C12', 'C08', 'C04'],
+    },
+    {
+      name: 'column numbering, bottom to top, snake on matches LEDMAP-REF-004 §4',
+      patch: { numbering: 'column', direction: 'bottom-to-top', snake: true } as const,
+      expected: ['C09', 'C05', 'C01', 'C02', 'C06', 'C10', 'C11', 'C07', 'C03', 'C04', 'C08', 'C12'],
+    },
+  ])('$name', ({ patch, expected }) => {
+    const project = updateScreenCabinetConfig(createTestProject(), 'screen-1', patch)
+    expect(orderOf(project, 'screen-1')).toEqual(expected)
+  })
+
+  it.each([
+    {
+      name: 'row numbering, right to left, snake on',
+      patch: { direction: 'right-to-left', snake: true } as const,
+      expected: ['C04', 'C03', 'C02', 'C01', 'C05', 'C06', 'C07', 'C08', 'C12', 'C11', 'C10', 'C09'],
+    },
+    {
+      name: 'row numbering, right to left, snake off',
+      patch: { direction: 'right-to-left', snake: false } as const,
+      expected: ['C04', 'C03', 'C02', 'C01', 'C08', 'C07', 'C06', 'C05', 'C12', 'C11', 'C10', 'C09'],
+    },
+  ])('$name has no reference document, so the order is pinned from the engine', ({ patch, expected }) => {
+    const project = updateScreenCabinetConfig(createTestProject(), 'screen-1', patch)
+    expect(orderOf(project, 'screen-1')).toEqual(expected)
   })
 })

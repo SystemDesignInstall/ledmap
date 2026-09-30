@@ -127,7 +127,7 @@
 
 ## Early Alpha UI — итерация 4: редактор geometry и ordering кабинета
 
-Статус: **IMPLEMENTED / CI PASS 2026-09-28 — NOT MERGED.** Итерация 3 закрыта; итерация 4 реализована в `feat/cabinet-geometry-ordering-editor`.
+Статус: **ACCEPTED / CLOSED — merged via PR #2 on 2026-09-28; merge `a3ac0ab36600c32cd9e1a645e770af50246de461`.** Итерация 4 завершена.
 
 - [x] Docs-gate: [LEDMAP-ALPHA-UI-004](docs/specs/LEDMAP-ALPHA-UI-004.md) + ADR-027 + `TODO.md` + `AGENTS.md` в ветке `feat/cabinet-geometry-ordering-editor` от `dc027f7`; одобрено пользователем 2026-09-28. Production implementation разрешён после этого docs-only gate.
 - [x] Scope: `moduleColumns`, `moduleRows`, `modulePixelWidth`, `modulePixelHeight`, `numbering` (Row/Column), `direction` (L→R/R→L для Row, T→B/B→T для Column), `snake` (ON/OFF). `Cabinet Width/Height` и `Screen Width/Height` остаются вычисляемыми и read-only — третий независимый размер не вводится. `startCorner` не редактируется и остаётся `top-left`; rotation/flip остаются `UNSUPPORTED_TRANSFORM`.
@@ -137,10 +137,10 @@
 - [x] Переименование в app: `moduleCount` → `modulesPerCabinet` + `totalModules` (в core не выходит).
 - [x] Тесты: unit на module-геометрию (`4→5` → `160 × 128`; `32→64` → `256 × 128`), неприкосновенность ID и `nextCabinetSerial`, четыре комбинации ordering против REF-001 и зеркал, ортогональность, атомарность, валидация, предел 65 536 модулей, изоляция экранов; Electron smoke (правка `moduleColumns`, смена `Numbering`/`Snake`, `aria-invalid`, недостижимые опции `Direction`, сохранение панели `Cabinet Grid`, REF-001 safety). Baseline 1252 теста / 53 файла.
 - [x] Вне scope соблюдено: индивидуальная геометрия кабинета (`C01` ≠ `C02`), перенос геометрии в hardware topology как authority (отдельный gate интеграции Phase 8/7E), Open/Save mapping между uniform preview geometry и существующими serialized Cabinet/Module records v1 (schema v1 не меняется), перетаскивание кабинета между экранами, новые canvas-жесты, undo/redo.
-- [x] Production-код начат только после docs-gate `8764f52`; implementation `051f5e8` + UI/smoke `4800559`; GitHub CI `9e0abf9` — `test`/`typecheck`/`lint`/`build`/Electron smoke PASS.
+- [x] Production-код начат только после docs-gate `8764f52`; implementation `051f5e8` + UI/smoke `4800559`; CI foundation `130c38c` + Electron smoke gate `9e0abf9` — PASS; review correctives `d1b8c67` / `133edf9`; PR #2 merged as `a3ac0ab`.
 
 ## Запреты на ближайших этапах (0–5)
-- UI — Phase 8; исключение только для Early Alpha UI по утверждённым LEDMAP-ALPHA-UI-001 / ADR-017, LEDMAP-ALPHA-UI-002 / ADR-024 и LEDMAP-ALPHA-UI-003 / ADR-026 (итерация 3 CLOSED); итерация 4 по LEDMAP-ALPHA-UI-004 / ADR-027 реализована и прошла CI в feature-ветке; до merge считается кандидатом
+- UI — Phase 8; исключение только для Early Alpha UI по утверждённым LEDMAP-ALPHA-UI-001 / ADR-017, LEDMAP-ALPHA-UI-002 / ADR-024, LEDMAP-ALPHA-UI-003 / ADR-026 (итерация 3 CLOSED) и LEDMAP-ALPHA-UI-004 / ADR-027 (итерация 4 ACCEPTED / CLOSED на merge `a3ac0ab`); дальнейшее расширение UI требует нового gate
 - Electron runtime — Phase 8; в одобренном Early Alpha разрешены окно и renderer, без привилегированного IPC
 - Без hardware драйверов/сетевых протоколов видеопроцессоров
 - Без экспортных форматов производителей

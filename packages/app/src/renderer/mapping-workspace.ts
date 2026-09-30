@@ -9,6 +9,7 @@ import {
   unmapGeometryModulePixel,
   type EditableProjectionDiagnostic,
   type GeometryMappedPixel,
+  type LedMapProjectV2,
   type MappingRegion,
   type ResolvedGeometryMapping,
 } from '@ledmap/core'
@@ -23,18 +24,18 @@ import {
   type MappingResizeHandle,
 } from './mapping-canvas.js'
 import {
-  addMappingRegion,
-  deleteMappingRegion,
   findMappingRegion,
-  mapFromLayoutPosition,
-  setInputCanvasResolution,
-  updateMappingRegion,
+  type MappingRegionPatch,
 } from './mapping-project.js'
+import {
+  addMappingRegionV2, deleteMappingRegionV2, mapFromLayoutPositionV2,
+  setInputCanvasResolutionV2, updateMappingRegionV2,
+} from './v2-commands.js'
 import { findScreen, type Project } from './project.js'
 
 interface MappingWorkspaceOptions {
   readonly getProject: () => Project
-  readonly updateProject: (project: Project) => void
+  readonly runCommand: (command: (project: LedMapProjectV2) => LedMapProjectV2) => void
   readonly showError: (error: unknown, fallback: string) => void
   readonly clearError: () => void
 }
@@ -251,14 +252,15 @@ export function createMappingWorkspace(options: MappingWorkspaceOptions): Mappin
     zoomStatus.textContent = `${Math.round(camera.zoom * 100)}%`
   }
 
-  function mutate(run: () => Project, fallback: string): void {
+  function mutate(run: (project: LedMapProjectV2) => LedMapProjectV2, fallback: string): boolean {
     options.clearError()
     try {
-      const next = run()
-      options.updateProject(next)
+      options.runCommand(run)
       render()
+      return true
     } catch (error) {
       options.showError(error, fallback)
+      return false
     }
   }
 
@@ -293,39 +295,33 @@ export function createMappingWorkspace(options: MappingWorkspaceOptions): Mappin
   function createRegion(): void {
     const screen = selectedScreen()
     if (!screen) return
-    mutate(() => {
-      const next = addMappingRegion(project(), screen.screen.id)
-      selectedRegionId = next.source.mappingRegions[next.source.mappingRegions.length - 1]?.id ?? null
-      inspectionRegionId = selectedRegionId
-      return next
-    }, 'Unable to create Mapping Region.')
+    if (!mutate(source => addMappingRegionV2(source, screen.screen.id), 'Unable to create Mapping Region.')) return
+    selectedRegionId = project().source.mappingRegions[project().source.mappingRegions.length - 1]?.id ?? null
+    inspectionRegionId = selectedRegionId
+    render()
   }
 
   function mapFromLayout(): void {
     const screen = selectedScreen()
     if (!screen) return
-    mutate(() => {
-      const next = mapFromLayoutPosition(project(), screen.screen.id, selectedRegionId ?? undefined)
-      const target = selectedRegionId
-        ? findMappingRegion(next, selectedRegionId)
-        : next.source.mappingRegions.find(region => region.screen === screen.screen.id)
-      selectedRegionId = target?.id ?? null
-      inspectionRegionId = selectedRegionId
-      return next
-    }, 'Unable to map from Layout position.')
+    if (!mutate(source => mapFromLayoutPositionV2(source, screen.screen.id, selectedRegionId ?? undefined), 'Unable to map from Layout position.')) return
+    const target = selectedRegionId
+      ? findMappingRegion(project(), selectedRegionId)
+      : project().source.mappingRegions.find(region => region.screen === screen.screen.id)
+    selectedRegionId = target?.id ?? null
+    inspectionRegionId = selectedRegionId
+    render()
   }
 
   function removeRegion(): void {
     if (!selectedRegionId) return
     const regionId = selectedRegionId
-    mutate(() => {
-      const next = deleteMappingRegion(project(), regionId)
-      selectedRegionId = null
-      inspectionRegionId = null
-      inspectedInput = null
-      reverseResult = null
-      return next
-    }, 'Unable to delete Mapping Region.')
+    if (!mutate(source => deleteMappingRegionV2(source, regionId), 'Unable to delete Mapping Region.')) return
+    selectedRegionId = null
+    inspectionRegionId = null
+    inspectedInput = null
+    reverseResult = null
+    render()
   }
 
   function renderTree(): void {
@@ -403,8 +399,8 @@ export function createMappingWorkspace(options: MappingWorkspaceOptions): Mappin
     }
   }
 
-  function commitRegion(regionId: string, patch: Parameters<typeof updateMappingRegion>[2]): void {
-    mutate(() => updateMappingRegion(project(), regionId, patch), 'Unable to update Mapping Region.')
+  function commitRegion(regionId: string, patch: MappingRegionPatch): void {
+    mutate(source => updateMappingRegionV2(source, regionId, patch), 'Unable to update Mapping Region.')
   }
 
   function geometryFields(region: MappingRegion): HTMLElement {
@@ -612,7 +608,7 @@ export function createMappingWorkspace(options: MappingWorkspaceOptions): Mappin
   }
 
   function configureInput(): void {
-    mutate(() => setInputCanvasResolution(project(), Number(widthInput.value), Number(heightInput.value)), 'Unable to configure Input Canvas.')
+    mutate(source => setInputCanvasResolutionV2(source, Number(widthInput.value), Number(heightInput.value)), 'Unable to configure Input Canvas.')
     fit()
   }
 
@@ -722,7 +718,13 @@ export function createMappingWorkspace(options: MappingWorkspaceOptions): Mappin
       const y = Math.max(0, Math.round(gesture.y + point.y - gesture.start.y))
       const region = findMappingRegion(project(), gesture.regionId)
       if (region && (region.position.x !== x || region.position.y !== y)) {
-        options.updateProject(updateMappingRegion(project(), gesture.regionId, { x, y }))
+        const regionId = gesture.regionId
+        try {
+          options.runCommand(source => updateMappingRegionV2(source, regionId, { x, y }))
+        } catch (error) {
+          options.showError(error, 'Unable to move Mapping Region.')
+          return
+        }
         render()
       }
       return
@@ -734,7 +736,12 @@ export function createMappingWorkspace(options: MappingWorkspaceOptions): Mappin
         current.position.x !== geometry.x || current.position.y !== geometry.y ||
         current.size.width !== geometry.width || current.size.height !== geometry.height
       )) {
-        options.updateProject(updateMappingRegion(project(), current.id, geometry))
+        try {
+          options.runCommand(source => updateMappingRegionV2(source, current.id, geometry))
+        } catch (error) {
+          options.showError(error, 'Unable to resize Mapping Region.')
+          return
+        }
         render()
       }
       return

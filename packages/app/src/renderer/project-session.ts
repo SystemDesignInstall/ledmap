@@ -2,7 +2,9 @@ import {
   convertEditableProjectToV2,
   createEmptyProjectV2,
   createProjectV2,
+  assertProjectV2EditorStructure,
   loadEditableProject,
+  inspectProjectV2,
   projectV2AsEditableReadModel,
   serializeEditableProject,
   DomainError,
@@ -187,6 +189,16 @@ export function commitLegacyProject(session: ProjectSession, next: Project): Pro
   if (sameDocumentValue(original, candidate)) {
     throw new DomainError('PROJECT_COMPAT_MUTATION_LOSSY', 'The legacy mutation produced no Project Model v2 change')
   }
+  return commitProjectV2(session, () => candidate)
+}
+
+export function commitProjectV2(session: ProjectSession, command: (project: LedMapProjectV2) => LedMapProjectV2): ProjectSession {
+  const proposed = command(session.project)
+  if (sameDocumentValue(session.project, proposed)) return session
+  const candidate = createProjectV2(proposed)
+  assertProjectV2EditorStructure(candidate)
+  const diagnostic = inspectProjectV2(candidate)[0]
+  if (diagnostic) throw new DomainError('PROJECT_V2_INVALID', `${diagnostic.code}: ${diagnostic.message}`)
   projectV2WorkspaceReadModel(candidate)
   if (!Number.isSafeInteger(session.revision + 1)) throw new DomainError('PROJECT_REVISION_OVERFLOW', 'Project revision exceeds the safe integer range')
   return Object.freeze({ ...session, project: candidate, revision: session.revision + 1 })

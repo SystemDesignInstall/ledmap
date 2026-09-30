@@ -122,3 +122,93 @@ export function assertProjectV2HardwareContract(project: LedMapProjectV2): void 
     }
   }
 }
+
+function positive(value: number, label: string): void {
+  if (!Number.isSafeInteger(value) || value < 1) fail('PROJECT_INVALID_GEOMETRY', `${label} must be a positive safe integer`)
+}
+
+function nonnegative(value: number, label: string): void {
+  if (!Number.isSafeInteger(value) || value < 0) fail('PROJECT_INVALID_GEOMETRY', `${label} must be a non-negative safe integer`)
+}
+
+export function assertProjectV2EditorStructure(project: LedMapProjectV2): void {
+  assertProjectV2ReferenceOrderContract(project)
+  const screens = uniqueById(project.design.screens, 'Screen')
+  const grids = uniqueById(project.design.cabinetGrids, 'CabinetGrid')
+  const cabinets = uniqueById(project.design.cabinets, 'Cabinet')
+  const canvases = uniqueById(project.content.inputCanvases, 'InputCanvas')
+  uniqueById(project.design.modules, 'Module')
+  const placements = new Set<string>()
+  for (const placement of project.design.composition.placements) {
+    if (!screens.has(placement.screenId)) fail('PROJECT_UNKNOWN_SCREEN', `CompositionPlacement references unknown Screen ${placement.screenId}`)
+    if (placements.has(placement.screenId)) fail('PROJECT_DUPLICATE_COMPOSITION_PLACEMENT', `Screen ${placement.screenId} has more than one CompositionPlacement`)
+    placements.add(placement.screenId)
+    if (!Number.isSafeInteger(placement.x) || !Number.isSafeInteger(placement.y)) {
+      fail('PROJECT_INVALID_GEOMETRY', `Screen ${placement.screenId} placement must use signed safe integers`)
+    }
+  }
+  for (const screen of screens.values()) {
+    positive(screen.resolution.width, `Screen ${screen.id} width`)
+    positive(screen.resolution.height, `Screen ${screen.id} height`)
+    if (!placements.has(screen.id)) fail('PROJECT_MISSING_PLACEMENT', `Screen ${screen.id} has no CompositionPlacement`)
+  }
+  for (const grid of grids.values()) {
+    positive(grid.columns, `CabinetGrid ${grid.id} columns`)
+    positive(grid.rows, `CabinetGrid ${grid.id} rows`)
+    positive(grid.cabinetWidth, `CabinetGrid ${grid.id} width`)
+    positive(grid.cabinetHeight, `CabinetGrid ${grid.id} height`)
+  }
+  for (const canvas of canvases.values()) {
+    positive(canvas.resolution.width, `InputCanvas ${canvas.id} width`)
+    positive(canvas.resolution.height, `InputCanvas ${canvas.id} height`)
+  }
+  for (const region of project.content.mappingRegions) {
+    if (!canvases.has(region.inputCanvasId)) fail('PROJECT_UNKNOWN_INPUT_CANVAS', `MappingRegion ${region.id} references unknown InputCanvas ${region.inputCanvasId}`)
+    if (!screens.has(region.screenId)) fail('PROJECT_UNKNOWN_SCREEN', `MappingRegion ${region.id} references unknown Screen ${region.screenId}`)
+    if (grids.get(region.gridId)?.screenId !== region.screenId) {
+      fail('PROJECT_REGION_GRID_PARENT_MISMATCH', `MappingRegion ${region.id} references a CabinetGrid outside its Screen`)
+    }
+    nonnegative(region.position.x, `MappingRegion ${region.id} x`)
+    nonnegative(region.position.y, `MappingRegion ${region.id} y`)
+    positive(region.size.width, `MappingRegion ${region.id} width`)
+    positive(region.size.height, `MappingRegion ${region.id} height`)
+  }
+  const occupiedCabinets = new Set<string>()
+  for (const cabinet of cabinets.values()) {
+    const grid = grids.get(cabinet.gridId)
+    if (!grid) fail('PROJECT_UNKNOWN_GRID', `Cabinet ${cabinet.id} references unknown CabinetGrid ${cabinet.gridId}`)
+    nonnegative(cabinet.column, `Cabinet ${cabinet.id} column`)
+    nonnegative(cabinet.row, `Cabinet ${cabinet.id} row`)
+    if (cabinet.column >= grid.columns || cabinet.row >= grid.rows) fail('PROJECT_CABINET_OUT_OF_RANGE', `Cabinet ${cabinet.id} is outside CabinetGrid ${grid.id}`)
+    nonnegative(cabinet.origin.x, `Cabinet ${cabinet.id} origin x`)
+    nonnegative(cabinet.origin.y, `Cabinet ${cabinet.id} origin y`)
+    positive(cabinet.width, `Cabinet ${cabinet.id} width`)
+    positive(cabinet.height, `Cabinet ${cabinet.id} height`)
+    positive(cabinet.pixelWidth, `Cabinet ${cabinet.id} pixel width`)
+    positive(cabinet.pixelHeight, `Cabinet ${cabinet.id} pixel height`)
+    positive(cabinet.moduleColumns, `Cabinet ${cabinet.id} module columns`)
+    positive(cabinet.moduleRows, `Cabinet ${cabinet.id} module rows`)
+    const cell = `${cabinet.gridId}:${cabinet.column},${cabinet.row}`
+    if (occupiedCabinets.has(cell)) fail('PROJECT_DUPLICATE_CELL', `CabinetGrid ${cabinet.gridId} cell ${cabinet.column},${cabinet.row} is occupied twice`)
+    occupiedCabinets.add(cell)
+  }
+  const occupiedModules = new Set<string>()
+  for (const module of project.design.modules) {
+    const cabinet = cabinets.get(module.cabinetId)
+    if (!cabinet) fail('PROJECT_UNKNOWN_CABINET', `Module ${module.id} references unknown Cabinet ${module.cabinetId}`)
+    nonnegative(module.column, `Module ${module.id} column`)
+    nonnegative(module.row, `Module ${module.id} row`)
+    if (module.column >= cabinet.moduleColumns || module.row >= cabinet.moduleRows) fail('PROJECT_MODULE_OUT_OF_RANGE', `Module ${module.id} is outside Cabinet ${cabinet.id}`)
+    positive(module.width, `Module ${module.id} width`)
+    positive(module.height, `Module ${module.id} height`)
+    positive(module.pixelWidth, `Module ${module.id} pixel width`)
+    positive(module.pixelHeight, `Module ${module.id} pixel height`)
+    if (cabinet.moduleColumns * module.width !== cabinet.width || cabinet.moduleRows * module.height !== cabinet.height ||
+        cabinet.moduleColumns * module.pixelWidth !== cabinet.pixelWidth || cabinet.moduleRows * module.pixelHeight !== cabinet.pixelHeight) {
+      fail('PROJECT_MODULE_GRID_MISMATCH', `Module ${module.id} does not tile Cabinet ${cabinet.id}`)
+    }
+    const cell = `${cabinet.id}:${module.column},${module.row}`
+    if (occupiedModules.has(cell)) fail('PROJECT_DUPLICATE_CELL', `Cabinet ${cabinet.id} module cell ${module.column},${module.row} is occupied twice`)
+    occupiedModules.add(cell)
+  }
+}

@@ -1,13 +1,15 @@
 import {
-  deleteScreens, duplicateScreen, findScreen, hitTest, maxColumnsForRows, maxRowsForColumns,
-  projectBounds, renameScreen,
-  resizeScreenGrid, screenBounds, screenHeight, screenWidth, setScreenPosition, setScreenPositions,
-  updateScreenCabinetConfig,
+  findScreen, hitTest, maxColumnsForRows, maxRowsForColumns, projectBounds,
+  screenBounds, screenHeight, screenWidth,
   type Project, type ScreenCabinetConfigPatch, type ScreenView, type SelectedObject,
 } from './project.js'
-import { addScreen } from './project.js'
+import type { LedMapProjectV2 } from '@ledmap/core'
 import { ProjectDocumentController } from './document.js'
 import { createProjectSession, sessionDirty, sessionWorkspaceProject, type ProjectSession } from './project-session.js'
+import {
+  addScreenV2, deleteScreensV2, duplicateScreenV2, renameScreenV2, resizeScreenGridV2,
+  setScreenPositionV2, setScreenPositionsV2, updateScreenCabinetConfigV2,
+} from './v2-commands.js'
 import { changeNumbering, initialDraft, type Draft } from './state.js'
 import type { GridShape, OverlayVisibility, Point, ResizeHandle, ResizePreview } from './canvas.js'
 import {
@@ -186,6 +188,11 @@ function directionLabel(direction: Direction): string {
 
 function apply(next: Project): void {
   documentController.commit(next)
+  syncDocumentState()
+}
+
+function applyV2(command: (project: LedMapProjectV2) => LedMapProjectV2): void {
+  documentController.transactV2(command)
   syncDocumentState()
 }
 
@@ -578,7 +585,7 @@ function gridValidator(label: string, limit: (value: number) => number): (value:
 
 function cabinetConfigProblem(screenId: string, patch: ScreenCabinetConfigPatch): string | null {
   try {
-    updateScreenCabinetConfig(currentProject(), screenId, patch)
+    updateScreenCabinetConfigV2(documentController.session.project, screenId, patch)
     return null
   } catch (error) {
     return error instanceof Error ? error.message : 'Unable to update cabinet configuration.'
@@ -587,7 +594,7 @@ function cabinetConfigProblem(screenId: string, patch: ScreenCabinetConfigPatch)
 
 function commitCabinetConfig(screenId: string, patch: ScreenCabinetConfigPatch): string | null {
   try {
-    apply(updateScreenCabinetConfig(currentProject(), screenId, patch))
+    applyV2(project => updateScreenCabinetConfigV2(project, screenId, patch))
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unable to update cabinet configuration.'
     canvasNote.textContent = message
@@ -695,7 +702,7 @@ function renderScreenProperties(screen: ScreenView): void {
   container.className = 'properties-body'
   const nameInput = textField(screen.screen.name, 'Screen name', value => {
     try {
-      apply(renameScreen(currentProject(), screen.screen.id, value))
+      applyV2(project => renameScreenV2(project, screen.screen.id, value))
       render()
       return null
     } catch (error) {
@@ -706,11 +713,19 @@ function renderScreenProperties(screen: ScreenView): void {
 
   const positionBox = document.createElement('div')
   const xInput = numberField(screen.x, 'Screen X position', value => {
-    apply(setScreenPosition(currentProject(), screen.screen.id, value, screen.y))
+    try {
+      applyV2(project => setScreenPositionV2(project, screen.screen.id, value, screen.y))
+    } catch (error) {
+      showDocumentError(error, 'Unable to move Screen.')
+    }
     render()
   }, signedCoordinateProblem)
   const yInput = numberField(screen.y, 'Screen Y position', value => {
-    apply(setScreenPosition(currentProject(), screen.screen.id, screen.x, value))
+    try {
+      applyV2(project => setScreenPositionV2(project, screen.screen.id, screen.x, value))
+    } catch (error) {
+      showDocumentError(error, 'Unable to move Screen.')
+    }
     render()
   }, signedCoordinateProblem)
   xInput.removeAttribute('min')
@@ -810,10 +825,14 @@ function selectedPositions(): Readonly<Record<string, LayoutPoint>> {
 }
 
 function applyScreenPositions(positions: Readonly<Record<string, LayoutPoint>>): boolean {
-  const next = setScreenPositions(currentProject(), positions)
-  if (next === currentProject()) return false
-  apply(next)
-  return true
+  try {
+    const before = documentController.session
+    applyV2(project => setScreenPositionsV2(project, positions))
+    return documentController.session !== before
+  } catch (error) {
+    showDocumentError(error, 'Unable to move the selected Screens.')
+    return false
+  }
 }
 
 function signedCoordinateProblem(value: number): string | null {
@@ -822,7 +841,7 @@ function signedCoordinateProblem(value: number): string | null {
 
 function commitResize(screenId: string, columns: number, rows: number): string | null {
   try {
-    apply(resizeScreenGrid(currentProject(), screenId, columns, rows))
+    applyV2(project => resizeScreenGridV2(project, screenId, columns, rows))
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unable to resize the cabinet grid.'
     canvasNote.textContent = message
@@ -1064,9 +1083,10 @@ canvas.addEventListener('pointermove', event => {
         const start = dragState!.positions[id]!
         return [id, { x: start.x + snapped.dx, y: start.y + snapped.dy }]
       }))
-      applyScreenPositions(positions)
-      dragState.appliedDx = snapped.dx
-      dragState.appliedDy = snapped.dy
+      if (applyScreenPositions(positions)) {
+        dragState.appliedDx = snapped.dx
+        dragState.appliedDy = snapped.dy
+      }
     }
     render()
     return
@@ -1135,10 +1155,10 @@ fitProject.addEventListener('click', () => {
   renderStatus()
 })
 
-function finishAddingScreen(next: Project): void {
-  const fresh = next.screens[next.screens.length - 1]
+function finishAddingScreen(): void {
+  const project = currentProject()
+  const fresh = project.screens[project.screens.length - 1]
   if (!fresh) return
-  apply(next)
   selection = { type: 'screen', id: fresh.screen.id }
   selectedScreenIds = [fresh.screen.id]
   activeScreenId = fresh.screen.id
@@ -1190,15 +1210,15 @@ screenForm.addEventListener('submit', event => {
     ordering: { ...initialDraft.ordering },
   }
   try {
-    const next = addScreen(currentProject(), draft, {
+    applyV2(project => addScreenV2(project, draft, {
       name: dialogInput('new-screen-name').value,
       position: {
         x: Number(dialogInput('new-screen-x').value),
         y: Number(dialogInput('new-screen-y').value),
       },
-    })
+    }))
     screenDialog.close()
-    finishAddingScreen(next)
+    finishAddingScreen()
   } catch (error) {
     screenFormError.textContent = error instanceof Error ? error.message : 'Unable to add Screen.'
     screenFormError.hidden = false
@@ -1263,14 +1283,16 @@ renameScreenButton.addEventListener('click', focusScreenName)
 duplicateScreenButton.addEventListener('click', () => {
   const sourceIds = [...selectedScreenIds]
   if (sourceIds.length === 0) return
-  let next = currentProject()
   const duplicates: string[] = []
-  for (const screenId of sourceIds) {
-    next = duplicateScreen(next, screenId)
-    const fresh = next.screens[next.screens.length - 1]
-    if (fresh) duplicates.push(fresh.screen.id)
-  }
-  apply(next)
+  applyV2(original => {
+    let next = original
+    for (const screenId of sourceIds) {
+      next = duplicateScreenV2(next, screenId)
+      const fresh = next.design.screens[next.design.screens.length - 1]
+      if (fresh) duplicates.push(fresh.id)
+    }
+    return next
+  })
   selectedScreenIds = duplicates
   activeScreenId = duplicates[duplicates.length - 1] ?? null
   selection = duplicates.length === 1 ? { type: 'screen', id: duplicates[0]! } : null
@@ -1280,7 +1302,12 @@ duplicateScreenButton.addEventListener('click', () => {
 
 function deleteSelection(): void {
   if (selectedScreenIds.length === 0) return
-  apply(deleteScreens(currentProject(), selectedScreenIds))
+  try {
+    applyV2(project => deleteScreensV2(project, selectedScreenIds))
+  } catch (error) {
+    showDocumentError(error, 'Unable to delete the selected Screens.')
+    return
+  }
   selectedScreenIds = []
   selection = null
   activeScreenId = currentProject().screens[0]?.screen.id ?? null
@@ -1302,7 +1329,7 @@ window.ledmapDesktop.onRequestSaveBeforeClose(() => {
 
 mappingWorkspace = createMappingWorkspace({
   getProject: () => currentProject(),
-  updateProject: next => apply(next),
+  runCommand: command => applyV2(command),
   showError: showDocumentError,
   clearError: clearDocumentError,
 })

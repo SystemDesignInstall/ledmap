@@ -1,6 +1,8 @@
 import { projectV2AsEditableReadModel, type LedMapProjectV2 } from '@ledmap/core'
 import { createProject, type Project } from './project.js'
 
+const readCache = new WeakMap<LedMapProjectV2, Project>()
+
 function detachedFrozen<T>(value: T): T {
   if (Array.isArray(value)) return Object.freeze(value.map(item => detachedFrozen(item))) as T
   if (value !== null && typeof value === 'object') {
@@ -10,5 +12,9 @@ function detachedFrozen<T>(value: T): T {
 }
 
 export function projectV2WorkspaceReadModel(project: LedMapProjectV2): Project {
-  return detachedFrozen(createProject(projectV2AsEditableReadModel(project)))
+  const cached = readCache.get(project)
+  if (cached) return cached
+  const derived = detachedFrozen(createProject(projectV2AsEditableReadModel(project)))
+  readCache.set(project, derived)
+  return derived
 }

@@ -1,15 +1,13 @@
 import {
-  createProject, deleteScreens, duplicateScreen, findScreen, hitTest, maxColumnsForRows, maxRowsForColumns,
+  deleteScreens, duplicateScreen, findScreen, hitTest, maxColumnsForRows, maxRowsForColumns,
   projectBounds, renameScreen,
   resizeScreenGrid, screenBounds, screenHeight, screenWidth, setScreenPosition, setScreenPositions,
   updateScreenCabinetConfig,
   type Project, type ScreenCabinetConfigPatch, type ScreenView, type SelectedObject,
 } from './project.js'
 import { addScreen } from './project.js'
-import {
-  createEditorDocument, loadEditorDocument, mutateEditorDocument, savedEditorDocument, serializeEditorDocument,
-  type EditorDocumentState,
-} from './document.js'
+import { ProjectDocumentController } from './document.js'
+import { createProjectSession, sessionDirty, sessionWorkspaceProject, type ProjectSession } from './project-session.js'
 import { changeNumbering, initialDraft, type Draft } from './state.js'
 import type { GridShape, OverlayVisibility, Point, ResizeHandle, ResizePreview } from './canvas.js'
 import {
@@ -62,7 +60,7 @@ interface LedmapHook {
   projectToPx(point: Point): Point
   preview(): ResizePreview | null
   resizeHandlesPx(id: string): ReadonlyArray<{ readonly handle: ResizeHandle; readonly x: number; readonly y: number }>
-  document(): { readonly dirty: boolean; readonly currentFilePath: string | null; readonly sourceSchemaVersion: 1 | 2 }
+  document(): { readonly dirty: boolean; readonly currentFilePath: string | null; readonly sourceSchemaVersion: 1 | 2 | 3 }
   selectedScreens(): readonly string[]
   snap(): { readonly grid: boolean; readonly smart: boolean; readonly step: number }
   guides(): readonly AlignmentGuide[]
@@ -125,8 +123,12 @@ const exportModeButton = element<HTMLButtonElement>('export-mode')
 const exportToolbar = element<HTMLDivElement>('export-toolbar')
 const exportWorkspaceElement = element<HTMLElement>('export-workspace')
 
-let editorDocument: EditorDocumentState = createEditorDocument()
-let project: Project = createProject(editorDocument.project)
+let documentSerial = 0
+const documentController = new ProjectDocumentController(() => `document-${++documentSerial}`)
+
+function currentProject(): Project {
+  return sessionWorkspaceProject(documentController.session)
+}
 type AppMode = 'layout' | 'mapping' | 'hardware' | 'test' | 'export'
 let appMode: AppMode = 'layout'
 let mappingWorkspace: MappingWorkspace | null = null
@@ -137,8 +139,8 @@ let exportWorkspace: ExportWorkspace | null = null
 let viewMode: 'all' | 'active' = 'all'
 let selection: SelectedObject | null = null
 let selectedScreenIds: readonly string[] = []
-let activeScreenId: string | null = project.screens[0]?.screen.id ?? null
-let camera: Camera = fitCamera(projectBounds(project), 1, 1)
+let activeScreenId: string | null = currentProject().screens[0]?.screen.id ?? null
+let camera: Camera = fitCamera(projectBounds(currentProject()), 1, 1)
 let gridSnap = false
 let smartSnap = true
 let gridStep = 10
@@ -183,17 +185,18 @@ function directionLabel(direction: Direction): string {
 }
 
 function apply(next: Project): void {
-  project = next
-  editorDocument = mutateEditorDocument(editorDocument, next.source)
+  documentController.commit(next)
   syncDocumentState()
 }
 
 function syncDocumentState(): void {
+  const session = documentController.session
+  const dirty = sessionDirty(session)
   window.ledmapDesktop.setDocumentState({
-    currentFilePath: editorDocument.currentFilePath,
-    dirty: editorDocument.dirty,
+    currentFilePath: session.currentFilePath,
+    dirty,
   })
-  saveProjectButton.disabled = !editorDocument.dirty
+  saveProjectButton.disabled = !dirty
 }
 
 function showDocumentError(error: unknown, fallback: string): void {
@@ -206,13 +209,12 @@ function clearDocumentError(): void {
   documentError.hidden = true
 }
 
-function replaceDocument(next: EditorDocumentState): void {
-  const projection = createProject(next.project)
-  editorDocument = next
-  project = projection
+function replaceDocument(next: ProjectSession): void {
+  sessionWorkspaceProject(next)
+  documentController.replace(next)
   selection = null
   selectedScreenIds = []
-  activeScreenId = project.screens[0]?.screen.id ?? null
+  activeScreenId = currentProject().screens[0]?.screen.id ?? null
   viewMode = 'all'
   endPointerGesture()
   if (appMode === 'layout') fitToProject()
@@ -226,23 +228,10 @@ function replaceDocument(next: EditorDocumentState): void {
 
 async function saveDocument(saveAs: boolean): Promise<boolean> {
   clearDocumentError()
-  let text: string
   try {
-    text = serializeEditorDocument(editorDocument)
-  } catch (error) {
-    showDocumentError(error, 'Unable to serialize the project.')
-    return false
-  }
-  try {
-    const result = await window.ledmapDesktop.saveProject({
-      currentFilePath: editorDocument.currentFilePath,
-      text,
-      saveAs,
-    })
-    if (result.canceled || !result.filePath) return false
-    editorDocument = savedEditorDocument(editorDocument, result.filePath)
+    const saved = await documentController.save(saveAs, request => window.ledmapDesktop.saveProject(request))
     syncDocumentState()
-    return true
+    return saved
   } catch (error) {
     showDocumentError(error, 'Unable to save the project.')
     return false
@@ -250,27 +239,32 @@ async function saveDocument(saveAs: boolean): Promise<boolean> {
 }
 
 async function canReplaceDocument(): Promise<boolean> {
-  if (!editorDocument.dirty) return true
+  await documentController.settleSaves()
+  const started = documentController.session
+  if (!sessionDirty(started)) return true
   const choice = await window.ledmapDesktop.confirmUnsavedChanges()
+  if (documentController.session !== started) return false
   if (choice === 'cancel') return false
   if (choice === 'discard') return true
-  return saveDocument(false)
+  return await saveDocument(false) && !sessionDirty(documentController.session)
 }
 
 async function newDocument(): Promise<void> {
   if (!await canReplaceDocument()) return
   clearDocumentError()
-  replaceDocument(createEditorDocument())
+  replaceDocument(createProjectSession(`document-${++documentSerial}`))
 }
 
 async function openDocument(): Promise<void> {
   if (!await canReplaceDocument()) return
   clearDocumentError()
   try {
-    const opened = await window.ledmapDesktop.openProject()
-    if (opened.canceled || !opened.filePath || opened.text === undefined) return
-    const next = loadEditorDocument(opened.text, opened.filePath)
-    replaceDocument(next)
+    const result = await documentController.open(() => window.ledmapDesktop.openProject())
+    if (result === 'stale') {
+      showDocumentError(new Error('Project changed while Open was pending. Retry Open.'), 'Unable to open the project.')
+      return
+    }
+    if (result === 'opened') replaceDocument(documentController.session)
   } catch (error) {
     showDocumentError(error, 'Unable to open the project.')
   }
@@ -288,7 +282,7 @@ function render(): void {
 }
 
 function draw(): void {
-  const note = drawProject(canvas, project, {
+  const note = drawProject(canvas, currentProject(), {
     mode: viewMode,
     selection,
     selectedScreenIds,
@@ -300,14 +294,14 @@ function draw(): void {
   }, camera)
   zoomIndicator.textContent = `${Math.round(camera.zoom * 100)}%`
   canvasNote.textContent = note
-  const active = activeScreenId ? findScreen(project, activeScreenId) : undefined
+  const active = activeScreenId ? findScreen(currentProject(), activeScreenId) : undefined
   canvasTitle.textContent = viewMode === 'all' ? 'All Screens' : active ? active.screen.name : 'Active Screen'
-  const summaries = project.screens.map(s => `${s.screen.name} at ${s.x}, ${s.y}`).join('; ')
-  canvas.setAttribute('aria-label', `Project canvas. ${project.screens.length} screens. ${summaries}.`)
-  const hidden = project.screens.length === 0
+  const summaries = currentProject().screens.map(s => `${s.screen.name} at ${s.x}, ${s.y}`).join('; ')
+  canvas.setAttribute('aria-label', `Project canvas. ${currentProject().screens.length} screens. ${summaries}.`)
+  const hidden = currentProject().screens.length === 0
   canvas.hidden = hidden
   empty.hidden = !hidden
-  toggleMode.disabled = project.screens.length === 0
+  toggleMode.disabled = currentProject().screens.length === 0
 }
 
 function fitTo(b: { left: number; top: number; right: number; bottom: number; width: number; height: number }): void {
@@ -317,8 +311,8 @@ function fitTo(b: { left: number; top: number; right: number; bottom: number; wi
 }
 
 function fitToProject(): void {
-  const active = activeScreenId ? findScreen(project, activeScreenId) : undefined
-  if (viewMode === 'all') fitTo(projectBounds(project))
+  const active = activeScreenId ? findScreen(currentProject(), activeScreenId) : undefined
+  if (viewMode === 'all') fitTo(projectBounds(currentProject()))
   else if (active) fitTo(screenBounds(active))
 }
 
@@ -326,8 +320,8 @@ function chipText(): string {
   if (selectedScreenIds.length > 1) return `${selectedScreenIds.length} Screens selected`
   const current = selection
   if (!current) return 'No selection'
-  const screen = current.type === 'cabinet' ? findScreen(project, current.screenId) : (
-    current.type === 'screen' ? findScreen(project, current.id) : findScreenByGrid(current.id)
+  const screen = current.type === 'cabinet' ? findScreen(currentProject(), current.screenId) : (
+    current.type === 'screen' ? findScreen(currentProject(), current.id) : findScreenByGrid(current.id)
   )
   const suffix = screen ? ` · ${screen.screen.name}` : ''
   if (current.type === 'screen') return `${screen?.screen.name ?? 'Screen'} selected`
@@ -337,7 +331,7 @@ function chipText(): string {
 }
 
 function findScreenByGrid(gridId: string): ScreenView | undefined {
-  return project.screens.find(s => s.grid.id === gridId)
+  return currentProject().screens.find(s => s.grid.id === gridId)
 }
 
 function renderStatus(): void {
@@ -390,15 +384,15 @@ function setActualSize(): void {
 
 function renderTree(): void {
   tree.replaceChildren()
-  treeScreenCount.textContent = String(project.screens.length)
-  if (project.screens.length === 0) {
+  treeScreenCount.textContent = String(currentProject().screens.length)
+  if (currentProject().screens.length === 0) {
     const emptyTree = document.createElement('p')
     emptyTree.className = 'hint'
     emptyTree.textContent = 'No Screens in this project.'
     tree.append(emptyTree)
     return
   }
-  for (const screen of project.screens) {
+  for (const screen of currentProject().screens) {
     const resolution = `${format.format(screenWidth(screen))} × ${format.format(screenHeight(screen))}`
     const node = makeTreeNode('screen', screen.screen.id, screen.screen.name, '▦', resolution, isSelected('screen', screen.screen.id))
     node.addEventListener('click', event => selectScreen(screen.screen.id, event.shiftKey || event.ctrlKey || event.metaKey))
@@ -455,7 +449,7 @@ function renderProperties(): void {
     return
   }
   if (selection.type === 'screen') {
-    const screen = findScreen(project, selection.id)
+    const screen = findScreen(currentProject(), selection.id)
     if (screen) renderScreenProperties(screen)
     return
   }
@@ -464,7 +458,7 @@ function renderProperties(): void {
     if (screen) renderGridProperties(screen)
     return
   }
-  const screen = findScreen(project, selection.screenId)
+  const screen = findScreen(currentProject(), selection.screenId)
   if (screen) renderCabinetProperties(screen)
 }
 
@@ -584,7 +578,7 @@ function gridValidator(label: string, limit: (value: number) => number): (value:
 
 function cabinetConfigProblem(screenId: string, patch: ScreenCabinetConfigPatch): string | null {
   try {
-    updateScreenCabinetConfig(project, screenId, patch)
+    updateScreenCabinetConfig(currentProject(), screenId, patch)
     return null
   } catch (error) {
     return error instanceof Error ? error.message : 'Unable to update cabinet configuration.'
@@ -593,7 +587,7 @@ function cabinetConfigProblem(screenId: string, patch: ScreenCabinetConfigPatch)
 
 function commitCabinetConfig(screenId: string, patch: ScreenCabinetConfigPatch): string | null {
   try {
-    apply(updateScreenCabinetConfig(project, screenId, patch))
+    apply(updateScreenCabinetConfig(currentProject(), screenId, patch))
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unable to update cabinet configuration.'
     canvasNote.textContent = message
@@ -701,7 +695,7 @@ function renderScreenProperties(screen: ScreenView): void {
   container.className = 'properties-body'
   const nameInput = textField(screen.screen.name, 'Screen name', value => {
     try {
-      apply(renameScreen(project, screen.screen.id, value))
+      apply(renameScreen(currentProject(), screen.screen.id, value))
       render()
       return null
     } catch (error) {
@@ -712,11 +706,11 @@ function renderScreenProperties(screen: ScreenView): void {
 
   const positionBox = document.createElement('div')
   const xInput = numberField(screen.x, 'Screen X position', value => {
-    apply(setScreenPosition(project, screen.screen.id, value, screen.y))
+    apply(setScreenPosition(currentProject(), screen.screen.id, value, screen.y))
     render()
   }, signedCoordinateProblem)
   const yInput = numberField(screen.y, 'Screen Y position', value => {
-    apply(setScreenPosition(project, screen.screen.id, screen.x, value))
+    apply(setScreenPosition(currentProject(), screen.screen.id, screen.x, value))
     render()
   }, signedCoordinateProblem)
   xInput.removeAttribute('min')
@@ -798,9 +792,9 @@ function focusScreenName(): void {
   input?.select()
 }
 
-function layoutRects(screenIds: readonly string[] = project.screens.map(screen => screen.screen.id)): LayoutRect[] {
+function layoutRects(screenIds: readonly string[] = currentProject().screens.map(screen => screen.screen.id)): LayoutRect[] {
   const included = new Set(screenIds)
-  return project.screens.filter(screen => included.has(screen.screen.id)).map(screen => ({
+  return currentProject().screens.filter(screen => included.has(screen.screen.id)).map(screen => ({
     id: screen.screen.id,
     x: screen.x,
     y: screen.y,
@@ -810,14 +804,14 @@ function layoutRects(screenIds: readonly string[] = project.screens.map(screen =
 }
 
 function selectedPositions(): Readonly<Record<string, LayoutPoint>> {
-  return Object.fromEntries(project.screens
+  return Object.fromEntries(currentProject().screens
     .filter(screen => selectedScreenIds.includes(screen.screen.id))
     .map(screen => [screen.screen.id, { x: screen.x, y: screen.y }]))
 }
 
 function applyScreenPositions(positions: Readonly<Record<string, LayoutPoint>>): boolean {
-  const next = setScreenPositions(project, positions)
-  if (next === project) return false
+  const next = setScreenPositions(currentProject(), positions)
+  if (next === currentProject()) return false
   apply(next)
   return true
 }
@@ -828,7 +822,7 @@ function signedCoordinateProblem(value: number): string | null {
 
 function commitResize(screenId: string, columns: number, rows: number): string | null {
   try {
-    apply(resizeScreenGrid(project, screenId, columns, rows))
+    apply(resizeScreenGrid(currentProject(), screenId, columns, rows))
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unable to resize the cabinet grid.'
     canvasNote.textContent = message
@@ -896,7 +890,7 @@ function viewportPoint(event: { offsetX: number; offsetY: number }): { x: number
 
 function selectedScreenShape(): { screen: ScreenView; shape: GridShape } | null {
   if (selection?.type !== 'screen' || selectedScreenIds.length !== 1) return null
-  const screen = findScreen(project, selection.id)
+  const screen = findScreen(currentProject(), selection.id)
   if (!screen) return null
   return { screen, shape: screenShape(screen, screen.grid.columns, screen.grid.rows) }
 }
@@ -963,7 +957,7 @@ canvas.addEventListener('pointerdown', event => {
     render()
     return
   }
-  const hit = hitTest(project, projectPoint)
+  const hit = hitTest(currentProject(), projectPoint)
   canvas.classList.add('dragging')
   if (hit) {
     const screenId = hit.screen.screen.id
@@ -990,7 +984,7 @@ canvas.addEventListener('pointerdown', event => {
       startProject: projectPoint,
       positions: selectedPositions(),
       bounds,
-      targets: layoutRects(project.screens.map(screen => screen.screen.id).filter(id => !selectedScreenIds.includes(id))),
+      targets: layoutRects(currentProject().screens.map(screen => screen.screen.id).filter(id => !selectedScreenIds.includes(id))),
       appliedDx: 0,
       appliedDy: 0,
     }
@@ -1016,7 +1010,7 @@ canvas.addEventListener('pointermove', event => {
     return
   }
   if (pointerMode === 'resize' && resizeGesture) {
-    const screen = findScreen(project, resizeGesture.screenId)
+    const screen = findScreen(currentProject(), resizeGesture.screenId)
     if (!screen) return
     const point = toProject(camera, viewportPoint(event))
     const dx = point.x - resizeGesture.startProject.x
@@ -1084,7 +1078,7 @@ canvas.addEventListener('pointermove', event => {
 canvas.addEventListener('pointerup', () => {
   if (pointerMode === 'resize') {
     const gesture = resizeGesture
-    const screen = gesture ? findScreen(project, gesture.screenId) : undefined
+    const screen = gesture ? findScreen(currentProject(), gesture.screenId) : undefined
     if (gesture && screen && (gesture.columns !== screen.grid.columns || gesture.rows !== screen.grid.rows)) {
       endPointerGesture()
       commitResize(gesture.screenId, gesture.columns, gesture.rows)
@@ -1124,10 +1118,10 @@ toggleMode.addEventListener('click', () => {
   if (viewMode === 'all') {
     viewMode = 'active'
     if (!activeScreenId) {
-      const first = project.screens[0]
+      const first = currentProject().screens[0]
       if (first) activeScreenId = first.screen.id
     }
-    const active = activeScreenId ? findScreen(project, activeScreenId) : undefined
+    const active = activeScreenId ? findScreen(currentProject(), activeScreenId) : undefined
     if (active) fitTo(screenBounds(active))
   } else {
     viewMode = 'all'
@@ -1148,7 +1142,7 @@ function finishAddingScreen(next: Project): void {
   selection = { type: 'screen', id: fresh.screen.id }
   selectedScreenIds = [fresh.screen.id]
   activeScreenId = fresh.screen.id
-  if (project.screens.length === 1) {
+  if (currentProject().screens.length === 1) {
     viewMode = 'all'
     fitToProject()
   } else if (viewMode === 'all') {
@@ -1164,8 +1158,8 @@ function dialogInput(id: string): HTMLInputElement {
 }
 
 function openScreenDialog(): void {
-  const previous = project.screens[project.screens.length - 1]
-  dialogInput('new-screen-name').value = `Screen ${project.screens.length + 1}`
+  const previous = currentProject().screens[currentProject().screens.length - 1]
+  dialogInput('new-screen-name').value = `Screen ${currentProject().screens.length + 1}`
   dialogInput('new-screen-x').value = String(previous ? previous.x + 100 : 0)
   dialogInput('new-screen-y').value = String(previous ? previous.y + 100 : 0)
   dialogInput('new-screen-columns').value = initialDraft.columns
@@ -1196,7 +1190,7 @@ screenForm.addEventListener('submit', event => {
     ordering: { ...initialDraft.ordering },
   }
   try {
-    const next = addScreen(project, draft, {
+    const next = addScreen(currentProject(), draft, {
       name: dialogInput('new-screen-name').value,
       position: {
         x: Number(dialogInput('new-screen-x').value),
@@ -1269,7 +1263,7 @@ renameScreenButton.addEventListener('click', focusScreenName)
 duplicateScreenButton.addEventListener('click', () => {
   const sourceIds = [...selectedScreenIds]
   if (sourceIds.length === 0) return
-  let next = project
+  let next = currentProject()
   const duplicates: string[] = []
   for (const screenId of sourceIds) {
     next = duplicateScreen(next, screenId)
@@ -1286,10 +1280,10 @@ duplicateScreenButton.addEventListener('click', () => {
 
 function deleteSelection(): void {
   if (selectedScreenIds.length === 0) return
-  apply(deleteScreens(project, selectedScreenIds))
+  apply(deleteScreens(currentProject(), selectedScreenIds))
   selectedScreenIds = []
   selection = null
-  activeScreenId = project.screens[0]?.screen.id ?? null
+  activeScreenId = currentProject().screens[0]?.screen.id ?? null
   viewMode = 'all'
   fitToProject()
   render()
@@ -1303,32 +1297,32 @@ saveProjectButton.addEventListener('click', () => { void saveDocument(false) })
 saveProjectAsButton.addEventListener('click', () => { void saveDocument(true) })
 
 window.ledmapDesktop.onRequestSaveBeforeClose(() => {
-  void saveDocument(false).then(saved => window.ledmapDesktop.finishCloseAfterSave(saved))
+  void saveDocument(false).then(saved => window.ledmapDesktop.finishCloseAfterSave(saved && !sessionDirty(documentController.session)))
 })
 
 mappingWorkspace = createMappingWorkspace({
-  getProject: () => project,
+  getProject: () => currentProject(),
   updateProject: next => apply(next),
   showError: showDocumentError,
   clearError: clearDocumentError,
 })
 
 hardwareWorkspace = createHardwareWorkspace({
-  getProject: () => project,
+  getProject: () => currentProject(),
   updateProject: next => apply(next),
   showError: showDocumentError,
   clearError: clearDocumentError,
 })
 
 testWorkspace = createTestWorkspace({
-  getProject: () => project,
+  getProject: () => currentProject(),
   onFrameChanged: snapshot => liveOutputController?.frameChanged(snapshot),
   getOutputOverlays: () => liveOutputController?.overlays() ?? [],
 })
 liveOutputController = createLiveOutputController({
   getSelectedScreenBounds: () => {
     const id = selectedScreenIds[0] ?? activeScreenId
-    const screen = id ? findScreen(project, id) : undefined
+    const screen = id ? findScreen(currentProject(), id) : undefined
     if (!screen) return null
     const bounds = screenBounds(screen)
     return { x: bounds.left, y: bounds.top, width: bounds.width, height: bounds.height }
@@ -1337,7 +1331,7 @@ liveOutputController = createLiveOutputController({
 })
 liveOutputController.frameChanged(testWorkspace.snapshot())
 exportWorkspace = createExportWorkspace({
-  getProject: () => project,
+  getProject: () => currentProject(),
   getTestSnapshot: () => testWorkspace!.snapshot(),
   getSelectedScreenId: () => selectedScreenIds[0] ?? activeScreenId,
   showError: showDocumentError,
@@ -1454,7 +1448,7 @@ window.addEventListener('keyup', event => {
 function fitOnFirstPaint(): void {
   const { width, height } = canvas.getBoundingClientRect()
   if (width > 0 && height > 0) {
-    camera = fitCamera(projectBounds(project), width, height)
+    camera = fitCamera(projectBounds(currentProject()), width, height)
     draw()
   }
 }
@@ -1476,7 +1470,7 @@ syncDocumentState()
 render()
 
 const hook: LedmapHook = {
-  dump: () => project.screens.map(s => ({
+  dump: () => currentProject().screens.map(s => ({
     id: s.screen.id,
     name: s.screen.name,
     x: s.x,
@@ -1500,12 +1494,12 @@ const hook: LedmapHook = {
     cabinets: s.cabinets.map(c => ({ id: c.id, index: c.index, column: c.column, row: c.row })),
     order: s.cabinets.map(c => c.index + 1),
   })),
-  bounds: () => projectBounds(project),
+  bounds: () => projectBounds(currentProject()),
   camera: () => ({ ...camera }),
   selection: () => selection,
   viewMode: () => viewMode,
   screenCenterPx: id => {
-    const screen = findScreen(project, id)
+    const screen = findScreen(currentProject(), id)
     if (!screen) return { x: 0, y: 0 }
     const center = { x: screen.x + screenWidth(screen) / 2, y: screen.y + screenHeight(screen) / 2 }
     return toScreen(camera, center)
@@ -1513,15 +1507,15 @@ const hook: LedmapHook = {
   projectToPx: point => toScreen(camera, point),
   preview: () => resizePreview,
   resizeHandlesPx: id => {
-    const screen = findScreen(project, id)
+    const screen = findScreen(currentProject(), id)
     if (!screen) return []
     return screenResizeHandles(camera, screen, screenShape(screen, screen.grid.columns, screen.grid.rows))
       .map(({ handle, point }) => ({ handle, x: point.x, y: point.y }))
   },
   document: () => ({
-    dirty: editorDocument.dirty,
-    currentFilePath: editorDocument.currentFilePath,
-    sourceSchemaVersion: editorDocument.sourceSchemaVersion,
+    dirty: sessionDirty(documentController.session),
+    currentFilePath: documentController.session.currentFilePath,
+    sourceSchemaVersion: documentController.session.sourceSchemaVersion,
   }),
   selectedScreens: () => [...selectedScreenIds],
   snap: () => ({ grid: gridSnap, smart: smartSnap, step: gridStep }),

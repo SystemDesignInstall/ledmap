@@ -1,10 +1,28 @@
 import { describe, expect, it } from 'vitest'
-import { inspectEditableProject } from '@ledmap/core'
-import { addScreen, createProject, setScreenPosition, setScreenPositions, updateScreenCabinetConfig } from '../src/renderer/project.js'
-import { alignScreens } from '../src/renderer/layout-interaction.js'
+import { createProjectV2 } from '@ledmap/core'
+import { addScreen, setScreenPosition } from '../src/renderer/project.js'
+import { ProjectDocumentController } from '../src/renderer/document.js'
 import {
-  createEditorDocument, loadEditorDocument, mutateEditorDocument, savedEditorDocument, serializeEditorDocument,
-} from '../src/renderer/document.js'
+  createProjectSession,
+  serializeProjectSession,
+  sessionDirty,
+  sessionWorkspaceProject,
+} from '../src/renderer/project-session.js'
+
+function controller(): ProjectDocumentController {
+  let serial = 0
+  return new ProjectDocumentController(() => `document-${++serial}`)
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (error: Error) => void
+  const promise = new Promise<T>((fulfill, fail) => {
+    resolve = fulfill
+    reject = fail
+  })
+  return { promise, resolve, reject }
+}
 
 function legacyV1(): string {
   return JSON.stringify({
@@ -38,82 +56,149 @@ function legacyV1(): string {
   })
 }
 
-describe('Project document lifecycle', () => {
-  it('starts as a clean empty editable project', () => {
-    const state = createEditorDocument()
-    expect(state.project.screens).toEqual([])
-    expect(state.currentFilePath).toBeNull()
-    expect(state.dirty).toBe(false)
-    expect(createProject(state.project).screens).toEqual([])
-  })
-
-  it('round-trips three edited screens and resets dirty only after a successful save', () => {
-    let state = createEditorDocument()
-    let project = createProject(state.project)
-    project = addScreen(project)
-    project = addScreen(project)
-    project = addScreen(project)
-    project = setScreenPosition(project, 'screen-1', -240, 80)
-    project = setScreenPosition(project, 'screen-2', 640, -120)
-    project = updateScreenCabinetConfig(project, 'screen-3', {
-      moduleColumns: 5,
-      numbering: 'column',
-      direction: 'top-to-bottom',
-      snake: false,
+describe('ProjectSession document lifecycle', () => {
+  it('starts with one clean V2 owner and saves the legacy schema v2 wire format', async () => {
+    const document = controller()
+    expect(document.session.project.design.screens).toEqual([])
+    expect(sessionDirty(document.session)).toBe(false)
+    document.commit(addScreen(sessionWorkspaceProject(document.session)))
+    expect(document.session.revision).toBe(1)
+    expect(sessionDirty(document.session)).toBe(true)
+    const saved = await document.save(false, async request => {
+      expect(JSON.parse(request.text)).toMatchObject({ format: 'ledmap', schemaVersion: 2 })
+      return { canceled: false, filePath: 'project.ledmap' }
     })
-    state = mutateEditorDocument(state, project.source)
-    expect(state.dirty).toBe(true)
+    expect(saved).toBe(true)
+    expect(document.session.currentFilePath).toBe('project.ledmap')
+    expect(document.session.savedRevision).toBe(1)
+    expect(sessionDirty(document.session)).toBe(false)
+  })
 
-    expect(inspectEditableProject(state.project)).toEqual([])
-    const text = serializeEditorDocument(state)
-    const stored = JSON.parse(text) as { schemaVersion: number }
-    expect(stored.schemaVersion).toBe(2)
-    state = savedEditorDocument(state, 'C:\\Projects\\three-screens.ledmap')
-    expect(state.dirty).toBe(false)
+  it('opens v1 and v2 through the existing reader without replacing the current session on invalid input', async () => {
+    const document = controller()
+    expect(await document.open(async () => ({ canceled: false, filePath: 'legacy.ledmap', text: legacyV1() }))).toBe('opened')
+    expect(document.session.sourceSchemaVersion).toBe(1)
+    expect(document.session.project.design.screens[0]?.name).toBe('Legacy')
+    const v2 = serializeProjectSession(document.session)
+    expect(JSON.parse(v2)).toMatchObject({ format: 'ledmap', schemaVersion: 2 })
+    expect(await document.open(async () => ({ canceled: false, filePath: 'next.ledmap', text: v2 }))).toBe('opened')
+    expect(document.session.sourceSchemaVersion).toBe(2)
+    const before = document.session
+    await expect(document.open(async () => ({ canceled: false, filePath: 'bad.ledmap', text: '{' }))).rejects.toThrow()
+    expect(document.session).toBe(before)
+  })
 
-    const reopened = loadEditorDocument(text, state.currentFilePath!)
-    expect(reopened.project).toEqual(state.project)
-    expect(reopened.dirty).toBe(false)
-    expect(createProject(reopened.project).screens.map(screen => [screen.x, screen.y])).toEqual([
-      [-240, 80], [640, -120], [200, 200],
-    ])
-    expect(createProject(reopened.project).screens[2]!.config).toMatchObject({
-      moduleColumns: 5,
-      ordering: { numbering: 'column', direction: 'top-to-bottom', snake: false },
+  it('keeps later edits dirty when Save finishes with an earlier revision', async () => {
+    const document = controller()
+    document.commit(addScreen(sessionWorkspaceProject(document.session)))
+    const write = deferred<{ canceled: boolean; filePath: string }>()
+    const saving = document.save(false, () => write.promise)
+    document.commit(setScreenPosition(sessionWorkspaceProject(document.session), 'screen-1', 50, 60))
+    expect(document.session.revision).toBe(2)
+    write.resolve({ canceled: false, filePath: 'first.ledmap' })
+    expect(await saving).toBe(true)
+    expect(document.session.savedRevision).toBe(1)
+    expect(sessionDirty(document.session)).toBe(true)
+  })
+
+  it('queues a second Save with the newest snapshot after Save, edit, Save', async () => {
+    const document = controller()
+    document.commit(addScreen(sessionWorkspaceProject(document.session)))
+    const firstWrite = deferred<{ canceled: boolean; filePath: string }>()
+    const secondWrite = deferred<{ canceled: boolean; filePath: string }>()
+    const secondStarted = deferred<void>()
+    const requests: string[] = []
+    const write = (request: { text: string }) => {
+      requests.push(request.text)
+      if (requests.length === 1) return firstWrite.promise
+      secondStarted.resolve()
+      return secondWrite.promise
+    }
+    const first = document.save(false, write)
+    document.commit(setScreenPosition(sessionWorkspaceProject(document.session), 'screen-1', 80, 90))
+    const second = document.save(false, write)
+    expect(requests).toHaveLength(1)
+    firstWrite.resolve({ canceled: false, filePath: 'project.ledmap' })
+    expect(await first).toBe(true)
+    await secondStarted.promise
+    expect(requests).toHaveLength(2)
+    const written = JSON.parse(requests[1]!) as { project: { editorLayout: { screenPositions: { position: { x: number } }[] } } }
+    expect(written.project.editorLayout.screenPositions[0]?.position.x).toBe(80)
+    secondWrite.resolve({ canceled: false, filePath: 'project.ledmap' })
+    expect(await second).toBe(true)
+    expect(document.session.savedRevision).toBe(2)
+    expect(sessionDirty(document.session)).toBe(false)
+  })
+
+  it('keeps Save As path while an edit during the write remains dirty', async () => {
+    const document = controller()
+    document.commit(addScreen(sessionWorkspaceProject(document.session)))
+    const write = deferred<{ canceled: boolean; filePath: string }>()
+    const saving = document.save(true, () => write.promise)
+    document.commit(setScreenPosition(sessionWorkspaceProject(document.session), 'screen-1', 20, 30))
+    write.resolve({ canceled: false, filePath: 'new-name.ledmap' })
+    expect(await saving).toBe(true)
+    expect(document.session.currentFilePath).toBe('new-name.ledmap')
+    expect(document.session.savedRevision).toBe(1)
+    expect(sessionDirty(document.session)).toBe(true)
+  })
+
+  it('leaves the session unchanged on failed Save and canceled Save As', async () => {
+    const document = controller()
+    document.commit(addScreen(sessionWorkspaceProject(document.session)))
+    const before = document.session
+    await expect(document.save(false, async () => { throw new Error('disk failed') })).rejects.toThrow('disk failed')
+    expect(document.session).toBe(before)
+    expect(await document.save(true, async () => ({ canceled: true }))).toBe(false)
+    expect(document.session).toBe(before)
+  })
+
+  it('blocks a lossy schema-v2 Save before calling the filesystem writer', async () => {
+    const document = controller()
+    const original = document.session
+    document.replace({
+      ...original,
+      project: createProjectV2({ ...original.project, metadata: { name: 'V2-only name' } }),
     })
+    let writerCalled = false
+    await expect(document.save(false, async () => {
+      writerCalled = true
+      return { canceled: false, filePath: 'project.ledmap' }
+    })).rejects.toThrow(/PROJECT_COMPAT_SAVE_LOSSY/)
+    expect(writerCalled).toBe(false)
+    expect(document.session.savedRevision).toBe(0)
   })
 
-  it('keeps the current state available when an Open candidate is invalid', () => {
-    const current = mutateEditorDocument(createEditorDocument(), addScreen(createProject()).source)
-    expect(() => loadEditorDocument('{', 'broken.ledmap')).toThrow()
-    expect(current.project.screens).toHaveLength(1)
-    expect(current.dirty).toBe(true)
+  it('ignores stale Save and Open callbacks after a document replacement or edit', async () => {
+    const document = controller()
+    document.commit(addScreen(sessionWorkspaceProject(document.session)))
+    const write = deferred<{ canceled: boolean; filePath: string }>()
+    const saving = document.save(false, () => write.promise)
+    await Promise.resolve()
+    document.replace(createProjectSession('replacement'))
+    write.resolve({ canceled: false, filePath: 'old.ledmap' })
+    expect(await saving).toBe(false)
+    expect(document.session.documentId).toBe('replacement')
+    expect(document.session.currentFilePath).toBeNull()
+
+    const read = deferred<{ canceled: boolean; filePath: string; text: string }>()
+    const opening = document.open(() => read.promise)
+    document.commit(addScreen(sessionWorkspaceProject(document.session)))
+    const changed = document.session
+    read.resolve({ canceled: false, filePath: 'old.ledmap', text: legacyV1() })
+    expect(await opening).toBe('stale')
+    expect(document.session).toBe(changed)
   })
 
-  it('marks batch Layout mutations dirty and persists their exact source coordinates', () => {
-    let project = addScreen(addScreen(createProject()))
-    let state = savedEditorDocument(mutateEditorDocument(createEditorDocument(), project.source), 'layout.ledmap')
-    const positions = alignScreens(project.screens.map(screen => ({
-      id: screen.screen.id,
-      x: screen.x,
-      y: screen.y,
-      width: screen.screen.resolution.width,
-      height: screen.screen.resolution.height,
-    })), 'left')
-    project = setScreenPositions(project, positions)
-    state = mutateEditorDocument(state, project.source)
-    expect(state.dirty).toBe(true)
-    expect(state.project.editorLayout.screenPositions.map(placement => placement.position.x)).toEqual([0, 0])
-    const reopened = loadEditorDocument(serializeEditorDocument(state), 'layout.ledmap')
-    expect(reopened.project.editorLayout).toEqual(state.project.editorLayout)
-  })
-
-  it('loads schema v1 and serializes the migrated document as canonical v2', () => {
-    const migrated = loadEditorDocument(legacyV1(), 'legacy.ledmap')
-    expect(migrated.sourceSchemaVersion).toBe(1)
-    expect(migrated.project.screens[0]?.name).toBe('Legacy')
-    const saved = serializeEditorDocument(migrated)
-    expect(JSON.parse(saved)).toMatchObject({ format: 'ledmap', schemaVersion: 2 })
-    expect(loadEditorDocument(saved, 'migrated.ledmap').sourceSchemaVersion).toBe(2)
+  it('discards an Open result when Save changes the session path during the dialog', async () => {
+    const document = controller()
+    const read = deferred<{ canceled: boolean; filePath: string; text: string }>()
+    const opening = document.open(() => read.promise)
+    expect(await document.save(false, async () => ({ canceled: false, filePath: 'saved.ledmap' }))).toBe(true)
+    const afterSave = document.session
+    read.resolve({ canceled: false, filePath: 'other.ledmap', text: legacyV1() })
+    expect(await opening).toBe('stale')
+    expect(document.session).toBe(afterSave)
+    expect(document.session.currentFilePath).toBe('saved.ledmap')
   })
 })

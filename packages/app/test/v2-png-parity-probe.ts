@@ -3,7 +3,7 @@ import { renderPngJob } from '../src/renderer/export-image.js'
 import { buildPngExportPlan } from '../src/shared/png-export.js'
 import type { TestPatternId } from '../src/shared/test-engine.js'
 import { buildTestScene, buildTestWalkSpace, resolveTestWalkPixel } from '../src/renderer/test-project.js'
-import { projectV2WorkspaceReadModel } from '../src/renderer/v2-read-model.js'
+import { buildV2TestScene, buildV2TestWalkSpace, resolveV2TestWalkPixel } from '../src/renderer/v2-test-project.js'
 import { compactReadyProject } from './v2-parity-fixtures.js'
 
 function equalBytes(left: Uint8Array | Uint8ClampedArray, right: Uint8Array | Uint8ClampedArray): boolean {
@@ -25,12 +25,12 @@ async function decodedPixels(bytes: Uint8Array): Promise<{ width: number; height
 
 export async function runV2PngParity(): Promise<readonly { pattern: TestPatternId; width: number; height: number; pixels: number }[]> {
   const old = compactReadyProject()
-  const next = projectV2WorkspaceReadModel(convertEditableProjectToV2(old.source))
+  const next = convertEditableProjectToV2(old.source)
   const oldScene = buildTestScene(old)
-  const nextScene = buildTestScene(next)
+  const nextScene = buildV2TestScene(next)
   const scope = { kind: 'composition' as const, target: null }
   const oldSpace = buildTestWalkSpace(old, oldScene, scope)
-  const nextSpace = buildTestWalkSpace(next, nextScene, scope)
+  const nextSpace = buildV2TestWalkSpace(next, nextScene, scope)
   if (oldSpace.total !== 8 || nextSpace.total !== oldSpace.total) throw new Error('Unexpected Address Walk coverage')
   const patterns: readonly TestPatternId[] = [
     'checkerboard', 'horizontal-gradient', 'cabinet-order', 'receiver-labels', 'signal-flow', 'address-walk',
@@ -38,7 +38,7 @@ export async function runV2PngParity(): Promise<readonly { pattern: TestPatternI
   const results: { pattern: TestPatternId; width: number; height: number; pixels: number }[] = []
   for (const pattern of patterns) {
     const walkPixel = pattern === 'address-walk' ? resolveTestWalkPixel(old, oldSpace, 7) : null
-    const nextWalkPixel = pattern === 'address-walk' ? resolveTestWalkPixel(next, nextSpace, 7) : null
+    const nextWalkPixel = pattern === 'address-walk' ? resolveV2TestWalkPixel(next, nextSpace, 7) : null
     const config = {
       pattern,
       currentScope: scope,

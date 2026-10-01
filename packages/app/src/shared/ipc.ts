@@ -1,6 +1,5 @@
 import type { TestFrame } from './test-engine.js'
-import type { EditableProject } from '@ledmap/core'
-import type { GenericMappingFormat, GenericMappingScope } from './export-engine.js'
+import type { GenericMappingExportInput, V2GenericMappingFormat, V2GenericMappingScope } from './v2-export-engine.js'
 
 export const ipcChannels = {
   openProject: 'project:open',
@@ -116,9 +115,9 @@ export interface WriteExportFilesRequest {
 }
 
 export interface WriteGenericMappingRequest {
-  readonly project: EditableProject
-  readonly scope: GenericMappingScope
-  readonly format: GenericMappingFormat
+  readonly input: GenericMappingExportInput
+  readonly scope: V2GenericMappingScope
+  readonly format: V2GenericMappingFormat
   readonly name: string
 }
 

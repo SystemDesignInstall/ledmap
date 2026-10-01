@@ -597,6 +597,11 @@ try {
   await mappingPage.screenshot({ path: resolve(output, 'hardware-workspace.png') })
 
   const projectBeforeTest = JSON.parse(await readFile(projectPath, 'utf8')).project
+  const sessionBeforeTest = await mappingPage.evaluate(() => ({
+    project: window.__ledmap.projectSnapshot(),
+    revision: window.__ledmap.document().revision,
+    savedRevision: window.__ledmap.document().savedRevision,
+  }))
   assert.equal((await mappingPage.evaluate(() => window.__ledmap.document())).dirty, false)
   await mappingPage.locator('#test-mode').click()
   await mappingPage.locator('#test-workspace').waitFor({ state: 'visible' })
@@ -793,6 +798,11 @@ try {
   await mappingPage.locator('#layout-mode').click()
   await mappingPage.locator('#test-mode').click()
   assert.equal((await mappingPage.evaluate(() => window.__ledmap.document())).dirty, false)
+  assert.deepEqual(await mappingPage.evaluate(() => ({
+    project: window.__ledmap.projectSnapshot(),
+    revision: window.__ledmap.document().revision,
+    savedRevision: window.__ledmap.document().savedRevision,
+  })), sessionBeforeTest)
 
   await mappingPage.locator('#save-project-as').click()
   await mappingPage.waitForFunction(() => window.__ledmap.document().dirty === false)
@@ -864,6 +874,11 @@ try {
   await mappingPage.locator('#export-png-run').click()
   await mappingPage.waitForFunction(() => /canceled/i.test(window.__ledmapExport.dump().lastResult))
   assert.equal((await mappingPage.evaluate(() => window.__ledmap.document())).dirty, false)
+  assert.deepEqual(await mappingPage.evaluate(() => ({
+    project: window.__ledmap.projectSnapshot(),
+    revision: window.__ledmap.document().revision,
+    savedRevision: window.__ledmap.document().savedRevision,
+  })), sessionBeforeTest)
 
   await mappingPage.locator('#hardware-mode').click()
   await mappingPage.locator('[data-hardware-type="receiver"][data-hardware-id="receiver-1"]').click()

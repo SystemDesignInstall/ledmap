@@ -2,11 +2,11 @@ import { BrowserWindow, dialog, type WebContents } from 'electron'
 import { mkdir, open, writeFile } from 'node:fs/promises'
 import { basename, extname, resolve } from 'node:path'
 import {
-  ExportPreflightError,
-  genericMappingChunks,
-  preflightGenericMapping,
-  type GenericMappingFormat,
-} from '../shared/export-engine.js'
+  V2ExportPreflightError,
+  genericMappingV2Chunks,
+  preflightV2GenericMapping,
+  type V2GenericMappingFormat,
+} from '../shared/v2-export-engine.js'
 import type {
   ExportFilePayload,
   ExportWriteResult,
@@ -21,7 +21,7 @@ function safeFileName(value: unknown): string {
   return value
 }
 
-function extensionFor(format: GenericMappingFormat): string {
+function extensionFor(format: V2GenericMappingFormat): string {
   return `.${format}`
 }
 
@@ -89,18 +89,18 @@ export class ExportFileService {
     if (value === null || typeof value !== 'object') throw new Error('Invalid Generic Mapping export request.')
     const request = value as Partial<WriteGenericMappingRequest>
     if (request.format !== 'json' && request.format !== 'csv') throw new Error('Invalid Generic Mapping format.')
-    if (request.project === null || typeof request.project !== 'object') throw new Error('Invalid EditableProject.')
+    if (request.input === null || typeof request.input !== 'object') throw new Error('Invalid Generic Mapping export input.')
     if (request.scope?.kind !== 'composition' && request.scope?.kind !== 'screen') throw new Error('Invalid Generic Mapping scope.')
     if (request.scope.kind === 'screen' && typeof request.scope.screenId !== 'string') throw new Error('Invalid Generic Mapping Screen.')
     const name = safeFileName(request.name)
     const extension = extensionFor(request.format)
     const fileName = extname(name).toLowerCase() === extension ? name : `${name}${extension}`
-    const preflight = preflightGenericMapping(request.project, request.scope)
-    if (!preflight.ready) throw new ExportPreflightError(preflight)
+    const preflight = preflightV2GenericMapping(request.input, request.scope)
+    if (!preflight.ready) throw new V2ExportPreflightError(preflight)
     if (this.consumeCancel()) return { canceled: true, filePaths: [] }
     const paths = await this.destinationPaths(owner, 'single', [fileName])
     if (!paths) return { canceled: true, filePaths: [] }
-    await writeChunks(paths[0]!, genericMappingChunks(request.project, request.scope, request.format))
+    await writeChunks(paths[0]!, genericMappingV2Chunks(request.input, request.scope, request.format))
     return { canceled: false, filePaths: paths }
   }
 

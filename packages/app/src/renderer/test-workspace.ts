@@ -13,16 +13,16 @@ import {
 import { fitCamera, toProject, zoomAt, type Camera, type Point } from './canvas.js'
 import { drawTestFrame, drawTestOutputOverlays, type TestOutputOverlay } from './test-canvas.js'
 import {
-  buildTestScene,
-  buildTestWalkSpace,
-  resolveTestWalkPixel,
-  testScopeTargets,
-  walkOrdinalForDataIndex,
-} from './test-project.js'
-import type { Project } from './project.js'
+  buildV2TestScene,
+  buildV2TestWalkSpace,
+  resolveV2TestWalkPixel,
+  v2TestScopeTargets,
+  v2WalkOrdinalForDataIndex,
+} from './v2-test-project.js'
+import type { LedMapProjectV2 } from '@ledmap/core'
 
 interface TestWorkspaceOptions {
-  readonly getProject: () => Project
+  readonly getProjectV2: () => LedMapProjectV2
   readonly onFrameChanged?: (snapshot: TestWorkspaceSnapshot) => void
   readonly getOutputOverlays?: () => readonly TestOutputOverlay[]
 }
@@ -124,17 +124,17 @@ export function createTestWorkspace(options: TestWorkspaceOptions): TestWorkspac
   let pattern: TestPatternId = 'white'
   let scope: TestScope = { kind: 'composition', target: null }
   let walkOrdinal = 0
-  let scene = buildTestScene(options.getProject())
-  let walkSpace = buildTestWalkSpace(options.getProject(), scene, scope)
+  let scene = buildV2TestScene(options.getProjectV2())
+  let walkSpace = buildV2TestWalkSpace(options.getProjectV2(), scene, scope)
   let walkPixel: TestWalkPixel | null = null
   let frame: TestFrame = evaluateTestPattern(scene, { pattern, scope, walkPixel })
   let camera: Camera = { zoom: 1, offsetX: 0, offsetY: 0 }
   let pan: Point | null = null
   let spaceDown = false
-  let sourceReference = options.getProject().source
+  let sourceReference = options.getProjectV2()
 
-  function project(): Project {
-    return options.getProject()
+  function project(): LedMapProjectV2 {
+    return options.getProjectV2()
   }
 
   function availability(): string | null {
@@ -144,7 +144,7 @@ export function createTestWorkspace(options: TestWorkspaceOptions): TestWorkspac
   function scopeValid(): boolean {
     if (scope.kind === 'composition') return true
     if ((scope.kind === 'receiver' || scope.kind === 'port') && !scene.hardwareReady) return false
-    return testScopeTargets(scene, scope.kind).some(target => target.id === scope.target)
+    return v2TestScopeTargets(scene, scope.kind).some(target => target.id === scope.target)
   }
 
   function normalizeScope(): void {
@@ -155,10 +155,10 @@ export function createTestWorkspace(options: TestWorkspaceOptions): TestWorkspac
 
   function updateFrame(): void {
     normalizeScope()
-    walkSpace = buildTestWalkSpace(project(), scene, scope)
+    walkSpace = buildV2TestWalkSpace(project(), scene, scope)
     walkOrdinal = Math.max(0, Math.min(walkOrdinal, Math.max(0, walkSpace.total - 1)))
     walkPixel = pattern === 'address-walk' && availability() === null
-      ? resolveTestWalkPixel(project(), walkSpace, walkOrdinal)
+      ? resolveV2TestWalkPixel(project(), walkSpace, walkOrdinal)
       : null
     frame = evaluateTestPattern(scene, { pattern, scope, walkPixel })
   }
@@ -223,7 +223,7 @@ export function createTestWorkspace(options: TestWorkspaceOptions): TestWorkspac
       }
     }
     targetSelect.replaceChildren()
-    const targets = testScopeTargets(scene, scope.kind)
+    const targets = v2TestScopeTargets(scene, scope.kind)
     if (scope.kind === 'composition') {
       const option = document.createElement('option')
       option.textContent = 'Entire Composition'
@@ -313,7 +313,7 @@ export function createTestWorkspace(options: TestWorkspaceOptions): TestWorkspac
 
   scopeSelect.addEventListener('change', () => {
     const kind = scopeSelect.value as TestScopeKind
-    const target = testScopeTargets(scene, kind)[0]?.id ?? null
+    const target = v2TestScopeTargets(scene, kind)[0]?.id ?? null
     scope = { kind, target }
     walkOrdinal = 0
     render()
@@ -334,7 +334,7 @@ export function createTestWorkspace(options: TestWorkspaceOptions): TestWorkspac
   function goToAddress(): void {
     const value = Number(addressIndex.value)
     const ordinal = scope.kind === 'port' || scope.kind === 'receiver'
-      ? walkOrdinalForDataIndex(walkSpace, value)
+      ? v2WalkOrdinalForDataIndex(walkSpace, value)
       : Number.isSafeInteger(value) ? value : null
     if (ordinal === null || ordinal < 0 || ordinal >= walkSpace.total) {
       addressIndex.setAttribute('aria-invalid', 'true')
@@ -439,12 +439,12 @@ export function createTestWorkspace(options: TestWorkspaceOptions): TestWorkspac
     },
     deactivate: () => { active = false },
     projectChanged: () => {
-      if (sourceReference === project().source) {
+      if (sourceReference === project()) {
         if (active) render()
         return
       }
-      sourceReference = project().source
-      scene = buildTestScene(project())
+      sourceReference = project()
+      scene = buildV2TestScene(project())
       render()
     },
     snapshot: () => ({ frame, scene, scope: { ...scope } }),

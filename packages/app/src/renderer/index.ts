@@ -62,7 +62,9 @@ interface LedmapHook {
   projectToPx(point: Point): Point
   preview(): ResizePreview | null
   resizeHandlesPx(id: string): ReadonlyArray<{ readonly handle: ResizeHandle; readonly x: number; readonly y: number }>
-  document(): { readonly dirty: boolean; readonly currentFilePath: string | null; readonly sourceSchemaVersion: 1 | 2 | 3 }
+  document(): { readonly dirty: boolean; readonly currentFilePath: string | null; readonly sourceSchemaVersion: 1 | 2 | 3;
+    readonly revision: number; readonly savedRevision: number }
+  projectSnapshot(): string
   selectedScreens(): readonly string[]
   snap(): { readonly grid: boolean; readonly smart: boolean; readonly step: number }
   guides(): readonly AlignmentGuide[]
@@ -1339,23 +1341,27 @@ hardwareWorkspace = createHardwareWorkspace({
 })
 
 testWorkspace = createTestWorkspace({
-  getProject: () => currentProject(),
+  getProjectV2: () => documentController.session.project,
   onFrameChanged: snapshot => liveOutputController?.frameChanged(snapshot),
   getOutputOverlays: () => liveOutputController?.overlays() ?? [],
 })
 liveOutputController = createLiveOutputController({
   getSelectedScreenBounds: () => {
     const id = selectedScreenIds[0] ?? activeScreenId
-    const screen = id ? findScreen(currentProject(), id) : undefined
-    if (!screen) return null
-    const bounds = screenBounds(screen)
-    return { x: bounds.left, y: bounds.top, width: bounds.width, height: bounds.height }
+    const project = documentController.session.project
+    const screen = project.design.screens.find(value => value.id === id)
+    const grid = project.design.cabinetGrids.find(value => value.id === screen?.cabinetGridOrder[0])
+    const placement = project.design.composition.placements.find(value => value.screenId === id)
+    return grid && placement ? {
+      x: placement.x, y: placement.y,
+      width: grid.columns * grid.cabinetWidth, height: grid.rows * grid.cabinetHeight,
+    } : null
   },
   onOverlaysChanged: () => testWorkspace?.redraw(),
 })
 liveOutputController.frameChanged(testWorkspace.snapshot())
 exportWorkspace = createExportWorkspace({
-  getProject: () => currentProject(),
+  getProjectV2: () => documentController.session.project,
   getTestSnapshot: () => testWorkspace!.snapshot(),
   getSelectedScreenId: () => selectedScreenIds[0] ?? activeScreenId,
   showError: showDocumentError,
@@ -1540,7 +1546,10 @@ const hook: LedmapHook = {
     dirty: sessionDirty(documentController.session),
     currentFilePath: documentController.session.currentFilePath,
     sourceSchemaVersion: documentController.session.sourceSchemaVersion,
+    revision: documentController.session.revision,
+    savedRevision: documentController.session.savedRevision,
   }),
+  projectSnapshot: () => JSON.stringify(documentController.session.project),
   selectedScreens: () => [...selectedScreenIds],
   snap: () => ({ grid: gridSnap, smart: smartSnap, step: gridStep }),
   guides: () => [...alignmentGuides],

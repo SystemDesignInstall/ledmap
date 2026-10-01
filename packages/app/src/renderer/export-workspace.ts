@@ -1,12 +1,15 @@
-import { preflightGenericMapping, type GenericMappingFormat, type GenericMappingScope } from '../shared/export-engine.js'
+import {
+  preflightV2GenericMapping, selectGenericMappingExportInput,
+  type V2GenericMappingFormat, type V2GenericMappingScope,
+} from '../shared/v2-export-engine.js'
 import { buildPngExportPlan, type PngExportMode } from '../shared/png-export.js'
 import { TEST_PATTERN_DEFINITIONS, type TestPatternGroup, type TestPatternId } from '../shared/test-engine.js'
 import { renderPngJob } from './export-image.js'
-import type { Project } from './project.js'
+import type { LedMapProjectV2 } from '@ledmap/core'
 import type { TestWorkspaceSnapshot } from './test-workspace.js'
 
 interface ExportWorkspaceOptions {
-  readonly getProject: () => Project
+  readonly getProjectV2: () => LedMapProjectV2
   readonly getTestSnapshot: () => TestWorkspaceSnapshot
   readonly getSelectedScreenId: () => string | null
   readonly showError: (error: unknown, fallback: string) => void
@@ -27,7 +30,7 @@ interface ExportHook {
     readonly pngReady: boolean
     readonly pngJobs: number
     readonly pattern: string
-    readonly genericScope: GenericMappingScope
+    readonly genericScope: V2GenericMappingScope
     readonly lastResult: string
   }
   simulateCancel(): Promise<boolean>
@@ -76,7 +79,7 @@ export function createExportWorkspace(options: ExportWorkspaceOptions): ExportWo
   let patternCustomized = false
   let pngMode: PngExportMode = 'composition'
   let pngScreenId: string | null = null
-  let genericScope: GenericMappingScope = { kind: 'composition' }
+  let genericScope: V2GenericMappingScope = { kind: 'composition' }
   let genericScreenId: string | null = null
   let lastResult = 'No export has run in this session.'
 
@@ -90,27 +93,27 @@ export function createExportWorkspace(options: ExportWorkspaceOptions): ExportWo
   }
 
   function selectedScreenFallback(): string | null {
-    const project = options.getProject()
+    const project = options.getProjectV2()
     const selected = options.getSelectedScreenId()
-    return selected && project.screens.some(screen => screen.screen.id === selected)
+    return selected && project.design.screens.some(screen => screen.id === selected)
       ? selected
-      : project.screens[0]?.screen.id ?? null
+      : project.design.screens[0]?.id ?? null
   }
 
   function normalizeScreens(): void {
-    const ids = new Set<string>(options.getProject().screens.map(screen => screen.screen.id))
+    const ids = new Set<string>(options.getProjectV2().design.screens.map(screen => screen.id))
     if (!pngScreenId || !ids.has(pngScreenId)) pngScreenId = selectedScreenFallback()
     if (!genericScreenId || !ids.has(genericScreenId)) genericScreenId = selectedScreenFallback()
   }
 
   function renderScreenSelect(select: HTMLSelectElement, selected: string | null): void {
-    const project = options.getProject()
-    select.replaceChildren(...project.screens.map(screen => option(screen.screen.id, `${screen.screen.name} · ${screen.screen.id}`)))
+    const project = options.getProjectV2()
+    select.replaceChildren(...project.design.screens.map(screen => option(screen.id, `${screen.name} · ${screen.id}`)))
     if (selected) select.value = selected
-    select.disabled = project.screens.length === 0
+    select.disabled = project.design.screens.length === 0
   }
 
-  function currentGenericScope(): GenericMappingScope {
+  function currentGenericScope(): V2GenericMappingScope {
     return genericScope.kind === 'screen' && genericScreenId
       ? { kind: 'screen', screenId: genericScreenId }
       : { kind: 'composition' }
@@ -127,8 +130,8 @@ export function createExportWorkspace(options: ExportWorkspaceOptions): ExportWo
     })
   }
 
-  function renderPreflight(): ReturnType<typeof preflightGenericMapping> {
-    const report = preflightGenericMapping(options.getProject().source, currentGenericScope())
+  function renderPreflight(): ReturnType<typeof preflightV2GenericMapping> {
+    const report = preflightV2GenericMapping(selectGenericMappingExportInput(options.getProjectV2()), currentGenericScope())
     preflightElement.replaceChildren(...report.stages.map(value => {
       const card = document.createElement('section')
       card.className = `export-stage ${value.status}`
@@ -197,18 +200,20 @@ export function createExportWorkspace(options: ExportWorkspaceOptions): ExportWo
     }
   }
 
-  async function exportMapping(format: GenericMappingFormat): Promise<void> {
-    const report = preflightGenericMapping(options.getProject().source, currentGenericScope())
+  async function exportMapping(format: V2GenericMappingFormat): Promise<void> {
+    const input = selectGenericMappingExportInput(options.getProjectV2())
+    const scope = currentGenericScope()
+    const report = preflightV2GenericMapping(input, scope)
     if (!report.ready) return
     busy = true
     lastResult = `Writing Generic Mapping ${format.toUpperCase()}…`
     render()
     options.clearError()
     try {
-      const suffix = currentGenericScope().kind === 'screen' && genericScreenId ? `-${fileSegment(genericScreenId)}` : ''
+      const suffix = scope.kind === 'screen' && genericScreenId ? `-${fileSegment(genericScreenId)}` : ''
       const result = await window.ledmapDesktop.writeGenericMapping({
-        project: options.getProject().source,
-        scope: currentGenericScope(),
+        input,
+        scope,
         format,
         name: `ledmap-generic-mapping${suffix}.${format}`,
       })
@@ -252,7 +257,7 @@ export function createExportWorkspace(options: ExportWorkspaceOptions): ExportWo
 
   const hook: ExportHook = {
     dump: () => {
-      const report = preflightGenericMapping(options.getProject().source, currentGenericScope())
+      const report = preflightV2GenericMapping(selectGenericMappingExportInput(options.getProjectV2()), currentGenericScope())
       const pngPlan = currentPngPlan()
       return {
         ready: report.ready,

@@ -5,6 +5,7 @@ import {
   unmapGeometryCabinetPixel,
   type AllocationProposal,
   type GeometryMappedPixel,
+  type LedMapProjectV2,
   type MappedPixel,
 } from '@ledmap/core'
 import { fitCamera, toProject, zoomAt, type Camera, type Point } from './canvas.js'
@@ -17,33 +18,26 @@ import {
   type HardwareSelection,
 } from './hardware-canvas.js'
 import {
-  addPort,
-  addProcessor,
-  addReceiver,
-  applyHardwareAllocation,
-  assignCabinets,
-  deletePort,
-  deleteProcessor,
-  deleteReceiver,
   findPort,
   findProcessor,
   findReceiver,
-  moveProcessor,
-  moveReceiver,
-  previewHardwareAllocation,
   receiverPixelUsage,
-  renameProcessor,
-  setProcessorPortCount,
-  unassignCabinets,
   unassignedCabinetIds,
-  updatePort,
-  updateReceiver,
 } from './hardware-project.js'
+import {
+  addPortV2, addProcessorV2, addReceiverV2, applyHardwareAllocationV2,
+  assignCabinetsV2, deletePortV2, deleteProcessorV2, deleteReceiverV2,
+  moveProcessorV2, moveReceiverV2, orderedSelectedCabinetsV2,
+  previewHardwareAllocationV2, renameProcessorV2, requireCurrentHardwarePreview, setProcessorPortCountV2,
+  unassignCabinetsV2, updatePortV2, updateReceiverV2,
+} from './v2-hardware-commands.js'
 import type { Project } from './project.js'
 
 interface HardwareWorkspaceOptions {
   readonly getProject: () => Project
-  readonly updateProject: (project: Project) => void
+  readonly getProjectV2: () => LedMapProjectV2
+  readonly getDocumentStamp: () => { readonly documentId: string; readonly revision: number }
+  readonly runCommand: (command: (project: LedMapProjectV2) => LedMapProjectV2) => void
   readonly showError: (error: unknown, fallback: string) => void
   readonly clearError: () => void
 }
@@ -205,7 +199,11 @@ export function createHardwareWorkspace(options: HardwareWorkspaceOptions): Hard
   let inspectedCabinet: { readonly id: string; readonly coordinate: Point } | null = null
   let camera: Camera = { zoom: 1, offsetX: 0, offsetY: 0 }
   let overlays: HardwareOverlays = { receiver: true, port: false, processor: false, dataFlow: true }
-  let allocationPreview: AllocationProposal | null = null
+  let allocationPreview: {
+    readonly proposal: AllocationProposal
+    readonly documentId: string
+    readonly revision: number
+  } | null = null
   let spaceDown = false
   let pan: { readonly x: number; readonly y: number } | null = null
 
@@ -213,10 +211,11 @@ export function createHardwareWorkspace(options: HardwareWorkspaceOptions): Hard
     return options.getProject()
   }
 
-  function mutate(run: () => Project, fallback: string): void {
+  function mutate(run: (project: LedMapProjectV2) => LedMapProjectV2, fallback: string, after?: () => void): void {
     options.clearError()
     try {
-      options.updateProject(run())
+      options.runCommand(run)
+      after?.()
       render()
     } catch (error) {
       options.showError(error, fallback)
@@ -369,7 +368,7 @@ export function createHardwareWorkspace(options: HardwareWorkspaceOptions): Hard
     }
   }
 
-  function commit(run: () => Project, fallback: string): void {
+  function commit(run: (project: LedMapProjectV2) => LedMapProjectV2, fallback: string): void {
     mutate(run, fallback)
   }
 
@@ -458,10 +457,10 @@ export function createHardwareWorkspace(options: HardwareWorkspaceOptions): Hard
       const ports = project().source.hardwareTopology.ports.filter(port => port.processor === processor.id)
       const fields = document.createElement('div')
       fields.append(
-        row('Name', textInput(processor.name, 'Processor name', value => commit(() => renameProcessor(project(), processor.id, value), 'Unable to rename Processor.'))),
+        row('Name', textInput(processor.name, 'Processor name', value => commit(source => renameProcessorV2(source, processor.id, value), 'Unable to rename Processor.'))),
         row('Identity', processor.id),
         row('Ports used', capacityText(ports.length, processor.portCount)),
-        row('Port capacity', numberInput(processor.portCount, 'Processor port capacity', value => commit(() => setProcessorPortCount(project(), processor.id, value), 'Unable to update Processor.'))),
+        row('Port capacity', numberInput(processor.portCount, 'Processor port capacity', value => commit(source => setProcessorPortCountV2(source, processor.id, value), 'Unable to update Processor.'))),
       )
       properties.append(group('Generic Processor', fields), renderPixelInspector())
       return
@@ -475,9 +474,9 @@ export function createHardwareWorkspace(options: HardwareWorkspaceOptions): Hard
       fields.append(
         row('Identity', port.id),
         row('Processor', port.processor),
-        row('Index', numberInput(port.index, 'Port index', value => commit(() => updatePort(project(), port.id, { index: value }), 'Unable to update Port.'))),
+        row('Index', numberInput(port.index, 'Port index', value => commit(source => updatePortV2(source, port.id, { index: value }), 'Unable to update Port.'))),
         row('Receivers used', capacityText(receiverCount, port.receiverCapacity)),
-        row('Receiver capacity', numberInput(port.receiverCapacity, 'Port receiver capacity', value => commit(() => updatePort(project(), port.id, { receiverCapacity: value }), 'Unable to update Port.'))),
+        row('Receiver capacity', numberInput(port.receiverCapacity, 'Port receiver capacity', value => commit(source => updatePortV2(source, port.id, { receiverCapacity: value }), 'Unable to update Port.'))),
       )
       properties.append(group('Generic Port', fields), renderPixelInspector())
       return
@@ -490,15 +489,15 @@ export function createHardwareWorkspace(options: HardwareWorkspaceOptions): Hard
     fields.append(
       row('Identity', receiver.id),
       row('Port', receiver.port),
-      row('Index', numberInput(receiver.index, 'Receiver index', value => commit(() => updateReceiver(project(), receiver.id, { index: value }), 'Unable to update Receiver.'))),
+      row('Index', numberInput(receiver.index, 'Receiver index', value => commit(source => updateReceiverV2(source, receiver.id, { index: value }), 'Unable to update Receiver.'))),
       row('Pixel usage', usage.capacity === null ? format(usage.used) : capacityText(usage.used, usage.capacity)),
-      row('Pixel capacity', numberInput(usage.capacity ?? usage.used, 'Receiver pixel capacity', value => commit(() => updateReceiver(project(), receiver.id, { pixelCapacity: value }), 'Unable to update Receiver.'))),
+      row('Pixel capacity', numberInput(usage.capacity ?? usage.used, 'Receiver pixel capacity', value => commit(source => updateReceiverV2(source, receiver.id, { pixelCapacity: value }), 'Unable to update Receiver.'))),
     )
     const buttons = document.createElement('div')
     buttons.className = 'inspector-actions'
     buttons.append(
-      action('Assign selected', () => mutate(() => assignCabinets(project(), receiver.id, selectedCabinetIds), 'Unable to assign Cabinets.'), selectedCabinetIds.length === 0),
-      action('Unassign selected', () => mutate(() => unassignCabinets(project(), receiver.id, selectedCabinetIds), 'Unable to unassign Cabinets.'), selectedCabinetIds.length === 0),
+      action('Assign selected', () => mutate(source => assignCabinetsV2(source, receiver.id, orderedSelectedCabinetsV2(source, selectedCabinetIds)), 'Unable to assign Cabinets.'), selectedCabinetIds.length === 0),
+      action('Unassign selected', () => mutate(source => unassignCabinetsV2(source, receiver.id, selectedCabinetIds), 'Unable to unassign Cabinets.'), selectedCabinetIds.length === 0),
     )
     properties.append(group('Generic Receiver', fields), buttons, renderPixelInspector())
   }
@@ -540,63 +539,56 @@ export function createHardwareWorkspace(options: HardwareWorkspaceOptions): Hard
   }
 
   function addProcessorAction(): void {
-    mutate(() => {
-      const next = addProcessor(project())
-      const processor = next.source.hardwareTopology.processors.at(-1)
+    mutate(source => addProcessorV2(source), 'Unable to add Processor.', () => {
+      const processor = options.getProjectV2().hardware.processors.at(-1)
       selection = processor ? { type: 'processor', id: processor.id } : null
-      return next
-    }, 'Unable to add Processor.')
+    })
   }
 
   function addPortAction(): void {
     const processorId = selectedProcessorId()
     if (!processorId) return
-    mutate(() => {
-      const next = addPort(project(), processorId)
-      const port = next.source.hardwareTopology.ports.at(-1)
+    mutate(source => addPortV2(source, processorId), 'Unable to add Port.', () => {
+      const port = options.getProjectV2().hardware.ports.at(-1)
       selection = port ? { type: 'port', id: port.id } : selection
-      return next
-    }, 'Unable to add Port.')
+    })
   }
 
   function addReceiverAction(): void {
     const portId = selectedPortId()
     if (!portId) return
-    mutate(() => {
-      const next = addReceiver(project(), portId)
-      const receiver = next.source.hardwareTopology.receivers.at(-1)
+    mutate(source => addReceiverV2(source, portId), 'Unable to add Receiver.', () => {
+      const receiver = options.getProjectV2().hardware.receivers.at(-1)
       selection = receiver ? { type: 'receiver', id: receiver.id } : selection
-      return next
-    }, 'Unable to add Receiver.')
+    })
   }
 
   function deleteAction(): void {
     if (!selection) return
     const current = selection
-    mutate(() => {
-      const next = current.type === 'processor'
-        ? deleteProcessor(project(), current.id)
+    mutate(source => current.type === 'processor'
+        ? deleteProcessorV2(source, current.id)
         : current.type === 'port'
-          ? deletePort(project(), current.id)
-          : deleteReceiver(project(), current.id)
+          ? deletePortV2(source, current.id)
+          : deleteReceiverV2(source, current.id),
+      'Unable to delete Hardware entity.', () => {
       selection = null
-      return next
-    }, 'Unable to delete Hardware entity.')
+    })
   }
 
   function orderAction(delta: -1 | 1): void {
     if (!selection) return
-    if (selection.type === 'processor') mutate(() => moveProcessor(project(), selection!.id, delta), 'Unable to reorder Processor.')
-    if (selection.type === 'receiver') mutate(() => moveReceiver(project(), selection!.id, delta), 'Unable to reorder Receiver.')
+    if (selection.type === 'processor') mutate(source => moveProcessorV2(source, selection!.id, delta), 'Unable to reorder Processor.')
+    if (selection.type === 'receiver') mutate(source => moveReceiverV2(source, selection!.id, delta), 'Unable to reorder Receiver.')
   }
 
   function assignAction(unassign: boolean): void {
     if (selection?.type !== 'receiver') return
     const receiverId = selection.id
     mutate(
-      () => unassign
-        ? unassignCabinets(project(), receiverId, selectedCabinetIds)
-        : assignCabinets(project(), receiverId, selectedCabinetIds),
+      source => unassign
+        ? unassignCabinetsV2(source, receiverId, selectedCabinetIds)
+        : assignCabinetsV2(source, receiverId, orderedSelectedCabinetsV2(source, selectedCabinetIds)),
       unassign ? 'Unable to unassign Cabinets.' : 'Unable to assign Cabinets.',
     )
   }
@@ -631,8 +623,10 @@ export function createHardwareWorkspace(options: HardwareWorkspaceOptions): Hard
   function previewAllocation(): void {
     options.clearError()
     try {
-      allocationPreview = previewHardwareAllocation(project())
-      renderPreview(allocationPreview)
+      const stamp = options.getDocumentStamp()
+      const proposal = previewHardwareAllocationV2(options.getProjectV2())
+      allocationPreview = { ...stamp, proposal }
+      renderPreview(proposal)
       previewDialog.showModal()
     } catch (error) {
       options.showError(error, 'Unable to preview Hardware allocation.')
@@ -654,10 +648,18 @@ export function createHardwareWorkspace(options: HardwareWorkspaceOptions): Hard
   })
   applyPreviewButton.addEventListener('click', () => {
     if (!allocationPreview) return
-    const proposal = allocationPreview
+    const { proposal, documentId, revision } = allocationPreview
     allocationPreview = null
     previewDialog.close()
-    mutate(() => applyHardwareAllocation(project(), proposal), 'Unable to apply Hardware allocation.')
+    options.clearError()
+    const current = options.getDocumentStamp()
+    try {
+      requireCurrentHardwarePreview({ documentId, revision }, current)
+    } catch (error) {
+      options.showError(error, 'Unable to apply Hardware allocation.')
+      return
+    }
+    mutate(source => applyHardwareAllocationV2(source, proposal), 'Unable to apply Hardware allocation.')
   })
   fitButton.addEventListener('click', fit)
   actualButton.addEventListener('click', () => {

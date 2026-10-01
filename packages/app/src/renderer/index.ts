@@ -186,11 +186,6 @@ function directionLabel(direction: Direction): string {
   return labels[direction]
 }
 
-function apply(next: Project): void {
-  documentController.commit(next)
-  syncDocumentState()
-}
-
 function applyV2(command: (project: LedMapProjectV2) => LedMapProjectV2): void {
   documentController.transactV2(command)
   syncDocumentState()
@@ -1336,7 +1331,9 @@ mappingWorkspace = createMappingWorkspace({
 
 hardwareWorkspace = createHardwareWorkspace({
   getProject: () => currentProject(),
-  updateProject: next => apply(next),
+  getProjectV2: () => documentController.session.project,
+  getDocumentStamp: () => ({ documentId: documentController.session.documentId, revision: documentController.session.revision }),
+  runCommand: command => applyV2(command),
   showError: showDocumentError,
   clearError: clearDocumentError,
 })

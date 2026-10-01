@@ -2,7 +2,7 @@ import {
   findScreen, hitTest, maxColumnsForRows, maxRowsForColumns, projectBounds,
   screenBounds, screenHeight, screenWidth,
   type Project, type ScreenCabinetConfigPatch, type ScreenView, type SelectedObject,
-} from './project.js'
+} from './v2-view-model.js'
 import type { LedMapProjectV2 } from '@ledmap/core'
 import { ProjectDocumentController } from './document.js'
 import { createProjectSession, sessionDirty, sessionWorkspaceProject, type ProjectSession } from './project-session.js'

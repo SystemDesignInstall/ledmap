@@ -7,7 +7,7 @@ import {
   createPort,
   createProcessor,
   createReceiver,
-  projectV2AsEditableReadModel,
+  selectV2HardwareEngineInput,
   type AllocationProposal,
   type CabinetId,
   type LedMapProjectV2,
@@ -333,7 +333,7 @@ export function unassignCabinetsV2(project: LedMapProjectV2, receiverId: string,
 export function previewHardwareAllocationV2(project: LedMapProjectV2): AllocationProposal {
   const assigned = new Set(project.hardware.assignments.map(value => value.target.cabinetId))
   const cabinetOrder = orderedCabinets(project).filter(id => !assigned.has(id))
-  const topology = projectV2AsEditableReadModel(project).hardwareTopology
+  const topology = selectV2HardwareEngineInput(project)
   return allocateHardware({ ...topology, cabinetOrder })
 }
 

@@ -1,9 +1,7 @@
 import type { OpenProjectResult, SaveProjectRequest, SaveProjectResult } from '../shared/ipc.js'
-import type { Project } from './project.js'
 import type { LedMapProjectV2 } from '@ledmap/core'
 import {
   commitProjectV2,
-  commitLegacyProject,
   createProjectSession,
   loadProjectSession,
   markProjectSessionSaved,
@@ -24,10 +22,6 @@ export class ProjectDocumentController {
 
   get session(): ProjectSession {
     return this.current
-  }
-
-  commit(next: Project): void {
-    this.current = commitLegacyProject(this.current, next)
   }
 
   transactV2(command: (project: LedMapProjectV2) => LedMapProjectV2): void {

@@ -1,12 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { createProjectV2 } from '@ledmap/core'
-import { addScreen, setScreenPosition } from '../src/renderer/project.js'
+import { addScreenV2, setScreenPositionV2 } from '../src/renderer/v2-commands.js'
 import { ProjectDocumentController } from '../src/renderer/document.js'
 import {
   createProjectSession,
   serializeProjectSession,
   sessionDirty,
-  sessionWorkspaceProject,
 } from '../src/renderer/project-session.js'
 
 function controller(): ProjectDocumentController {
@@ -61,7 +60,7 @@ describe('ProjectSession document lifecycle', () => {
     const document = controller()
     expect(document.session.project.design.screens).toEqual([])
     expect(sessionDirty(document.session)).toBe(false)
-    document.commit(addScreen(sessionWorkspaceProject(document.session)))
+    document.transactV2(project => addScreenV2(project))
     expect(document.session.revision).toBe(1)
     expect(sessionDirty(document.session)).toBe(true)
     const saved = await document.save(false, async request => {
@@ -90,10 +89,10 @@ describe('ProjectSession document lifecycle', () => {
 
   it('keeps later edits dirty when Save finishes with an earlier revision', async () => {
     const document = controller()
-    document.commit(addScreen(sessionWorkspaceProject(document.session)))
+    document.transactV2(project => addScreenV2(project))
     const write = deferred<{ canceled: boolean; filePath: string }>()
     const saving = document.save(false, () => write.promise)
-    document.commit(setScreenPosition(sessionWorkspaceProject(document.session), 'screen-1', 50, 60))
+    document.transactV2(project => setScreenPositionV2(project, 'screen-1', 50, 60))
     expect(document.session.revision).toBe(2)
     write.resolve({ canceled: false, filePath: 'first.ledmap' })
     expect(await saving).toBe(true)
@@ -103,7 +102,7 @@ describe('ProjectSession document lifecycle', () => {
 
   it('queues a second Save with the newest snapshot after Save, edit, Save', async () => {
     const document = controller()
-    document.commit(addScreen(sessionWorkspaceProject(document.session)))
+    document.transactV2(project => addScreenV2(project))
     const firstWrite = deferred<{ canceled: boolean; filePath: string }>()
     const secondWrite = deferred<{ canceled: boolean; filePath: string }>()
     const secondStarted = deferred<void>()
@@ -115,7 +114,7 @@ describe('ProjectSession document lifecycle', () => {
       return secondWrite.promise
     }
     const first = document.save(false, write)
-    document.commit(setScreenPosition(sessionWorkspaceProject(document.session), 'screen-1', 80, 90))
+    document.transactV2(project => setScreenPositionV2(project, 'screen-1', 80, 90))
     const second = document.save(false, write)
     expect(requests).toHaveLength(1)
     firstWrite.resolve({ canceled: false, filePath: 'project.ledmap' })
@@ -132,10 +131,10 @@ describe('ProjectSession document lifecycle', () => {
 
   it('keeps Save As path while an edit during the write remains dirty', async () => {
     const document = controller()
-    document.commit(addScreen(sessionWorkspaceProject(document.session)))
+    document.transactV2(project => addScreenV2(project))
     const write = deferred<{ canceled: boolean; filePath: string }>()
     const saving = document.save(true, () => write.promise)
-    document.commit(setScreenPosition(sessionWorkspaceProject(document.session), 'screen-1', 20, 30))
+    document.transactV2(project => setScreenPositionV2(project, 'screen-1', 20, 30))
     write.resolve({ canceled: false, filePath: 'new-name.ledmap' })
     expect(await saving).toBe(true)
     expect(document.session.currentFilePath).toBe('new-name.ledmap')
@@ -145,7 +144,7 @@ describe('ProjectSession document lifecycle', () => {
 
   it('leaves the session unchanged on failed Save and canceled Save As', async () => {
     const document = controller()
-    document.commit(addScreen(sessionWorkspaceProject(document.session)))
+    document.transactV2(project => addScreenV2(project))
     const before = document.session
     await expect(document.save(false, async () => { throw new Error('disk failed') })).rejects.toThrow('disk failed')
     expect(document.session).toBe(before)
@@ -171,7 +170,7 @@ describe('ProjectSession document lifecycle', () => {
 
   it('ignores stale Save and Open callbacks after a document replacement or edit', async () => {
     const document = controller()
-    document.commit(addScreen(sessionWorkspaceProject(document.session)))
+    document.transactV2(project => addScreenV2(project))
     const write = deferred<{ canceled: boolean; filePath: string }>()
     const saving = document.save(false, () => write.promise)
     await Promise.resolve()
@@ -183,7 +182,7 @@ describe('ProjectSession document lifecycle', () => {
 
     const read = deferred<{ canceled: boolean; filePath: string; text: string }>()
     const opening = document.open(() => read.promise)
-    document.commit(addScreen(sessionWorkspaceProject(document.session)))
+    document.transactV2(project => addScreenV2(project))
     const changed = document.session
     read.resolve({ canceled: false, filePath: 'old.ledmap', text: legacyV1() })
     expect(await opening).toBe('stale')

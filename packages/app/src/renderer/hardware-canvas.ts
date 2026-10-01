@@ -1,6 +1,7 @@
 import type { CabinetId } from '@ledmap/core'
 import type { Camera, Point } from './canvas.js'
-import { projectBounds, type Bounds, type Project, type ScreenView } from './project.js'
+import { projectBounds, type Bounds, type Project, type ScreenView } from './v2-view-model.js'
+import { receiverCabinetIds } from './v2-hardware-read.js'
 
 export type HardwareSelection =
   | { readonly type: 'processor'; readonly id: string }
@@ -65,23 +66,25 @@ function drawGrid(ctx: CanvasRenderingContext2D, width: number, height: number, 
 }
 
 function assignedReceiver(project: Project, cabinetId: string) {
-  return project.source.hardwareTopology.receivers.find(receiver => receiver.cabinets.some(id => id === cabinetId))
+  const assignment = project.model.hardware.assignments.find(value => value.target.cabinetId === cabinetId)
+  return assignment ? project.model.hardware.receivers.find(receiver => receiver.id === assignment.receiverId) : undefined
 }
 
 function linkedCabinets(project: Project, selection: HardwareSelection | null): Set<string> {
   if (!selection) return new Set()
-  const topology = project.source.hardwareTopology
+  const topology = project.model.hardware
   if (selection.type === 'receiver') {
-    return new Set(topology.receivers.find(receiver => receiver.id === selection.id)?.cabinets ?? [])
+    return new Set(receiverCabinetIds(project.model, selection.id))
   }
   const receiverIds = selection.type === 'port'
-    ? new Set(topology.receivers.filter(receiver => receiver.port === selection.id).map(receiver => receiver.id))
-    : new Set(topology.receivers.filter(receiver => receiver.processor === selection.id).map(receiver => receiver.id))
-  return new Set(topology.receivers.filter(receiver => receiverIds.has(receiver.id)).flatMap(receiver => receiver.cabinets))
+    ? new Set(topology.receivers.filter(receiver => receiver.portId === selection.id).map(receiver => receiver.id))
+    : new Set(topology.receivers.filter(receiver => receiver.processorId === selection.id).map(receiver => receiver.id))
+  return new Set(topology.receivers.filter(receiver => receiverIds.has(receiver.id))
+    .flatMap(receiver => receiverCabinetIds(project.model, receiver.id)))
 }
 
 function receiverColor(project: Project, receiverId: string): string {
-  const index = project.source.hardwareTopology.receivers.findIndex(receiver => receiver.id === receiverId)
+  const index = project.model.hardware.receivers.findIndex(receiver => receiver.id === receiverId)
   return receiverColors[(index < 0 ? 0 : index) % receiverColors.length]!
 }
 
@@ -104,8 +107,8 @@ function cabinetCenter(project: Project, cabinetId: string): Point | null {
 }
 
 function drawDataFlow(ctx: CanvasRenderingContext2D, project: Project, camera: Camera): void {
-  for (const receiver of project.source.hardwareTopology.receivers) {
-    const points = receiver.cabinets.map(cabinet => cabinetCenter(project, cabinet)).filter(point => point !== null)
+  for (const receiver of project.model.hardware.receivers) {
+    const points = receiverCabinetIds(project.model, receiver.id).map(cabinet => cabinetCenter(project, cabinet)).filter(point => point !== null)
     if (points.length < 2) continue
     ctx.strokeStyle = `${receiverColor(project, receiver.id)}aa`
     ctx.lineWidth = 2
@@ -158,8 +161,8 @@ function drawScreen(
     ctx.lineWidth = selected ? 3 : highlighted ? 2.5 : 1
     ctx.strokeRect(topLeft.x, topLeft.y, cw, ch)
     if (camera.zoom < .11) continue
-    const port = receiver ? project.source.hardwareTopology.ports.find(value => value.id === receiver.port) : undefined
-    const processor = port ? project.source.hardwareTopology.processors.find(value => value.id === port.processor) : undefined
+    const port = receiver ? project.model.hardware.ports.find(value => value.id === receiver.portId) : undefined
+    const processor = port ? project.model.hardware.processors.find(value => value.id === port.processorId) : undefined
     const lines = [cabinet.id]
     if (view.overlays.receiver) lines.push(receiver?.id ?? 'Unassigned')
     if (view.overlays.port && port) lines.push(port.id)
@@ -197,7 +200,7 @@ export function hitHardwareCabinet(project: Project, point: Point): HardwareCabi
       const rect = cabinetRect(screen, cabinet.column, cabinet.row)
       if (point.x < rect.left || point.y < rect.top || point.x >= rect.right || point.y >= rect.bottom) continue
       return {
-        cabinet: cabinet.sourceId,
+        cabinet: cabinet.sourceId as CabinetId,
         screenId: screen.screen.id,
         local: { x: Math.floor(point.x - rect.left), y: Math.floor(point.y - rect.top) },
       }

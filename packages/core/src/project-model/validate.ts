@@ -188,6 +188,10 @@ export function assertProjectV2EditorStructure(project: LedMapProjectV2): void {
     positive(cabinet.pixelHeight, `Cabinet ${cabinet.id} pixel height`)
     positive(cabinet.moduleColumns, `Cabinet ${cabinet.id} module columns`)
     positive(cabinet.moduleRows, `Cabinet ${cabinet.id} module rows`)
+    if (!Number.isSafeInteger(cabinet.rotation)) fail('PROJECT_INVALID_GEOMETRY', `Cabinet ${cabinet.id} rotation must be a signed safe integer`)
+    if (typeof cabinet.flipH !== 'boolean' || typeof cabinet.flipV !== 'boolean') {
+      fail('PROJECT_INVALID_GEOMETRY', `Cabinet ${cabinet.id} flips must be boolean`)
+    }
     const cell = `${cabinet.gridId}:${cabinet.column},${cabinet.row}`
     if (occupiedCabinets.has(cell)) fail('PROJECT_DUPLICATE_CELL', `CabinetGrid ${cabinet.gridId} cell ${cabinet.column},${cabinet.row} is occupied twice`)
     occupiedCabinets.add(cell)

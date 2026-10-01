@@ -1,6 +1,6 @@
 import { cabinetIndex, cabinetOrder, type CabinetEngineConfig, type GridPosition } from '@ledmap/core'
 import { gridPixelSize } from './state.js'
-import type { Bounds, Project, ScreenView, SelectedObject } from './project.js'
+import type { Bounds, Project, ScreenView, SelectedObject } from './v2-view-model.js'
 import type { AlignmentGuide, SelectionBox } from './layout-interaction.js'
 
 export interface Camera {

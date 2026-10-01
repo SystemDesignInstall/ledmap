@@ -2,12 +2,12 @@ import {
   DomainError,
   asCabinetId,
   asModuleId,
-  inspectGeometryInputPixel,
-  projectEditableGeometryMapping,
-  projectEditableHardwareMapping,
+  mapGeometryInputPixel,
+  selectV2GeometryRead,
+  selectV2HardwareRead,
   unmapGeometryCabinetPixel,
   unmapGeometryModulePixel,
-  type EditableProjectionDiagnostic,
+  type V2ReadDiagnostic,
   type GeometryMappedPixel,
   type LedMapProjectV2,
   type MappingRegion,
@@ -26,12 +26,14 @@ import {
 import {
   findMappingRegion,
   type MappingRegionPatch,
-} from './mapping-project.js'
+  inputCanvas,
+  mappingRegions,
+} from './v2-mapping-read.js'
 import {
   addMappingRegionV2, deleteMappingRegionV2, mapFromLayoutPositionV2,
   setInputCanvasResolutionV2, updateMappingRegionV2,
 } from './v2-commands.js'
-import { findScreen, type Project } from './project.js'
+import { findScreen, type Project } from './v2-view-model.js'
 
 interface MappingWorkspaceOptions {
   readonly getProject: () => Project
@@ -93,7 +95,7 @@ function pixelDump(pixel: GeometryMappedPixel): {
   }
 }
 
-function diagnosticStatus(diagnostics: readonly EditableProjectionDiagnostic[]): MappingDiagnosticStatus {
+function diagnosticStatus(diagnostics: readonly V2ReadDiagnostic[]): MappingDiagnosticStatus {
   const code = diagnostics[0]?.code
   if (code === 'MAPPING_OUT_OF_RANGE') return 'out-of-bounds'
   if (code === 'MAPPING_INCOMPLETE' || code === 'MAPPING_UNKNOWN_REFERENCE') return 'incomplete'
@@ -205,15 +207,19 @@ export function createMappingWorkspace(options: MappingWorkspaceOptions): Mappin
     return options.getProject()
   }
 
-  function projection(regionId: string): ReturnType<typeof projectEditableGeometryMapping> {
-    const region = findMappingRegion(project(), regionId)
+  function model(): LedMapProjectV2 {
+    return project().model
+  }
+
+  function projection(regionId: string): ReturnType<typeof selectV2GeometryRead> {
+    const region = findMappingRegion(model(), regionId)
     if (!region) throw new Error(`Unknown Mapping Region: ${regionId}`)
-    return projectEditableGeometryMapping(project().source, region.id)
+    return selectV2GeometryRead(model(), region.id)
   }
 
   function regionStates(): readonly MappingRegionRenderState[] {
-    return project().source.mappingRegions.map(region => {
-      const result = projectEditableGeometryMapping(project().source, region.id)
+    return mappingRegions(model()).map(region => {
+      const result = selectV2GeometryRead(model(), region.id)
       return {
         region,
         screenName: findScreen(project(), region.screen)?.screen.name ?? region.screen,
@@ -223,7 +229,7 @@ export function createMappingWorkspace(options: MappingWorkspaceOptions): Mappin
   }
 
   function fit(): void {
-    const input = project().source.inputCanvas
+    const input = inputCanvas(model())
     const rect = canvas.getBoundingClientRect()
     if (!input || rect.width < 1 || rect.height < 1) {
       camera = { zoom: 1, offsetX: rect.width / 2, offsetY: rect.height / 2 }
@@ -244,7 +250,7 @@ export function createMappingWorkspace(options: MappingWorkspaceOptions): Mappin
   function draw(): void {
     if (!active) return
     drawMappingCanvas(canvas, project(), {
-      inputCanvas: project().source.inputCanvas,
+      inputCanvas: inputCanvas(model()),
       regions: regionStates(),
       selectedRegionId,
       inspectedInput,
@@ -265,7 +271,7 @@ export function createMappingWorkspace(options: MappingWorkspaceOptions): Mappin
   }
 
   function selectedRegion(): MappingRegion | undefined {
-    return selectedRegionId ? findMappingRegion(project(), selectedRegionId) : undefined
+    return selectedRegionId ? findMappingRegion(model(), selectedRegionId) : undefined
   }
 
   function selectedScreen(): ReturnType<typeof findScreen> {
@@ -283,7 +289,7 @@ export function createMappingWorkspace(options: MappingWorkspaceOptions): Mappin
   }
 
   function selectRegion(regionId: string): void {
-    const region = findMappingRegion(project(), regionId)
+    const region = findMappingRegion(model(), regionId)
     if (!region) return
     selectedScreenId = region.screen
     selectedRegionId = region.id
@@ -296,7 +302,7 @@ export function createMappingWorkspace(options: MappingWorkspaceOptions): Mappin
     const screen = selectedScreen()
     if (!screen) return
     if (!mutate(source => addMappingRegionV2(source, screen.screen.id), 'Unable to create Mapping Region.')) return
-    selectedRegionId = project().source.mappingRegions[project().source.mappingRegions.length - 1]?.id ?? null
+    selectedRegionId = model().content.mappingRegions.at(-1)?.id ?? null
     inspectionRegionId = selectedRegionId
     render()
   }
@@ -306,8 +312,8 @@ export function createMappingWorkspace(options: MappingWorkspaceOptions): Mappin
     if (!screen) return
     if (!mutate(source => mapFromLayoutPositionV2(source, screen.screen.id, selectedRegionId ?? undefined), 'Unable to map from Layout position.')) return
     const target = selectedRegionId
-      ? findMappingRegion(project(), selectedRegionId)
-      : project().source.mappingRegions.find(region => region.screen === screen.screen.id)
+      ? findMappingRegion(model(), selectedRegionId)
+      : mappingRegions(model()).find(region => region.screen === screen.screen.id)
     selectedRegionId = target?.id ?? null
     inspectionRegionId = selectedRegionId
     render()
@@ -327,7 +333,7 @@ export function createMappingWorkspace(options: MappingWorkspaceOptions): Mappin
   function renderTree(): void {
     tree.replaceChildren()
     for (const screen of project().screens) {
-      const screenRegions = project().source.mappingRegions.filter(region => region.screen === screen.screen.id)
+      const screenRegions = mappingRegions(model()).filter(region => region.screen === screen.screen.id)
       const screenNode = document.createElement('button')
       screenNode.type = 'button'
       screenNode.className = 'mapping-tree-screen'
@@ -361,16 +367,16 @@ export function createMappingWorkspace(options: MappingWorkspaceOptions): Mappin
   function renderDiagnostics(): void {
     diagnostics.replaceChildren()
     const items: Array<{ label: string; status: MappingDiagnosticStatus; screenId?: string; regionId?: string }> = []
-    if (!project().source.inputCanvas) items.push({ label: 'Input Canvas is not configured', status: 'incomplete' })
+    if (!inputCanvas(model())) items.push({ label: 'Input Canvas is not configured', status: 'incomplete' })
     if (project().screens.length === 0) items.push({ label: 'No Screens available from Layout', status: 'incomplete' })
     for (const screen of project().screens) {
-      if (!project().source.mappingRegions.some(region => region.screen === screen.screen.id)) {
+      if (!mappingRegions(model()).some(region => region.screen === screen.screen.id)) {
         items.push({ label: `${screen.screen.name}: no Mapping Region`, status: 'incomplete', screenId: screen.screen.id })
       }
     }
     for (const state of regionStates()) {
       if (state.status === 'complete') continue
-      const result = projectEditableGeometryMapping(project().source, state.region.id)
+      const result = selectV2GeometryRead(model(), state.region.id)
       const message = result.status === 'incomplete' ? result.diagnostics[0]?.message : undefined
       items.push({
         label: `${state.screenName}: ${message ?? statusLabel(state.status)}`,
@@ -420,12 +426,12 @@ export function createMappingWorkspace(options: MappingWorkspaceOptions): Mappin
   function forwardPixel(regionId: string, point: Point): GeometryMappedPixel {
     const result = projection(regionId)
     if (result.status !== 'ready') throw new Error(result.diagnostics[0]?.message ?? 'Mapping geometry is incomplete.')
-    const input = project().source.inputCanvas
+    const input = inputCanvas(model())
     if (!input) throw new Error('Input Canvas is not configured.')
-    return inspectGeometryInputPixel(result.mapping, {
+    return mapGeometryInputPixel(result.mapping, {
       inputCanvas: input.id,
       inputCoordinate: point,
-    }, projectEditableHardwareMapping(project().source)).geometry
+    })
   }
 
   function inspectionRows(pixel: GeometryMappedPixel): HTMLElement {
@@ -440,7 +446,7 @@ export function createMappingWorkspace(options: MappingWorkspaceOptions): Mappin
       row('Module', pixel.module),
       row('Module X/Y', `${pixel.moduleCoordinate.x}, ${pixel.moduleCoordinate.y}`),
     )
-    const hardware = projectEditableHardwareMapping(project().source)
+    const hardware = selectV2HardwareRead(model())
     box.append(row('Hardware', hardware.status === 'ready' ? 'Configured' : 'Not configured'))
     return box
   }
@@ -530,7 +536,7 @@ export function createMappingWorkspace(options: MappingWorkspaceOptions): Mappin
       )
       const buttons = document.createElement('div')
       buttons.className = 'inspector-actions'
-      buttons.append(action('Create Region', createRegion, !project().source.inputCanvas), action('Map from Layout', mapFromLayout, !project().source.inputCanvas))
+      buttons.append(action('Create Region', createRegion, !inputCanvas(model())), action('Map from Layout', mapFromLayout, !inputCanvas(model())))
       properties.append(group('Target', target), buttons)
       return
     }
@@ -576,7 +582,7 @@ export function createMappingWorkspace(options: MappingWorkspaceOptions): Mappin
   }
 
   function renderStatus(): void {
-    const input = project().source.inputCanvas
+    const input = inputCanvas(model())
     widthInput.value = String(input?.resolution.width ?? 1920)
     heightInput.value = String(input?.resolution.height ?? 1080)
     const screen = selectedScreen()
@@ -599,7 +605,7 @@ export function createMappingWorkspace(options: MappingWorkspaceOptions): Mappin
     if (!selectedScreenId || !findScreen(project(), selectedScreenId)) {
       selectedScreenId = project().screens[0]?.screen.id ?? null
     }
-    if (selectedRegionId && !findMappingRegion(project(), selectedRegionId)) selectedRegionId = null
+    if (selectedRegionId && !findMappingRegion(model(), selectedRegionId)) selectedRegionId = null
     renderTree()
     renderDiagnostics()
     renderInspector()
@@ -630,7 +636,7 @@ export function createMappingWorkspace(options: MappingWorkspaceOptions): Mappin
   }
 
   function inspectAt(point: Point, regionId: string | null): void {
-    const input = project().source.inputCanvas
+    const input = inputCanvas(model())
     if (!input) return
     const pixel = { x: Math.floor(point.x), y: Math.floor(point.y) }
     if (pixel.x < 0 || pixel.y < 0 || pixel.x >= input.resolution.width || pixel.y >= input.resolution.height) return
@@ -685,7 +691,7 @@ export function createMappingWorkspace(options: MappingWorkspaceOptions): Mappin
       canvas.setPointerCapture(event.pointerId)
       return
     }
-    const hit = hitMappingRegion(project().source.mappingRegions, point)
+    const hit = hitMappingRegion(mappingRegions(model()), point)
     if (!hit) {
       selectedRegionId = null
       inspectionRegionId = null
@@ -716,7 +722,7 @@ export function createMappingWorkspace(options: MappingWorkspaceOptions): Mappin
     if (gesture?.type === 'drag') {
       const x = Math.max(0, Math.round(gesture.x + point.x - gesture.start.x))
       const y = Math.max(0, Math.round(gesture.y + point.y - gesture.start.y))
-      const region = findMappingRegion(project(), gesture.regionId)
+      const region = findMappingRegion(model(), gesture.regionId)
       if (region && (region.position.x !== x || region.position.y !== y)) {
         const regionId = gesture.regionId
         try {
@@ -731,7 +737,7 @@ export function createMappingWorkspace(options: MappingWorkspaceOptions): Mappin
     }
     if (gesture?.type === 'resize') {
       const geometry = resizeMappingRegion(gesture.region, gesture.handle, point.x - gesture.start.x, point.y - gesture.start.y)
-      const current = findMappingRegion(project(), gesture.region.id)
+      const current = findMappingRegion(model(), gesture.region.id)
       if (current && (
         current.position.x !== geometry.x || current.position.y !== geometry.y ||
         current.size.width !== geometry.width || current.size.height !== geometry.height
@@ -746,7 +752,7 @@ export function createMappingWorkspace(options: MappingWorkspaceOptions): Mappin
       }
       return
     }
-    const hit = hitMappingRegion(project().source.mappingRegions, point)
+    const hit = hitMappingRegion(mappingRegions(model()), point)
     const current = selectedRegion()
     const handle = current ? hitMappingResizeHandle(current, pointPx, camera) : null
     canvas.style.cursor = mappingCursor(handle, hit !== null)
@@ -786,9 +792,9 @@ export function createMappingWorkspace(options: MappingWorkspaceOptions): Mappin
 
   const hook: MappingTestHook = {
     dump: () => {
-      const inputCanvas = project().source.inputCanvas
+      const currentInputCanvas = inputCanvas(model())
       return {
-        inputCanvas: inputCanvas ? { ...inputCanvas.resolution } : null,
+        inputCanvas: currentInputCanvas ? { ...currentInputCanvas.resolution } : null,
         regions: regionStates().map(state => ({
           id: state.region.id,
           screen: state.region.screen,

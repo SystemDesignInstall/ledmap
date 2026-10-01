@@ -1,7 +1,7 @@
 import {
   addressGeometryPixel,
-  projectEditableGeometryMapping,
-  projectEditableHardwareMapping,
+  selectV2GeometryRead,
+  selectV2HardwareRead,
   unmapGeometryCabinetPixel,
   type AllocationProposal,
   type GeometryMappedPixel,
@@ -23,7 +23,8 @@ import {
   findReceiver,
   receiverPixelUsage,
   unassignedCabinetIds,
-} from './hardware-project.js'
+  receiverCabinetIds,
+} from './v2-hardware-read.js'
 import {
   addPortV2, addProcessorV2, addReceiverV2, applyHardwareAllocationV2,
   assignCabinetsV2, deletePortV2, deleteProcessorV2, deleteReceiverV2,
@@ -31,7 +32,7 @@ import {
   previewHardwareAllocationV2, renameProcessorV2, requireCurrentHardwarePreview, setProcessorPortCountV2,
   unassignCabinetsV2, updatePortV2, updateReceiverV2,
 } from './v2-hardware-commands.js'
-import type { Project } from './project.js'
+import type { Project } from './v2-view-model.js'
 
 interface HardwareWorkspaceOptions {
   readonly getProject: () => Project
@@ -211,6 +212,10 @@ export function createHardwareWorkspace(options: HardwareWorkspaceOptions): Hard
     return options.getProject()
   }
 
+  function model(): LedMapProjectV2 {
+    return options.getProjectV2()
+  }
+
   function mutate(run: (project: LedMapProjectV2) => LedMapProjectV2, fallback: string, after?: () => void): void {
     options.clearError()
     try {
@@ -224,14 +229,14 @@ export function createHardwareWorkspace(options: HardwareWorkspaceOptions): Hard
 
   function selectedProcessorId(): string | null {
     if (selection?.type === 'processor') return selection.id
-    if (selection?.type === 'port') return findPort(project(), selection.id)?.processor ?? null
-    if (selection?.type === 'receiver') return findReceiver(project(), selection.id)?.processor ?? null
+    if (selection?.type === 'port') return findPort(model(), selection.id)?.processorId ?? null
+    if (selection?.type === 'receiver') return findReceiver(model(), selection.id)?.processorId ?? null
     return null
   }
 
   function selectedPortId(): string | null {
     if (selection?.type === 'port') return selection.id
-    if (selection?.type === 'receiver') return findReceiver(project(), selection.id)?.port ?? null
+    if (selection?.type === 'receiver') return findReceiver(model(), selection.id)?.portId ?? null
     return null
   }
 
@@ -274,14 +279,14 @@ export function createHardwareWorkspace(options: HardwareWorkspaceOptions): Hard
   }
 
   function cabinetButton(cabinetId: string, receiverId: string | null): HTMLButtonElement {
-    const cabinet = project().source.hardwareTopology.cabinets.find(value => value.id === cabinetId)
-    const screen = project().screens.find(value => value.grid.id === cabinet?.grid)
+    const cabinet = model().design.cabinets.find(value => value.id === cabinetId)
+    const screen = project().screens.find(value => value.grid.id === cabinet?.gridId)
     const button = document.createElement('button')
     button.type = 'button'
     button.className = 'hardware-tree-cabinet'
     button.dataset['cabinetId'] = cabinetId
     button.setAttribute('aria-pressed', String(selectedCabinetIds.includes(cabinetId)))
-    button.textContent = `${screen?.screen.name ?? cabinet?.grid ?? 'Cabinet'} · ${cabinetId.split('/').at(-1)}`
+    button.textContent = `${screen?.screen.name ?? cabinet?.gridId ?? 'Cabinet'} · ${cabinetId.split('/').at(-1)}`
     button.addEventListener('click', event => {
       const additive = event.ctrlKey || event.metaKey || event.shiftKey
       selectedCabinetIds = additive
@@ -298,7 +303,7 @@ export function createHardwareWorkspace(options: HardwareWorkspaceOptions): Hard
 
   function renderTree(): void {
     tree.replaceChildren()
-    const source = project().source.hardwareTopology
+    const source = model().hardware
     if (source.processors.length === 0) {
       const hint = document.createElement('p')
       hint.className = 'hint'
@@ -308,16 +313,16 @@ export function createHardwareWorkspace(options: HardwareWorkspaceOptions): Hard
     for (const processorId of source.processorOrder) {
       const processor = source.processors.find(value => value.id === processorId)
       if (!processor) continue
-      const ports = source.ports.filter(port => port.processor === processor.id).sort((a, b) => a.index - b.index)
+      const ports = source.ports.filter(port => port.processorId === processor.id).sort((a, b) => a.index - b.index)
       tree.append(entityButton('processor', processor.id, processor.name, `Ports ${ports.length}/${processor.portCount}`, 0))
       for (const port of ports) {
-        const order = source.receiverOrder.find(value => value.port === port.id)
-        const receiverIds = order?.receivers ?? []
+        const order = source.receiverOrder.find(value => value.portId === port.id)
+        const receiverIds = order?.receiverIds ?? []
         tree.append(entityButton('port', port.id, `Port ${port.index + 1}`, `Receivers ${receiverIds.length}/${port.receiverCapacity}`, 1))
         for (const receiverId of receiverIds) {
           const receiver = source.receivers.find(value => value.id === receiverId)
           if (!receiver) continue
-          const usage = receiverPixelUsage(project(), receiver.id)
+          const usage = receiverPixelUsage(model(), receiver.id)
           tree.append(entityButton(
             'receiver',
             receiver.id,
@@ -325,11 +330,11 @@ export function createHardwareWorkspace(options: HardwareWorkspaceOptions): Hard
             usage.capacity === null ? `${format(usage.used)} px` : `${capacityText(usage.used, usage.capacity)} px`,
             2,
           ))
-          for (const cabinet of receiver.cabinets) tree.append(cabinetButton(cabinet, receiver.id))
+          for (const cabinet of receiverCabinetIds(model(), receiver.id)) tree.append(cabinetButton(cabinet, receiver.id))
         }
       }
     }
-    const unassigned = unassignedCabinetIds(project())
+    const unassigned = unassignedCabinetIds(model())
     if (unassigned.length > 0) {
       const heading = document.createElement('div')
       heading.className = 'hardware-unassigned-heading'
@@ -341,7 +346,7 @@ export function createHardwareWorkspace(options: HardwareWorkspaceOptions): Hard
 
   function renderDiagnostics(): void {
     diagnostics.replaceChildren()
-    const unassigned = unassignedCabinetIds(project())
+    const unassigned = unassignedCabinetIds(model())
     if (unassigned.length > 0) {
       const item = document.createElement('button')
       item.type = 'button'
@@ -353,7 +358,7 @@ export function createHardwareWorkspace(options: HardwareWorkspaceOptions): Hard
       })
       diagnostics.append(item)
     } else {
-      const hardware = projectEditableHardwareMapping(project().source)
+      const hardware = selectV2HardwareRead(model())
       if (hardware.status === 'ready') {
         const healthy = document.createElement('p')
         healthy.className = 'mapping-diagnostic-ok'
@@ -373,14 +378,14 @@ export function createHardwareWorkspace(options: HardwareWorkspaceOptions): Hard
   }
 
   function inspectionFor(cabinetId: string, coordinate: Point): HardwareInspection {
-    const cabinet = project().source.hardwareTopology.cabinets.find(value => value.id === cabinetId)
+    const cabinet = model().design.cabinets.find(value => value.id === cabinetId)
     if (!cabinet) throw new Error(`Unknown Cabinet: ${cabinetId}`)
-    const region = project().source.mappingRegions.find(value => value.grid === cabinet.grid)
+    const region = model().content.mappingRegions.find(value => value.gridId === cabinet.gridId)
     if (!region) throw new Error(`Cabinet ${cabinetId} has no Mapping Region.`)
-    const geometry = projectEditableGeometryMapping(project().source, region.id)
+    const geometry = selectV2GeometryRead(model(), region.id)
     if (geometry.status !== 'ready') throw new Error(geometry.diagnostics[0]?.message ?? 'Mapping geometry is incomplete.')
     const pixel = unmapGeometryCabinetPixel(geometry.mapping, { cabinet: cabinet.id, coordinate })
-    const hardware = projectEditableHardwareMapping(project().source)
+    const hardware = selectV2HardwareRead(model())
     return {
       geometry: pixel,
       mapped: hardware.status === 'ready' ? addressGeometryPixel(hardware.hardware, pixel) : null,
@@ -397,7 +402,7 @@ export function createHardwareWorkspace(options: HardwareWorkspaceOptions): Hard
       container.append(hint)
       return container
     }
-    const cabinet = project().source.hardwareTopology.cabinets.find(value => value.id === inspectedCabinet?.id)
+    const cabinet = model().design.cabinets.find(value => value.id === inspectedCabinet?.id)
     if (!cabinet) return container
     const coordinates = document.createElement('div')
     coordinates.append(
@@ -451,10 +456,10 @@ export function createHardwareWorkspace(options: HardwareWorkspaceOptions): Hard
       return
     }
     if (selection.type === 'processor') {
-      const processor = findProcessor(project(), selection.id)
+      const processor = findProcessor(model(), selection.id)
       if (!processor) return
       inspectorTitle.textContent = 'Processor'
-      const ports = project().source.hardwareTopology.ports.filter(port => port.processor === processor.id)
+      const ports = model().hardware.ports.filter(port => port.processorId === processor.id)
       const fields = document.createElement('div')
       fields.append(
         row('Name', textInput(processor.name, 'Processor name', value => commit(source => renameProcessorV2(source, processor.id, value), 'Unable to rename Processor.'))),
@@ -466,14 +471,14 @@ export function createHardwareWorkspace(options: HardwareWorkspaceOptions): Hard
       return
     }
     if (selection.type === 'port') {
-      const port = findPort(project(), selection.id)
+      const port = findPort(model(), selection.id)
       if (!port) return
       inspectorTitle.textContent = 'Port'
-      const receiverCount = project().source.hardwareTopology.receivers.filter(receiver => receiver.port === port.id).length
+      const receiverCount = model().hardware.receivers.filter(receiver => receiver.portId === port.id).length
       const fields = document.createElement('div')
       fields.append(
         row('Identity', port.id),
-        row('Processor', port.processor),
+        row('Processor', port.processorId),
         row('Index', numberInput(port.index, 'Port index', value => commit(source => updatePortV2(source, port.id, { index: value }), 'Unable to update Port.'))),
         row('Receivers used', capacityText(receiverCount, port.receiverCapacity)),
         row('Receiver capacity', numberInput(port.receiverCapacity, 'Port receiver capacity', value => commit(source => updatePortV2(source, port.id, { receiverCapacity: value }), 'Unable to update Port.'))),
@@ -481,15 +486,15 @@ export function createHardwareWorkspace(options: HardwareWorkspaceOptions): Hard
       properties.append(group('Generic Port', fields), renderPixelInspector())
       return
     }
-    const receiver = findReceiver(project(), selection.id)
+    const receiver = findReceiver(model(), selection.id)
     if (!receiver) return
     inspectorTitle.textContent = 'Receiver'
-    const usage = receiverPixelUsage(project(), receiver.id)
+    const usage = receiverPixelUsage(model(), receiver.id)
     const fields = document.createElement('div')
     fields.append(
       row('Identity', receiver.id),
-      row('Port', receiver.port),
-      row('Index', numberInput(receiver.index, 'Receiver index', value => commit(source => updateReceiverV2(source, receiver.id, { index: value }), 'Unable to update Receiver.'))),
+      row('Port', receiver.portId),
+      row('Index', numberInput(receiver.legacyIndex, 'Receiver index', value => commit(source => updateReceiverV2(source, receiver.id, { index: value }), 'Unable to update Receiver.'))),
       row('Pixel usage', usage.capacity === null ? format(usage.used) : capacityText(usage.used, usage.capacity)),
       row('Pixel capacity', numberInput(usage.capacity ?? usage.used, 'Receiver pixel capacity', value => commit(source => updateReceiverV2(source, receiver.id, { pixelCapacity: value }), 'Unable to update Receiver.'))),
     )
@@ -503,7 +508,7 @@ export function createHardwareWorkspace(options: HardwareWorkspaceOptions): Hard
   }
 
   function renderStatus(): void {
-    const topology = project().source.hardwareTopology
+    const topology = model().hardware
     selectionChip.textContent = selection ? `${selection.id} selected` : `${cabinetCountLabel(selectedCabinetIds.length)} selected`
     addPortButton.disabled = selectedProcessorId() === null
     addReceiverButton.disabled = selectedPortId() === null
@@ -513,22 +518,22 @@ export function createHardwareWorkspace(options: HardwareWorkspaceOptions): Hard
     const receiverSelected = selection?.type === 'receiver'
     assignButton.disabled = !receiverSelected || selectedCabinetIds.length === 0
     unassignButton.disabled = assignButton.disabled
-    allocateButton.disabled = topology.receivers.length === 0 || unassignedCabinetIds(project()).length === 0
+    allocateButton.disabled = topology.receivers.length === 0 || unassignedCabinetIds(model()).length === 0
     document.querySelectorAll<HTMLButtonElement>('[data-hardware-overlay]').forEach(button => {
       const key = button.dataset['hardwareOverlay'] as keyof HardwareOverlays
       button.setAttribute('aria-pressed', String(overlays[key]))
     })
-    const unassigned = unassignedCabinetIds(project()).length
-    healthStatus.textContent = unassigned === 0 && topology.cabinets.length > 0
+    const unassigned = unassignedCabinetIds(model()).length
+    healthStatus.textContent = unassigned === 0 && model().design.cabinets.length > 0
       ? 'Hardware ready'
       : `${unassigned} Cabinets unassigned`
   }
 
   function render(): void {
-    if (selection?.type === 'processor' && !findProcessor(project(), selection.id)) selection = null
-    if (selection?.type === 'port' && !findPort(project(), selection.id)) selection = null
-    if (selection?.type === 'receiver' && !findReceiver(project(), selection.id)) selection = null
-    const known = new Set<string>(project().source.hardwareTopology.cabinets.map(cabinet => cabinet.id))
+    if (selection?.type === 'processor' && !findProcessor(model(), selection.id)) selection = null
+    if (selection?.type === 'port' && !findPort(model(), selection.id)) selection = null
+    if (selection?.type === 'receiver' && !findReceiver(model(), selection.id)) selection = null
+    const known = new Set<string>(model().design.cabinets.map(cabinet => cabinet.id))
     selectedCabinetIds = selectedCabinetIds.filter(id => known.has(id))
     if (inspectedCabinet && !known.has(inspectedCabinet.id)) inspectedCabinet = null
     renderTree()
@@ -595,7 +600,7 @@ export function createHardwareWorkspace(options: HardwareWorkspaceOptions): Hard
 
   function renderPreview(proposal: AllocationProposal): void {
     previewBody.replaceChildren()
-    const before = new Map(project().source.hardwareTopology.receivers.map(receiver => [receiver.id, receiver.cabinets.length]))
+    const before = new Map(model().hardware.receivers.map(receiver => [receiver.id, receiverCabinetIds(model(), receiver.id).length]))
     for (const receiver of proposal.topology.receivers) {
       const added = receiver.cabinets.length - (before.get(receiver.id) ?? 0)
       const item = document.createElement('div')
@@ -760,21 +765,21 @@ export function createHardwareWorkspace(options: HardwareWorkspaceOptions): Hard
   window.addEventListener('resize', () => { if (active) draw() })
 
   function dump(): HardwareDump {
-    const source = project().source.hardwareTopology
+    const source = model().hardware
     return {
       processors: source.processors.map(processor => ({ ...processor })),
-      ports: source.ports.map(port => ({ ...port })),
+      ports: source.ports.map(port => ({ id: port.id, processor: port.processorId, index: port.index, receiverCapacity: port.receiverCapacity })),
       receivers: source.receivers.map(receiver => ({
         id: receiver.id,
-        processor: receiver.processor,
-        port: receiver.port,
-        index: receiver.index,
+        processor: receiver.processorId,
+        port: receiver.portId,
+        index: receiver.legacyIndex,
         pixelCapacity: receiver.pixelCapacity ?? null,
-        cabinets: [...receiver.cabinets],
+        cabinets: [...receiverCabinetIds(model(), receiver.id)],
       })),
       processorOrder: [...source.processorOrder],
-      receiverOrder: source.receiverOrder.map(order => ({ port: order.port, receivers: [...order.receivers] })),
-      unassigned: [...unassignedCabinetIds(project())],
+      receiverOrder: source.receiverOrder.map(order => ({ port: order.portId, receivers: [...order.receiverIds] })),
+      unassigned: [...unassignedCabinetIds(model())],
     }
   }
 

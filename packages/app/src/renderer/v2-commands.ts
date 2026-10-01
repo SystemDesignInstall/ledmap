@@ -3,8 +3,8 @@ import {
   type CabinetEngineConfig, type LedMapProjectV2, type ProjectCabinet, type ProjectMappingRegion, type ProjectModule,
 } from '@ledmap/core'
 import { buildSnapshot, initialDraft, type CabinetSeed, type Draft, type Snapshot } from './state.js'
-import type { AddScreenOptions, ScreenCabinetConfigPatch } from './project.js'
-import type { MappingRegionPatch } from './mapping-project.js'
+import type { AddScreenOptions, ScreenCabinetConfigPatch } from './v2-view-model.js'
+import type { MappingRegionPatch } from './v2-mapping-read.js'
 
 function screenOf(project: LedMapProjectV2, screenId: string) {
   const screen = project.design.screens.find(value => value.id === screenId)

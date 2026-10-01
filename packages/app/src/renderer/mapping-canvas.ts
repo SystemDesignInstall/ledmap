@@ -1,6 +1,6 @@
 import type { InputCanvas, MappingRegion } from '@ledmap/core'
 import type { Camera, Point } from './canvas.js'
-import type { Project } from './project.js'
+import type { Project } from './v2-view-model.js'
 
 export type MappingDiagnosticStatus = 'complete' | 'incomplete' | 'invalid' | 'out-of-bounds'
 export type MappingResizeHandle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w'
@@ -85,7 +85,7 @@ function drawInputCanvas(ctx: CanvasRenderingContext2D, input: InputCanvas, came
 }
 
 function drawRegionGrid(ctx: CanvasRenderingContext2D, project: Project, state: MappingRegionRenderState, camera: Camera): void {
-  const grid = project.source.cabinetGrids.find(candidate => candidate.id === state.region.grid)
+  const grid = project.model.design.cabinetGrids.find(candidate => candidate.id === state.region.grid)
   if (!grid || camera.zoom < .05) return
   const origin = screenPoint(camera, state.region.position)
   const width = state.region.size.width * camera.zoom

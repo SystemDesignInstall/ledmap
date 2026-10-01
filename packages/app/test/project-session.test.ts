@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { convertEditableProjectToV2, createProjectV2 } from '@ledmap/core'
-import { addScreen, setScreenPosition } from '../src/renderer/project.js'
+import { convertEditableProjectToV2, createProjectV2, inspectProjectV2Readiness, validateProjectV2Structural } from '@ledmap/core'
+import { addScreenV2, setScreenPositionV2 } from '../src/renderer/v2-commands.js'
+import { unassignCabinetsV2 } from '../src/renderer/v2-hardware-commands.js'
 import {
-  commitLegacyProject,
+  commitProjectV2,
   createProjectSession,
   loadProjectSession,
   serializeProjectSession,
@@ -12,18 +13,17 @@ import {
 } from '../src/renderer/project-session.js'
 import { compactReadyProject } from './v2-parity-fixtures.js'
 
-describe('ProjectSession ownership and mutation bridge', () => {
+describe('ProjectSession V2 ownership', () => {
   it('does not advance a revision for a semantic no-op, even with newly allocated objects', () => {
     const session = createProjectSession('session-1')
-    const view = sessionWorkspaceProject(session)
-    expect(commitLegacyProject(session, { ...view, source: { ...view.source } })).toBe(session)
+    expect(commitProjectV2(session, project => ({ ...project }))).toBe(session)
     expect(sessionDirty(session)).toBe(false)
   })
 
-  it('advances exactly once for each real legacy mutation and reopens the schema-v2 wire result', () => {
+  it('advances exactly once for each real V2 mutation and reopens the schema-v2 wire result', () => {
     const empty = createProjectSession('session-1')
-    const added = commitLegacyProject(empty, addScreen(sessionWorkspaceProject(empty)))
-    const moved = commitLegacyProject(added, setScreenPosition(sessionWorkspaceProject(added), 'screen-1', -240, 80))
+    const added = commitProjectV2(empty, project => addScreenV2(project))
+    const moved = commitProjectV2(added, project => setScreenPositionV2(project, 'screen-1', -240, 80))
     expect(added.revision).toBe(1)
     expect(moved.revision).toBe(2)
     expect(moved.savedRevision).toBe(0)
@@ -57,7 +57,7 @@ describe('ProjectSession ownership and mutation bridge', () => {
       },
     })
     const session: ProjectSession = { ...createProjectSession('session-1'), project }
-    const changed = commitLegacyProject(session, setScreenPosition(sessionWorkspaceProject(session), 'screen-1', 48, 32))
+    const changed = commitProjectV2(session, source => setScreenPositionV2(source, 'screen-1', 48, 32))
     expect(changed.project.metadata).toEqual(project.metadata)
     expect(changed.project.design.cabinets[0]!.label).toBe('Custom V2 label')
     expect(changed.project.hardware.assignments[0]).toEqual(project.hardware.assignments[0])
@@ -80,7 +80,7 @@ describe('ProjectSession ownership and mutation bridge', () => {
       },
     })
     const session: ProjectSession = { ...createProjectSession('session-1'), project }
-    expect(() => commitLegacyProject(session, setScreenPosition(sessionWorkspaceProject(session), 'screen-1', 48, 32)))
+    expect(() => commitProjectV2(session, source => setScreenPositionV2(source, 'screen-1', 48, 32)))
       .toThrow(/PROJECT_COMPAT_MUTATION_BLOCKED/)
     expect(session.project).toBe(project)
     expect(session.revision).toBe(0)
@@ -94,7 +94,33 @@ describe('ProjectSession ownership and mutation bridge', () => {
     expect(() => serializeProjectSession(session)).toThrow(/PROJECT_COMPAT_SAVE_LOSSY/)
   })
 
-  it('blocks legacy reads and mutations when Stage cannot be projected', () => {
+  it('keeps valid but out-of-range Mapping as a committed V2 document with readiness diagnostics', () => {
+    const base = convertEditableProjectToV2(compactReadyProject().source)
+    const session: ProjectSession = { ...createProjectSession('session-1'), project: base }
+    const changed = commitProjectV2(session, project => ({ ...project, content: {
+      ...project.content, mappingRegions: project.content.mappingRegions.map((region, index) => index === 0
+        ? { ...region, position: { ...region.position, x: 17 } } : region),
+    } }))
+    expect(changed.revision).toBe(1)
+    expect(validateProjectV2Structural(changed.project)).toEqual([])
+    expect(inspectProjectV2Readiness(changed.project).map(value => value.code)).toContain('MAPPING_OUT_OF_RANGE')
+  })
+
+  it('permits incomplete Hardware as readiness state but rejects structural contradictions atomically', () => {
+    const base = convertEditableProjectToV2(compactReadyProject().source)
+    const session: ProjectSession = { ...createProjectSession('session-1'), project: base }
+    const cabinetId = base.design.cabinets[0]!.id
+    const incomplete = commitProjectV2(session, project => unassignCabinetsV2(project, 'receiver-1', [cabinetId]))
+    expect(incomplete.revision).toBe(1)
+    expect(validateProjectV2Structural(incomplete.project)).toEqual([])
+    expect(inspectProjectV2Readiness(incomplete.project).length).toBeGreaterThan(0)
+    expect(() => commitProjectV2(session, project => ({ ...project, hardware: { ...project.hardware,
+      assignments: [...project.hardware.assignments, project.hardware.assignments[0]!] } }))).toThrow()
+    expect(session.revision).toBe(0)
+    expect(session.project).toBe(base)
+  })
+
+  it('permits V2-only Stage reads but blocks lossy schema-v2 Save', () => {
     const empty = createProjectSession('session-1')
     const session: ProjectSession = {
       ...empty,
@@ -103,7 +129,7 @@ describe('ProjectSession ownership and mutation bridge', () => {
         design: { ...empty.project.design, stage: { placements: [] } },
       }),
     }
-    expect(() => sessionWorkspaceProject(session)).toThrow(/PROJECT_COMPAT_UNSUPPORTED/)
+    expect(sessionWorkspaceProject(session).screens).toEqual([])
     expect(() => serializeProjectSession(session)).toThrow(/PROJECT_COMPAT_UNSUPPORTED/)
     expect(session.revision).toBe(0)
   })

@@ -23,7 +23,21 @@ import {
 import { createTestProject } from './project-fixtures.js'
 
 function parity(legacy: Project, v2: LedMapProjectV2): void {
-  expect(projectV2WorkspaceReadModel(createProjectV2(v2))).toEqual(legacy)
+  const canonical = createProjectV2(v2)
+  expect(canonical).toEqual(convertEditableProjectToV2(legacy.source))
+  expect(projectV2WorkspaceReadModel(canonical).screens.map(view => ({
+    id: view.screen.id, name: view.screen.name, resolution: view.screen.resolution,
+    columns: view.grid.columns, rows: view.grid.rows, ordering: view.grid.ordering,
+    config: view.config, x: view.x, y: view.y, cabinets: view.cabinets,
+    nextCabinetSerial: view.nextCabinetSerial, path: view.path,
+    modulesPerCabinet: view.modulesPerCabinet, totalModules: view.totalModules, pixelCount: view.pixelCount,
+  }))).toEqual(legacy.screens.map(view => ({
+    id: view.screen.id, name: view.screen.name, resolution: view.screen.resolution,
+    columns: view.grid.columns, rows: view.grid.rows, ordering: view.grid.ordering,
+    config: view.config, x: view.x, y: view.y, cabinets: view.cabinets,
+    nextCabinetSerial: view.nextCabinetSerial, path: view.path,
+    modulesPerCabinet: view.modulesPerCabinet, totalModules: view.totalModules, pixelCount: view.pixelCount,
+  })))
 }
 
 function assignedTwoCabinets(): LedMapProjectV2 {

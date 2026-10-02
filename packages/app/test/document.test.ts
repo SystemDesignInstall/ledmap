@@ -4,6 +4,7 @@ import { addScreenV2, setScreenPositionV2 } from '../src/renderer/v2-commands.js
 import { ProjectDocumentController } from '../src/renderer/document.js'
 import {
   createProjectSession,
+  loadProjectSession,
   serializeProjectSession,
   sessionDirty,
 } from '../src/renderer/project-session.js'
@@ -23,28 +24,37 @@ function deferred<T>() {
   return { promise, resolve, reject }
 }
 
-function legacyV1(): string {
+function legacyV1(fourByFour = false): string {
+  const resolution = fourByFour ? { width: 128, height: 128 } : { width: 2, height: 3 }
+  const modules = fourByFour
+    ? Array.from({ length: 16 }, (_, index) => ({
+      id: `M${index + 1}`, cabinet: 'C', column: index % 4, row: Math.floor(index / 4),
+      width: 25, height: 25, pixelWidth: 32, pixelHeight: 32,
+    }))
+    : [{ id: 'M', cabinet: 'C', column: 0, row: 0, width: 100, height: 100, pixelWidth: 2, pixelHeight: 3 }]
   return JSON.stringify({
     format: 'ledmap',
     schemaVersion: 1,
     project: {
       mapping: {
-        inputCanvas: { id: 'input', resolution: { width: 2, height: 3 } },
-        screen: { id: 'screen', name: 'Legacy', resolution: { width: 2, height: 3 }, mappingRegions: ['region'], cabinetGrids: ['grid'] },
+        inputCanvas: { id: 'input', resolution },
+        screen: { id: 'screen', name: 'Legacy', resolution, mappingRegions: ['region'], cabinetGrids: ['grid'] },
         grid: {
           id: 'grid', screen: 'screen', name: 'Grid', columns: 1, rows: 1, cabinetWidth: 100, cabinetHeight: 100,
           ordering: { numbering: 'row', startCorner: 'top-left', direction: 'left-to-right', snake: false },
         },
-        region: { id: 'region', inputCanvas: 'input', screen: 'screen', grid: 'grid', position: { x: 0, y: 0 }, size: { width: 2, height: 3 } },
+        region: { id: 'region', inputCanvas: 'input', screen: 'screen', grid: 'grid', position: { x: 0, y: 0 }, size: resolution },
         hardwareTopology: {
           processors: [{ id: 'P', name: 'Processor', portCount: 1 }],
           ports: [{ id: 'P:0', processor: 'P', index: 0, receiverCapacity: 1 }],
-          receivers: [{ id: 'R', processor: 'P', port: 'P:0', index: 0, cabinets: ['C'], pixelCapacity: 6 }],
+          receivers: [{ id: 'R', processor: 'P', port: 'P:0', index: 0, cabinets: ['C'], pixelCapacity: fourByFour ? 16384 : 6 }],
           cabinets: [{
             id: 'C', grid: 'grid', column: 0, row: 0, origin: { x: 0, y: 0 }, width: 100, height: 100,
-            pixelWidth: 2, pixelHeight: 3, moduleColumns: 1, moduleRows: 1, rotation: 0, flipH: false, flipV: false,
+            pixelWidth: resolution.width, pixelHeight: resolution.height,
+            moduleColumns: fourByFour ? 4 : 1, moduleRows: fourByFour ? 4 : 1,
+            rotation: 0, flipH: false, flipV: false,
           }],
-          modules: [{ id: 'M', cabinet: 'C', column: 0, row: 0, width: 100, height: 100, pixelWidth: 2, pixelHeight: 3 }],
+          modules,
           processorOrder: ['P'],
           receiverOrder: [{ port: 'P:0', receivers: ['R'] }],
         },
@@ -92,6 +102,22 @@ describe('ProjectSession document lifecycle', () => {
     const before = document.session
     await expect(document.open(async () => ({ canceled: false, filePath: 'bad.ledmap', text: '{' }))).rejects.toThrow()
     expect(document.session).toBe(before)
+  })
+
+  it('preserves existing four-by-four geometry when opening v1 or v2 and saving v3', async () => {
+    const v1 = legacyV1(true)
+    const v2 = serializeEditableProject({ project: loadEditableProject(v1).project })
+    for (const [text, version] of [[v1, 1], [v2, 2]] as const) {
+      const document = controller()
+      expect(await document.open(async () => ({ canceled: false, filePath: 'legacy.ledmap', text }))).toBe('opened')
+      expect(document.session.sourceSchemaVersion).toBe(version)
+      const project = document.session.project
+      expect(project.design.cabinets[0]).toMatchObject({ moduleColumns: 4, moduleRows: 4, pixelWidth: 128, pixelHeight: 128 })
+      expect(project.design.modules).toHaveLength(16)
+      const reopened = loadProjectSession(serializeProjectSession(document.session), 'upgraded.ledmap', 'reopened')
+      expect(reopened.sourceSchemaVersion).toBe(3)
+      expect(reopened.project).toEqual(project)
+    }
   })
 
   it('keeps later edits dirty when Save finishes with an earlier revision', async () => {

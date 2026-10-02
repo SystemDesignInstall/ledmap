@@ -32,6 +32,8 @@ describe('ProjectSession V2 ownership', () => {
     expect(JSON.parse(stored)).toMatchObject({ format: 'ledmap', schemaVersion: 3 })
     const reopened = loadProjectSession(stored, 'project.ledmap', 'session-2')
     expect(reopened.project).toEqual(moved.project)
+    expect(reopened.project.design.cabinets[0]).toMatchObject({ moduleColumns: 1, moduleRows: 1 })
+    expect(reopened.project.design.modules).toHaveLength(12)
     expect(reopened.revision).toBe(0)
     expect(sessionWorkspaceProject(reopened).screens[0]).toMatchObject({ x: -240, y: 80 })
   })

@@ -20,7 +20,7 @@ import {
   mapFromLayoutPositionV2, renameScreenV2, resizeScreenGridV2, setInputCanvasResolutionV2,
   setScreenPositionV2, setScreenPositionsV2, updateMappingRegionV2, updateScreenCabinetConfigV2,
 } from '../src/renderer/v2-commands.js'
-import { createTestProject } from './project-fixtures.js'
+import { createTestProject, ref001Draft } from './project-fixtures.js'
 
 function parity(legacy: Project, v2: LedMapProjectV2): void {
   const canonical = createProjectV2(v2)
@@ -51,6 +51,23 @@ function assignedTwoCabinets(): LedMapProjectV2 {
 }
 
 describe('direct V2 Layout and Mapping commands', () => {
+  it('creates a new Screen with one module per Cabinet by default', () => {
+    const project = addScreenV2(createProjectSession('default').project)
+    const screen = projectV2WorkspaceReadModel(project).screens[0]!
+    expect(screen.config).toMatchObject({ moduleColumns: 1, moduleRows: 1, modulePixelWidth: 32, modulePixelHeight: 32 })
+    expect(screen.screen.resolution).toEqual({ width: 128, height: 96 })
+    expect(project.design.modules).toHaveLength(12)
+  })
+
+  it('duplicates an existing four-by-four Screen without applying the new default', () => {
+    const original = addScreenV2(createProjectSession('reference').project, ref001Draft)
+    const duplicate = duplicateScreenV2(original, 'screen-1')
+    const screens = projectV2WorkspaceReadModel(duplicate).screens
+    expect(screens[0]!.config).toMatchObject({ moduleColumns: 4, moduleRows: 4, modulePixelWidth: 32, modulePixelHeight: 32 })
+    expect(screens[1]!.config).toEqual(screens[0]!.config)
+    expect(screens[1]!.screen.resolution).toEqual({ width: 512, height: 384 })
+  })
+
   it('matches every existing Layout mutation and derived ScreenView', () => {
     let legacy = createTestProject()
     let v2 = convertEditableProjectToV2(legacy.source)

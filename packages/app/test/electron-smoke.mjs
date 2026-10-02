@@ -91,6 +91,8 @@ async function addScreen(page) {
   const before = await page.evaluate(() => window.__ledmap.dump().length)
   await page.locator('#add-screen').click()
   await page.locator('#screen-dialog').waitFor({ state: 'visible' })
+  assert.equal(await page.locator('#new-screen-module-columns').inputValue(), '1')
+  assert.equal(await page.locator('#new-screen-module-rows').inputValue(), '1')
   await page.locator('#new-screen-module-columns').fill('4')
   await page.locator('#new-screen-module-rows').fill('4')
   await page.locator('#screen-form button[type="submit"]').click()

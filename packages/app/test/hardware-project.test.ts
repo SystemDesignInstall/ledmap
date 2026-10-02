@@ -22,10 +22,9 @@ import {
   updatePort,
   updateReceiver,
 } from '../src/renderer/hardware-project.js'
-import { createTestProject } from './project-fixtures.js'
+import { createRef001TestProject, createTestProject } from './project-fixtures.js'
 
-function genericTopology() {
-  let project = createTestProject()
+function genericTopology(project = createTestProject()) {
   project = addProcessor(project)
   for (let port = 0; port < 4; port += 1) {
     project = addPort(project, 'processor-1')
@@ -77,7 +76,7 @@ describe('Hardware workspace source mutations', () => {
   })
 
   it('rejects capacity reductions and manual assignments that exceed Generic Hardware limits', () => {
-    let project = addProcessor(createTestProject())
+    let project = addProcessor(createRef001TestProject())
     project = addPort(project, 'processor-1')
     project = addReceiver(project, 'port-1')
     const order = hardwareCabinetOrder(project)
@@ -131,7 +130,7 @@ describe('Hardware workspace source mutations', () => {
   })
 
   it('reports derived usage and cascades deleted Port entities without deleting Cabinets', () => {
-    let project = genericTopology()
+    let project = genericTopology(createRef001TestProject())
     const cabinets = hardwareCabinetOrder(project).slice(0, 4)
     project = assignCabinets(project, 'receiver-1', cabinets)
     expect(receiverPixelUsage(project, 'receiver-1')).toMatchObject({ used: 65536, capacity: 65536 })

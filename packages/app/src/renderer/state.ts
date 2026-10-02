@@ -48,7 +48,7 @@ export const defaultSnapshotIds: SnapshotIds = {
 }
 
 export const initialDraft: Draft = {
-  columns: '4', rows: '3', moduleColumns: '4', moduleRows: '4',
+  columns: '4', rows: '3', moduleColumns: '1', moduleRows: '1',
   modulePixelWidth: '32', modulePixelHeight: '32',
   ordering: { numbering: 'row', direction: 'left-to-right', snake: true, startCorner: 'top-left' },
 }

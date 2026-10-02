@@ -21,7 +21,11 @@ function orderOf(project: ReturnType<typeof createTestProject>, screenId: string
 
 describe('Cabinet geometry and ordering editor state', () => {
   it('recomputes cabinet and screen geometry from module geometry', () => {
-    const base = resizeScreenGrid(createTestProject(), 'screen-1', 5, 2)
+    const base = updateScreenCabinetConfig(
+      resizeScreenGrid(createTestProject(), 'screen-1', 5, 2),
+      'screen-1',
+      { moduleColumns: 4, moduleRows: 4 },
+    )
     const widerModules = updateScreenCabinetConfig(base, 'screen-1', { moduleColumns: 5 })
     const screen = findScreen(widerModules, 'screen-1')!
     expect([screen.grid.cabinetWidth, screen.grid.cabinetHeight]).toEqual([160, 128])
@@ -143,7 +147,7 @@ describe('Cabinet geometry and ordering editor state', () => {
       moduleColumns: 17,
       moduleRows: 4,
     })).toThrow(/65,536|65536/)
-    expect(findScreen(project, 'screen-1')!.config.moduleColumns).toBe(4)
+    expect(findScreen(project, 'screen-1')!.config.moduleColumns).toBe(1)
   })
 
   it('changes only the selected screen', () => {
@@ -157,9 +161,9 @@ describe('Cabinet geometry and ordering editor state', () => {
   it('recalculates project bounds and hit testing from cabinet geometry', () => {
     const project = updateScreenCabinetConfig(createTestProject(), 'screen-1', { modulePixelWidth: 128 })
     const screen = findScreen(project, 'screen-1')!
-    expect(screenBounds(screen)).toEqual({ left: 0, top: 0, right: 2048, bottom: 384, width: 2048, height: 384 })
-    expect(projectBounds(project).right).toBe(2048)
-    const hit = hitTest(project, { x: 1500, y: 64 })!
+    expect(screenBounds(screen)).toEqual({ left: 0, top: 0, right: 512, bottom: 96, width: 512, height: 96 })
+    expect(projectBounds(project).right).toBe(796)
+    const hit = hitTest(project, { x: 300, y: 16 })!
     expect(hit.screen.screen.id).toBe('screen-1')
     expect([hit.cabinet?.column, hit.cabinet?.row]).toEqual([2, 0])
     expect(hit.cabinet?.id).toBe('C03')

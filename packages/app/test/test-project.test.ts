@@ -16,10 +16,10 @@ import {
   testScopeTargets,
   walkOrdinalForDataIndex,
 } from '../src/renderer/test-project.js'
-import { createTestProject } from './project-fixtures.js'
+import { createRef001TestProject, createTestProject } from './project-fixtures.js'
 
 function readyProject() {
-  let project = createTestProject()
+  let project = createRef001TestProject()
   project = setInputCanvasResolution(project, 1920, 1080)
   project = addMappingRegion(project, 'screen-1', { x: 40, y: 20 })
   project = addMappingRegion(project, 'screen-2', { x: 700, y: 100 })

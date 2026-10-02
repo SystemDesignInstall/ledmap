@@ -19,7 +19,7 @@ import {
 import { addMappingRegion, setInputCanvasResolution } from '../src/renderer/mapping-project.js'
 import { addScreen, createProject, type Project } from '../src/renderer/project.js'
 import { initialDraft } from '../src/renderer/state.js'
-import { createTestProject } from './project-fixtures.js'
+import { createRef001TestProject } from './project-fixtures.js'
 
 function miniProject(): Project {
   const draft = {
@@ -45,7 +45,7 @@ function miniProject(): Project {
 }
 
 function sharedPortProject(): Project {
-  let project = createTestProject()
+  let project = createRef001TestProject()
   project = setInputCanvasResolution(project, 1920, 1080)
   project = addMappingRegion(project, 'screen-1', { x: 40, y: 20 })
   project = addMappingRegion(project, 'screen-2', { x: 700, y: 100 })

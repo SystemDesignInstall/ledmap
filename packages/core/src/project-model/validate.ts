@@ -67,6 +67,12 @@ export function assertProjectV2HardwareContract(project: LedMapProjectV2): void 
 
   const orderedPorts = new Set<string>()
   const orderedReceivers = new Set<string>()
+  const orderedProcessors = new Set<string>()
+  for (const processorId of project.hardware.processorOrder) {
+    if (!processors.has(processorId)) fail('PROJECT_UNKNOWN_PROCESSOR', `Processor order references unknown Processor ${processorId}`)
+    if (orderedProcessors.has(processorId)) fail('PROJECT_DUPLICATE_PROCESSOR_ORDER', `Processor ${processorId} appears more than once in Processor order`)
+    orderedProcessors.add(processorId)
+  }
   for (const order of project.hardware.receiverOrder) {
     if (!ports.has(order.portId)) fail('PROJECT_UNKNOWN_PORT', `Receiver order references unknown Port ${order.portId}`)
     if (orderedPorts.has(order.portId)) fail('PROJECT_DUPLICATE_PORT_RECEIVER_ORDER', `Port ${order.portId} has more than one Receiver order`)
@@ -137,6 +143,10 @@ export function assertProjectV2EditorStructure(project: LedMapProjectV2): void {
   const grids = uniqueById(project.design.cabinetGrids, 'CabinetGrid')
   const cabinets = uniqueById(project.design.cabinets, 'Cabinet')
   const canvases = uniqueById(project.content.inputCanvases, 'InputCanvas')
+  const mediaOutputs = uniqueById(project.content.mediaOutputs, 'MediaOutputCanvas')
+  uniqueById(project.content.outputMappings, 'OutputMapping')
+  uniqueById(project.operations.backupRoutes, 'BackupRoute')
+  uniqueById(project.operations.liveOutputTargets, 'LiveOutputTarget')
   uniqueById(project.design.modules, 'Module')
   const placements = new Set<string>()
   for (const placement of project.design.composition.placements) {
@@ -145,6 +155,13 @@ export function assertProjectV2EditorStructure(project: LedMapProjectV2): void {
     placements.add(placement.screenId)
     if (!Number.isSafeInteger(placement.x) || !Number.isSafeInteger(placement.y)) {
       fail('PROJECT_INVALID_GEOMETRY', `Screen ${placement.screenId} placement must use signed safe integers`)
+    }
+    if (typeof placement.locked !== 'boolean') fail('PROJECT_INVALID_PLACEMENT', `Screen ${placement.screenId} placement locked must be boolean`)
+  }
+  for (const placement of project.design.stage?.placements ?? []) {
+    if (!screens.has(placement.screenId)) fail('PROJECT_UNKNOWN_SCREEN', `Stage placement references unknown Screen ${placement.screenId}`)
+    if (!Number.isFinite(placement.positionMm.x) || !Number.isFinite(placement.positionMm.y) || !Number.isFinite(placement.positionMm.z)) {
+      fail('PROJECT_INVALID_GEOMETRY', `Stage placement for Screen ${placement.screenId} must use finite coordinates`)
     }
   }
   for (const screen of screens.values()) {
@@ -161,6 +178,21 @@ export function assertProjectV2EditorStructure(project: LedMapProjectV2): void {
   for (const canvas of canvases.values()) {
     positive(canvas.resolution.width, `InputCanvas ${canvas.id} width`)
     positive(canvas.resolution.height, `InputCanvas ${canvas.id} height`)
+  }
+  for (const output of mediaOutputs.values()) {
+    positive(output.resolution.width, `MediaOutputCanvas ${output.id} width`)
+    positive(output.resolution.height, `MediaOutputCanvas ${output.id} height`)
+  }
+  for (const mapping of project.content.outputMappings) {
+    if (!screens.has(mapping.screenId)) fail('PROJECT_UNKNOWN_SCREEN', `OutputMapping ${mapping.id} references unknown Screen ${mapping.screenId}`)
+    if (!mediaOutputs.has(mapping.mediaOutputId)) {
+      fail('PROJECT_UNKNOWN_MEDIA_OUTPUT', `OutputMapping ${mapping.id} references unknown MediaOutputCanvas ${mapping.mediaOutputId}`)
+    }
+    for (const point of mapping.mask?.points ?? []) {
+      if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) {
+        fail('PROJECT_INVALID_GEOMETRY', `OutputMapping ${mapping.id} mask must use finite coordinates`)
+      }
+    }
   }
   for (const region of project.content.mappingRegions) {
     if (!canvases.has(region.inputCanvasId)) fail('PROJECT_UNKNOWN_INPUT_CANVAS', `MappingRegion ${region.id} references unknown InputCanvas ${region.inputCanvasId}`)

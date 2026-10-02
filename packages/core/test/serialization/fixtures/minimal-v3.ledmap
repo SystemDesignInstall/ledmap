@@ -1,0 +1,13 @@
+{
+  "format": "ledmap",
+  "schemaVersion": 3,
+  "project": {
+    "metadata": {},
+    "design": { "screens": [], "cabinetGrids": [], "cabinets": [], "modules": [], "composition": { "placements": [] } },
+    "content": { "inputCanvases": [], "mappingRegions": [], "mediaOutputs": [], "outputMappings": [] },
+    "hardware": { "processors": [], "ports": [], "receivers": [], "assignments": [], "processorOrder": [], "receiverOrder": [] },
+    "operations": { "signalRoutes": [], "backupRoutes": [], "liveOutputTargets": [] },
+    "remap": { "rules": [] }
+  },
+  "extensions": {}
+}

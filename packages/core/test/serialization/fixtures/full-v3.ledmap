@@ -1,0 +1,52 @@
+{
+  "format": "ledmap",
+  "schemaVersion": 3,
+  "project": {
+    "metadata": { "name": "Full V3 fixture", "description": "Hand-authored engineering state" },
+    "design": {
+      "screens": [
+        { "id": "screen-a", "name": "Screen A", "resolution": { "width": 4, "height": 2 }, "cabinetGridOrder": ["grid-a"], "mappingRegionOrder": ["region-a"] }
+      ],
+      "cabinetGrids": [
+        { "id": "grid-a", "screenId": "screen-a", "name": "Grid A", "columns": 2, "rows": 1, "cabinetWidth": 2, "cabinetHeight": 2,
+          "ordering": { "numbering": "row", "startCorner": "top-left", "direction": "right-to-left", "snake": true } }
+      ],
+      "cabinets": [
+        { "id": "cabinet-a", "gridId": "grid-a", "label": "Left", "column": 0, "row": 0, "origin": { "x": 0, "y": 0 }, "width": 2, "height": 2,
+          "pixelWidth": 2, "pixelHeight": 2, "moduleColumns": 1, "moduleRows": 1, "rotation": 0, "flipH": false, "flipV": false },
+        { "id": "cabinet-b", "gridId": "grid-a", "label": "Right", "column": 1, "row": 0, "origin": { "x": 2, "y": 0 }, "width": 2, "height": 2,
+          "pixelWidth": 2, "pixelHeight": 2, "moduleColumns": 1, "moduleRows": 1, "rotation": 180, "flipH": true, "flipV": false }
+      ],
+      "modules": [
+        { "id": "module-a", "cabinetId": "cabinet-a", "column": 0, "row": 0, "width": 2, "height": 2, "pixelWidth": 2, "pixelHeight": 2 },
+        { "id": "module-b", "cabinetId": "cabinet-b", "column": 0, "row": 0, "width": 2, "height": 2, "pixelWidth": 2, "pixelHeight": 2 }
+      ],
+      "composition": { "placements": [{ "screenId": "screen-a", "x": -5, "y": 7, "locked": true }] },
+      "stage": { "placements": [{ "screenId": "screen-a", "positionMm": { "x": 1.5, "y": -2.25, "z": 0 } }] }
+    },
+    "content": {
+      "inputCanvases": [{ "id": "input-a", "resolution": { "width": 4, "height": 2 } }],
+      "mappingRegions": [{ "id": "region-a", "inputCanvasId": "input-a", "screenId": "screen-a", "gridId": "grid-a", "position": { "x": 0, "y": 0 }, "size": { "width": 4, "height": 2 } }],
+      "mediaOutputs": [{ "id": "media-a", "name": "Output A", "resolution": { "width": 4, "height": 2 } }],
+      "outputMappings": [{ "id": "output-a", "screenId": "screen-a", "mediaOutputId": "media-a", "mask": { "points": [{ "x": 0, "y": 0 }, { "x": 4, "y": 0 }, { "x": 2, "y": 2 }] } }]
+    },
+    "hardware": {
+      "processors": [{ "id": "processor-a", "name": "Processor A", "portCount": 1 }, { "id": "processor-b", "name": "Processor B", "portCount": 1 }],
+      "ports": [{ "id": "port-a", "processorId": "processor-a", "index": 0, "receiverCapacity": 1 }, { "id": "port-b", "processorId": "processor-b", "index": 0, "receiverCapacity": 1 }],
+      "receivers": [{ "id": "receiver-a", "legacyIndex": 9, "processorId": "processor-a", "portId": "port-a", "pixelCapacity": 8 }, { "id": "receiver-b", "legacyIndex": 2, "processorId": "processor-b", "portId": "port-b" }],
+      "assignments": [
+        { "id": "assignment-a", "target": { "kind": "cabinet", "cabinetId": "cabinet-a" }, "receiverId": "receiver-a", "locked": true, "origin": "manual" },
+        { "id": "assignment-b", "target": { "kind": "cabinet", "cabinetId": "cabinet-b" }, "receiverId": "receiver-a", "locked": false, "origin": "auto" }
+      ],
+      "processorOrder": ["processor-b", "processor-a"],
+      "receiverOrder": [{ "portId": "port-b", "receiverIds": ["receiver-b"] }, { "portId": "port-a", "receiverIds": ["receiver-a"] }]
+    },
+    "operations": {
+      "signalRoutes": [{ "id": "route-a", "receiverId": "receiver-a", "orderedCabinetIds": ["cabinet-b", "cabinet-a"] }],
+      "backupRoutes": [{ "id": "backup-a" }],
+      "liveOutputTargets": [{ "id": "live-a" }]
+    },
+    "remap": { "rules": [{ "id": "rule-a", "version": "1", "type": "future-rule" }] }
+  },
+  "extensions": { "vendor.unknown": { "array": [3, 1, 2], "nested": { "z": true, "a": null } } }
+}

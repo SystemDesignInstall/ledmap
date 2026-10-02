@@ -43,14 +43,19 @@ describe('V2 production dependency boundary', () => {
     for (const file of runtime) {
       const source = readFileSync(file, 'utf8')
       if (file === resolve(appRoot, 'renderer', 'project-session.ts')) {
-        expect(source).toContain('loadEditableProject(text)')
-        expect(source).toContain('convertEditableProjectToV2(loaded.project)')
-        expect(source).toContain('projectV2AsEditableReadModel(session.project)')
-        expect(source).toContain('serializeEditableProject(')
-        continue
+        expect(source).toContain('loadLedMapProject(text)')
+        expect(source).toContain('serializeProjectV3(')
       }
-      expect(source, file).not.toMatch(/EditableProject|projectV2AsEditableReadModel|inspectEditableProject|commitLegacyProject/)
+      expect(source, file).not.toMatch(/EditableProject|serializeEditableProject|projectV2AsEditableReadModel|inspectEditableProject|commitLegacyProject/)
     }
+  })
+
+  it('keeps legacy conversion inside version dispatch and outside the native V3 writer', () => {
+    const dispatch = readFileSync(resolve(coreRoot, 'serialization', 'dispatch.ts'), 'utf8')
+    const native = readFileSync(resolve(coreRoot, 'serialization', 'v3.ts'), 'utf8')
+    expect(dispatch).toContain('loadEditableProject(text)')
+    expect(dispatch).toContain('convertEditableProjectToV2(loaded.project)')
+    expect(native).not.toMatch(/EditableProject|serializeEditableProject|projectV2AsEditableReadModel/)
   })
 
   it('keeps V2 validation and selectors independent of editor-project', () => {

@@ -1,12 +1,13 @@
 import { app, BrowserWindow, dialog, ipcMain, type WebContents } from 'electron'
-import { readFile, writeFile } from 'node:fs/promises'
-import { basename, extname } from 'node:path'
+import { readFile, realpath, writeFile } from 'node:fs/promises'
+import { basename, extname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   ipcChannels,
   type DesktopDocumentState,
   type SaveProjectRequest,
   type SaveProjectResult,
+  type LegacyUpgradeChoice,
   type SimulateDisplayChangeRequest,
   type StartLiveOutputRequest,
   type UnsavedChoice,
@@ -56,6 +57,22 @@ async function promptUnsaved(window: BrowserWindow): Promise<UnsavedChoice> {
   return result.response === 0 ? 'save' : result.response === 1 ? 'discard' : 'cancel'
 }
 
+async function promptLegacyUpgrade(window: BrowserWindow): Promise<LegacyUpgradeChoice> {
+  const smokeChoice = process.env['LEDMAP_SMOKE_UPGRADE_ACTION']
+  if (smokeChoice === 'upgrade' || smokeChoice === 'save-as' || smokeChoice === 'cancel') return smokeChoice
+  const result = await dialog.showMessageBox(window, {
+    type: 'warning',
+    title: 'Upgrade LedMAP project',
+    message: 'This project uses an older LedMAP file format.',
+    detail: 'Saving will upgrade it to schema version 3. Older versions of LedMAP may no longer be able to open this file.',
+    buttons: ['Upgrade File', 'Save As…', 'Cancel'],
+    defaultId: 1,
+    cancelId: 2,
+    noLink: true,
+  })
+  return result.response === 0 ? 'upgrade' : result.response === 1 ? 'save-as' : 'cancel'
+}
+
 function registerIpc(): void {
   ipcMain.handle(ipcChannels.openProject, async event => {
     const window = BrowserWindow.fromWebContents(event.sender)
@@ -75,12 +92,13 @@ function registerIpc(): void {
     if (!window) throw new Error('Project window is unavailable.')
     if (value === null || typeof value !== 'object') throw new Error('Invalid save request.')
     const request = value as Partial<SaveProjectRequest>
-    if (typeof request.text !== 'string' || typeof request.saveAs !== 'boolean') throw new Error('Invalid save request.')
+    if (typeof request.text !== 'string' || typeof request.saveAs !== 'boolean' ||
+        (request.preserveOriginal !== undefined && typeof request.preserveOriginal !== 'boolean')) throw new Error('Invalid save request.')
     if (request.currentFilePath !== null && typeof request.currentFilePath !== 'string') throw new Error('Invalid project path.')
 
     let filePath = request.saveAs ? null : request.currentFilePath
     if (!filePath) {
-      const smokePath = process.env['LEDMAP_SMOKE_PROJECT_PATH']
+      const smokePath = (request.saveAs ? process.env['LEDMAP_SMOKE_SAVE_AS_PATH'] : undefined) ?? process.env['LEDMAP_SMOKE_PROJECT_PATH']
       if (smokePath) {
         filePath = smokePath
       } else {
@@ -94,6 +112,12 @@ function registerIpc(): void {
       }
     }
     const normalized = normalizeSavePath(filePath)
+    const originalPath = request.currentFilePath
+    if (request.preserveOriginal && originalPath) {
+      const original = await realpath(originalPath).catch(() => resolve(originalPath))
+      const target = await realpath(normalized).catch(() => resolve(normalized))
+      if (original.toLowerCase() === target.toLowerCase()) throw new Error('Choose a different path to preserve the original legacy project.')
+    }
     await writeFile(normalized, request.text, 'utf8')
     return { canceled: false, filePath: normalized }
   })
@@ -102,6 +126,12 @@ function registerIpc(): void {
     const window = BrowserWindow.fromWebContents(event.sender)
     if (!window) return 'cancel'
     return promptUnsaved(window)
+  })
+
+  ipcMain.handle(ipcChannels.confirmLegacyUpgrade, async event => {
+    const window = BrowserWindow.fromWebContents(event.sender)
+    if (!window) return 'cancel'
+    return promptLegacyUpgrade(window)
   })
 
   ipcMain.on(ipcChannels.setDocumentState, (event, value: unknown) => {

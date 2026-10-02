@@ -15,6 +15,7 @@ const api: LedmapDesktopApi = {
   openProject: () => ipcRenderer.invoke(ipcChannels.openProject),
   saveProject: (request: SaveProjectRequest) => ipcRenderer.invoke(ipcChannels.saveProject, request),
   confirmUnsavedChanges: () => ipcRenderer.invoke(ipcChannels.confirmUnsaved),
+  confirmLegacyUpgrade: () => ipcRenderer.invoke(ipcChannels.confirmLegacyUpgrade),
   setDocumentState: (state: DesktopDocumentState) => ipcRenderer.send(ipcChannels.setDocumentState, state),
   finishCloseAfterSave: (saved: boolean) => ipcRenderer.send(ipcChannels.finishCloseAfterSave, saved),
   onRequestSaveBeforeClose: callback => {

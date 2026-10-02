@@ -1,10 +1,8 @@
 import {
-  convertEditableProjectToV2,
   createEmptyProjectV2,
   createProjectV2,
-  loadEditableProject,
-  projectV2AsEditableReadModel,
-  serializeEditableProject,
+  loadLedMapProject,
+  serializeProjectV3,
   validateProjectV2Structural,
   DomainError,
   type JsonObject,
@@ -34,14 +32,14 @@ export function createProjectSession(documentId: string): ProjectSession {
     savedRevision: 0,
     documentId,
     currentFilePath: null,
-    sourceSchemaVersion: 2,
+    sourceSchemaVersion: 3,
     extensions: Object.freeze({}),
   })
 }
 
 export function loadProjectSession(text: string, currentFilePath: string, documentId: string): ProjectSession {
-  const loaded = loadEditableProject(text)
-  const project = convertEditableProjectToV2(loaded.project)
+  const loaded = loadLedMapProject(text)
+  const project = loaded.project
   projectV2WorkspaceReadModel(project)
   return Object.freeze({
     project,
@@ -86,11 +84,7 @@ export function commitProjectV2(session: ProjectSession, command: (project: LedM
 }
 
 export function serializeProjectSession(session: ProjectSession): string {
-  const editable = projectV2AsEditableReadModel(session.project)
-  if (!sameDocumentValue(convertEditableProjectToV2(editable), session.project)) {
-    throw new DomainError('PROJECT_COMPAT_SAVE_LOSSY', 'Project Model v2 contains data that schemaVersion 2 cannot preserve')
-  }
-  return serializeEditableProject({ project: editable, extensions: session.extensions })
+  return serializeProjectV3({ project: session.project, extensions: session.extensions })
 }
 
 export function markProjectSessionSaved(
@@ -101,5 +95,5 @@ export function markProjectSessionSaved(
 ): ProjectSession {
   if (session.documentId !== documentId) return session
   if (savedRevision > session.revision) throw new DomainError('PROJECT_REVISION_INVALID', 'Saved revision exceeds current revision')
-  return Object.freeze({ ...session, savedRevision, currentFilePath, sourceSchemaVersion: 2 })
+  return Object.freeze({ ...session, savedRevision, currentFilePath, sourceSchemaVersion: 3 })
 }

@@ -20,7 +20,7 @@ describe('ProjectSession V2 ownership', () => {
     expect(sessionDirty(session)).toBe(false)
   })
 
-  it('advances exactly once for each real V2 mutation and reopens the schema-v2 wire result', () => {
+  it('advances exactly once for each real V2 mutation and reopens the schema-v3 wire result', () => {
     const empty = createProjectSession('session-1')
     const added = commitProjectV2(empty, project => addScreenV2(project))
     const moved = commitProjectV2(added, project => setScreenPositionV2(project, 'screen-1', -240, 80))
@@ -29,7 +29,7 @@ describe('ProjectSession V2 ownership', () => {
     expect(moved.savedRevision).toBe(0)
     expect(sessionDirty(moved)).toBe(true)
     const stored = serializeProjectSession(moved)
-    expect(JSON.parse(stored)).toMatchObject({ format: 'ledmap', schemaVersion: 2 })
+    expect(JSON.parse(stored)).toMatchObject({ format: 'ledmap', schemaVersion: 3 })
     const reopened = loadProjectSession(stored, 'project.ledmap', 'session-2')
     expect(reopened.project).toEqual(moved.project)
     expect(reopened.revision).toBe(0)
@@ -63,7 +63,8 @@ describe('ProjectSession V2 ownership', () => {
     expect(changed.project.hardware.assignments[0]).toEqual(project.hardware.assignments[0])
     expect(changed.project.design.composition.placements[0]).toMatchObject({ x: 48, y: 32 })
     expect(changed.revision).toBe(1)
-    expect(() => serializeProjectSession(changed)).toThrow(/PROJECT_COMPAT_SAVE_LOSSY/)
+    const reopened = loadProjectSession(serializeProjectSession(changed), 'v3.ledmap', 'session-2')
+    expect(reopened.project).toEqual(changed.project)
   })
 
   it('blocks a mutation of a V2-locked placement without publishing a candidate', () => {
@@ -86,12 +87,13 @@ describe('ProjectSession V2 ownership', () => {
     expect(session.revision).toBe(0)
   })
 
-  it('rejects Save before the writer sees V2-only data', () => {
+  it('persists V2-only metadata in native v3', () => {
     const session: ProjectSession = {
       ...createProjectSession('session-1'),
       project: createProjectV2({ ...createProjectSession('seed').project, metadata: { name: 'V2 only' } }),
     }
-    expect(() => serializeProjectSession(session)).toThrow(/PROJECT_COMPAT_SAVE_LOSSY/)
+    expect(loadProjectSession(serializeProjectSession(session), 'v3.ledmap', 'session-2').project.metadata)
+      .toEqual({ name: 'V2 only' })
   })
 
   it('keeps valid but out-of-range Mapping as a committed V2 document with readiness diagnostics', () => {
@@ -120,7 +122,7 @@ describe('ProjectSession V2 ownership', () => {
     expect(session.project).toBe(base)
   })
 
-  it('permits V2-only Stage reads but blocks lossy schema-v2 Save', () => {
+  it('persists V2-only Stage state through native v3 Save and Open', () => {
     const empty = createProjectSession('session-1')
     const session: ProjectSession = {
       ...empty,
@@ -130,7 +132,8 @@ describe('ProjectSession V2 ownership', () => {
       }),
     }
     expect(sessionWorkspaceProject(session).screens).toEqual([])
-    expect(() => serializeProjectSession(session)).toThrow(/PROJECT_COMPAT_UNSUPPORTED/)
+    expect(loadProjectSession(serializeProjectSession(session), 'v3.ledmap', 'session-2').project.design.stage)
+      .toEqual({ placements: [] })
     expect(session.revision).toBe(0)
   })
 })

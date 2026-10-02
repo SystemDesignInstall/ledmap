@@ -1,4 +1,4 @@
-import type { OpenProjectResult, SaveProjectRequest, SaveProjectResult } from '../shared/ipc.js'
+import type { LegacyUpgradeChoice, OpenProjectResult, SaveProjectRequest, SaveProjectResult } from '../shared/ipc.js'
 import type { LedMapProjectV2 } from '@ledmap/core'
 import {
   commitProjectV2,
@@ -36,13 +36,26 @@ export class ProjectDocumentController {
     await this.saveQueue
   }
 
-  save(saveAs: boolean, write: (request: SaveProjectRequest) => Promise<SaveProjectResult>): Promise<boolean> {
+  save(
+    saveAs: boolean,
+    write: (request: SaveProjectRequest) => Promise<SaveProjectResult>,
+    confirmLegacyUpgrade?: () => Promise<LegacyUpgradeChoice>,
+  ): Promise<boolean> {
     const requestedDocumentId = this.current.documentId
     const run = async () => {
       if (this.current.documentId !== requestedDocumentId) return false
       const snapshot = this.current
+      let effectiveSaveAs = saveAs
+      if (!saveAs && snapshot.currentFilePath && snapshot.sourceSchemaVersion < 3) {
+        if (!confirmLegacyUpgrade) throw new Error('Legacy project upgrade requires explicit confirmation.')
+        const choice = await confirmLegacyUpgrade()
+        if (this.current.documentId !== snapshot.documentId || choice === 'cancel') return false
+        effectiveSaveAs = choice === 'save-as'
+      }
       const text = serializeProjectSession(snapshot)
-      const result = await write({ currentFilePath: snapshot.currentFilePath, text, saveAs })
+      const result = await write({ currentFilePath: snapshot.currentFilePath, text, saveAs: effectiveSaveAs,
+        ...(effectiveSaveAs && snapshot.sourceSchemaVersion < 3 && snapshot.currentFilePath
+          ? { preserveOriginal: true } : {}) })
       if (result.canceled || !result.filePath || this.current.documentId !== snapshot.documentId) return false
       this.current = markProjectSessionSaved(this.current, snapshot.documentId, snapshot.revision, result.filePath)
       return true

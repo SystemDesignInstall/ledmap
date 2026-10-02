@@ -320,10 +320,10 @@ try {
   assert.equal((await documentState()).currentFilePath, projectPath)
   assert.doesNotMatch(await windowTitle(), / \*/)
   const stored = JSON.parse(await readFile(projectPath, 'utf8'))
-  assert.equal(stored.schemaVersion, 2)
-  assert.equal(stored.project.screens.length, 5)
+  assert.equal(stored.schemaVersion, 3)
+  assert.equal(stored.project.design.screens.length, 5)
   assert.deepEqual(
-    stored.project.editorLayout.screenPositions.map(entry => [entry.position.x, entry.position.y]),
+    stored.project.design.composition.placements.map(entry => [entry.x, entry.y]),
     expected.map(screen => [screen.x, screen.y]),
   )
 
@@ -455,8 +455,8 @@ try {
   await mappingPage.locator('#save-project').click()
   await mappingPage.waitForFunction(() => window.__ledmap.document().dirty === false)
   const mappingStored = JSON.parse(await readFile(projectPath, 'utf8'))
-  assert.equal(mappingStored.project.inputCanvas.resolution.width, 1920)
-  assert.equal(mappingStored.project.mappingRegions.length, 3)
+  assert.equal(mappingStored.project.content.inputCanvases[0].resolution.width, 1920)
+  assert.equal(mappingStored.project.content.mappingRegions.length, 3)
   await mappingPage.locator('#new-project').click()
   await mappingPage.waitForFunction(() => window.__ledmapMapping.dump().regions.length === 0)
   await mappingPage.locator('#open-project').click()
@@ -566,10 +566,10 @@ try {
   await mappingPage.locator('#save-project').click()
   await mappingPage.waitForFunction(() => window.__ledmap.document().dirty === false)
   const hardwareStored = JSON.parse(await readFile(projectPath, 'utf8'))
-  assert.equal(hardwareStored.schemaVersion, 2)
-  assert.equal(hardwareStored.project.hardwareTopology.processors.length, 2)
-  assert.equal(hardwareStored.project.hardwareTopology.receivers.length, 9)
-  assert.doesNotMatch(JSON.stringify(hardwareStored.project.hardwareTopology), /HardwareProfile|profileRef/i)
+  assert.equal(hardwareStored.schemaVersion, 3)
+  assert.equal(hardwareStored.project.hardware.processors.length, 2)
+  assert.equal(hardwareStored.project.hardware.receivers.length, 9)
+  assert.doesNotMatch(JSON.stringify(hardwareStored.project.hardware), /HardwareProfile|profileRef/i)
 
   await mappingPage.locator('#new-project').click()
   await mappingPage.waitForFunction(() => window.__ledmapHardware.dump().processors.length === 0)

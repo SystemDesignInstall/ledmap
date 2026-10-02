@@ -5,6 +5,7 @@ export const ipcChannels = {
   openProject: 'project:open',
   saveProject: 'project:save',
   confirmUnsaved: 'project:confirm-unsaved',
+  confirmLegacyUpgrade: 'project:confirm-legacy-upgrade',
   setDocumentState: 'project:set-document-state',
   requestSaveBeforeClose: 'project:request-save-before-close',
   finishCloseAfterSave: 'project:finish-close-after-save',
@@ -22,6 +23,7 @@ export const ipcChannels = {
 } as const
 
 export type UnsavedChoice = 'save' | 'discard' | 'cancel'
+export type LegacyUpgradeChoice = 'upgrade' | 'save-as' | 'cancel'
 
 export interface OpenProjectResult {
   readonly canceled: boolean
@@ -33,6 +35,7 @@ export interface SaveProjectRequest {
   readonly currentFilePath: string | null
   readonly text: string
   readonly saveAs: boolean
+  readonly preserveOriginal?: boolean
 }
 
 export interface SaveProjectResult {
@@ -130,6 +133,7 @@ export interface LedmapDesktopApi {
   openProject(): Promise<OpenProjectResult>
   saveProject(request: SaveProjectRequest): Promise<SaveProjectResult>
   confirmUnsavedChanges(): Promise<UnsavedChoice>
+  confirmLegacyUpgrade(): Promise<LegacyUpgradeChoice>
   setDocumentState(state: DesktopDocumentState): void
   finishCloseAfterSave(saved: boolean): void
   onRequestSaveBeforeClose(callback: () => void): () => void

@@ -200,7 +200,7 @@ function syncDocumentState(): void {
     currentFilePath: session.currentFilePath,
     dirty,
   })
-  saveProjectButton.disabled = !dirty
+  saveProjectButton.disabled = !dirty && session.sourceSchemaVersion === 3
 }
 
 function showDocumentError(error: unknown, fallback: string): void {
@@ -233,7 +233,8 @@ function replaceDocument(next: ProjectSession): void {
 async function saveDocument(saveAs: boolean): Promise<boolean> {
   clearDocumentError()
   try {
-    const saved = await documentController.save(saveAs, request => window.ledmapDesktop.saveProject(request))
+    const saved = await documentController.save(saveAs, request => window.ledmapDesktop.saveProject(request),
+      () => window.ledmapDesktop.confirmLegacyUpgrade())
     syncDocumentState()
     return saved
   } catch (error) {

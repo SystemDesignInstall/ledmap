@@ -183,6 +183,13 @@ function pngSize(bytes) {
 }
 
 let running = await launch()
+const electronRuntime = await running.app.evaluate(() => ({
+  electron: process.versions.electron,
+  node: process.versions.node,
+  uv: process.versions.uv,
+  platform: process.platform,
+}))
+console.log(`Electron runtime: ${JSON.stringify(electronRuntime)}`)
 try {
   const page = running.page
   const dump = async () => page.evaluate(() => window.__ledmap.dump())

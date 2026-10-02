@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
+import { lstat, mkdtemp, open, readFile, rm, unlink, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { createProjectV2, loadEditableProject, loadProjectV3, serializeEditableProject } from '@ledmap/core'
+import { StagedProjectWriter } from '../src/main/staged-project-write.js'
 import { addScreenV2, setScreenPositionV2 } from '../src/renderer/v2-commands.js'
 import { ProjectDocumentController } from '../src/renderer/document.js'
 import {
@@ -285,6 +289,66 @@ describe('ProjectSession document lifecycle', () => {
     await expect(document.save(false, async () => { throw new Error('disk failed') }, async () => 'upgrade'))
       .rejects.toThrow('disk failed')
     expect(document.session).toBe(before)
+  })
+
+  it('stages an actual legacy upgrade and preserves exact legacy bytes on replacement failure', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'ledmap-upgrade-save-'))
+    try {
+      for (const text of [legacyV1(), legacyV2()]) {
+        const path = join(directory, 'legacy.ledmap')
+        await writeFile(path, text, 'utf8')
+        const document = controller()
+        await document.open(async () => ({ canceled: false, filePath: path, text }))
+        const before = document.session
+        const failing = new StagedProjectWriter({
+          open, lstat, unlink,
+          rename: async () => { throw new Error('injected replacement failure') },
+        })
+        await expect(document.save(false, async request => {
+          await failing.write(path, request.text)
+          return { canceled: false, filePath: path }
+        }, async () => 'upgrade')).rejects.toThrow('injected replacement failure')
+        expect(await readFile(path)).toEqual(Buffer.from(text, 'utf8'))
+        expect(document.session).toBe(before)
+        expect(document.session.sourceSchemaVersion).toBe(before.sourceSchemaVersion)
+        expect(document.session.savedRevision).toBe(before.savedRevision)
+        expect(document.session.currentFilePath).toBe(path)
+
+        const writer = new StagedProjectWriter()
+        expect(await document.save(false, async request => {
+          await writer.write(path, request.text)
+          expect(await readFile(path, 'utf8')).toBe(request.text)
+          return { canceled: false, filePath: path }
+        }, async () => 'upgrade')).toBe(true)
+        expect(loadProjectV3(await readFile(path, 'utf8')).project).toEqual(document.session.project)
+        expect(document.session.sourceSchemaVersion).toBe(3)
+        expect(document.session.savedRevision).toBe(document.session.revision)
+      }
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
+
+  it('queues Save followed by Save As using the updated path and revision', async () => {
+    const document = controller()
+    document.transactV2(project => addScreenV2(project))
+    const firstWrite = deferred<{ canceled: boolean; filePath: string }>()
+    const requests: { currentFilePath: string | null; saveAs: boolean; text: string }[] = []
+    const write = async (request: { currentFilePath: string | null; saveAs: boolean; text: string }) => {
+      requests.push(request)
+      return requests.length === 1 ? firstWrite.promise : { canceled: false, filePath: 'copy.ledmap' }
+    }
+    const first = document.save(false, write)
+    document.transactV2(project => setScreenPositionV2(project, 'screen-1', 17, 19))
+    const second = document.save(true, write)
+    expect(requests).toHaveLength(1)
+    firstWrite.resolve({ canceled: false, filePath: 'original.ledmap' })
+    expect(await first).toBe(true)
+    expect(await second).toBe(true)
+    expect(requests[1]).toMatchObject({ currentFilePath: 'original.ledmap', saveAs: true })
+    expect(JSON.parse(requests[1]!.text).project.design.composition.placements[0].x).toBe(17)
+    expect(document.session.currentFilePath).toBe('copy.ledmap')
+    expect(sessionDirty(document.session)).toBe(false)
   })
 
   it('keeps edits dirty and ignores another document during an async upgrade confirmation', async () => {

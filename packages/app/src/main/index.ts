@@ -1,5 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, type WebContents } from 'electron'
-import { readFile, realpath, writeFile } from 'node:fs/promises'
+import { readFile, realpath } from 'node:fs/promises'
 import { basename, extname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
@@ -15,6 +15,7 @@ import {
 } from '../shared/ipc.js'
 import { LiveOutputManager } from './live-output.js'
 import { ExportFileService } from './export-files.js'
+import { StagedProjectWriter } from './staged-project-write.js'
 
 interface WindowState {
   currentFilePath: string | null
@@ -27,6 +28,7 @@ const windowStates = new Map<number, WindowState>()
 const ledmapFilter = [{ name: 'LedMAP Project', extensions: ['ledmap'] }]
 let liveOutputManager: LiveOutputManager | null = null
 const exportFileService = new ExportFileService()
+const projectWriter = new StagedProjectWriter()
 
 function stateFor(contents: WebContents): WindowState | undefined {
   return windowStates.get(contents.id)
@@ -118,7 +120,7 @@ function registerIpc(): void {
       const target = await realpath(normalized).catch(() => resolve(normalized))
       if (original.toLowerCase() === target.toLowerCase()) throw new Error('Choose a different path to preserve the original legacy project.')
     }
-    await writeFile(normalized, request.text, 'utf8')
+    await projectWriter.write(normalized, request.text)
     return { canceled: false, filePath: normalized }
   })
 

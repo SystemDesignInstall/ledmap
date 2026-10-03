@@ -26,6 +26,7 @@ export class AutosaveCoordinator {
   private maxTimer: ReturnType<typeof setTimeout> | null = null
   private retryTimer: ReturnType<typeof setTimeout> | null = null
   private pending: Promise<void> = Promise.resolve()
+  private cleanupFailure: unknown = null
 
   constructor(
     private readonly getSession: () => ProjectSession,
@@ -35,6 +36,7 @@ export class AutosaveCoordinator {
 
   attach(session: ProjectSession, baselineSourceSha256: string | null, recoveryId: string = crypto.randomUUID()): void {
     this.cancelTimers()
+    this.cleanupFailure = null
     this.active = { recoveryId, sessionEpoch: crypto.randomUUID(), documentId: session.documentId,
       sourcePath: session.currentFilePath, baselineSourceSha256, lastCommittedRevision: 0, failures: 0, stopped: false }
   }
@@ -46,6 +48,7 @@ export class AutosaveCoordinator {
     if (!active || active.stopped || before.documentId !== active.documentId || after.documentId !== active.documentId ||
         before.revision === after.revision) return
     active.failures = 0
+    if (sessionDirty(after)) this.cleanupFailure = null
     if (this.retryTimer) { clearTimeout(this.retryTimer); this.retryTimer = null }
     if (sessionDirty(after)) this.schedule(active)
     else {
@@ -60,10 +63,16 @@ export class AutosaveCoordinator {
       const current = this.getSession()
       if (current.documentId !== active.documentId || sessionDirty(current) || current.stateId !== stateId) return
       await this.transport.discardRecovery(active.recoveryId)
+      this.cleanupFailure = null
       active.lastCommittedRevision = Math.max(active.lastCommittedRevision, current.revision)
       const latest = this.getSession()
       if (this.active === active && latest.documentId === active.documentId && sessionDirty(latest)) this.trigger(active)
-    }).catch(error => { this.diagnostic(error) })
+    }).catch(error => {
+      const current = this.getSession()
+      if (this.active === active && current.documentId === active.documentId &&
+          !sessionDirty(current) && current.stateId === stateId) this.cleanupFailure = error
+      this.diagnostic(error)
+    })
   }
 
   private schedule(active: ActiveRecovery): void {
@@ -139,6 +148,7 @@ export class AutosaveCoordinator {
     await this.pending
     try {
       await this.transport.discardRecovery(active.recoveryId)
+      this.cleanupFailure = null
       if (this.active === active) this.active = null
     } catch (error) {
       active.stopped = false
@@ -147,7 +157,10 @@ export class AutosaveCoordinator {
     }
   }
 
-  async settle(): Promise<void> { await this.pending }
+  async settle(): Promise<void> {
+    await this.pending
+    if (this.cleanupFailure) throw this.cleanupFailure
+  }
 
   private clearSchedule(): void {
     if (this.idleTimer) clearTimeout(this.idleTimer)

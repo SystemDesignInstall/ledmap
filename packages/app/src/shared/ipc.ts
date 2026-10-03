@@ -15,6 +15,8 @@ export const ipcChannels = {
   reviewRecovery: 'recovery:review-startup',
   requestDiscardBeforeClose: 'recovery:request-discard-before-close',
   finishCloseAfterDiscard: 'recovery:finish-close-after-discard',
+  requestSettleBeforeClose: 'recovery:request-settle-before-close',
+  finishCloseAfterSettle: 'recovery:finish-close-after-settle',
   listDisplays: 'live-output:list-displays',
   startLiveOutput: 'live-output:start',
   updateLiveOutput: 'live-output:update',
@@ -178,6 +180,8 @@ export interface LedmapDesktopApi {
   reviewRecovery(): Promise<RecoverySelection | null>
   onRequestDiscardBeforeClose(callback: () => void): () => void
   finishCloseAfterDiscard(discarded: boolean): void
+  onRequestSettleBeforeClose(callback: () => void): () => void
+  finishCloseAfterSettle(settled: boolean): void
   listDisplays(): Promise<readonly DisplayDescriptor[]>
   startLiveOutput(request: StartLiveOutputRequest): Promise<LiveOutputState>
   updateLiveOutput(request: UpdateLiveOutputRequest): Promise<LiveOutputState>

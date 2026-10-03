@@ -37,7 +37,9 @@ import { findScreen, type Project } from './v2-view-model.js'
 
 interface MappingWorkspaceOptions {
   readonly getProject: () => Project
-  readonly runCommand: (command: (project: LedMapProjectV2) => LedMapProjectV2) => void
+  readonly runCommand: (command: (project: LedMapProjectV2) => LedMapProjectV2, groupId?: number) => void
+  readonly beginHistoryGroup: () => number
+  readonly endHistoryGroup: (groupId: number) => void
   readonly showError: (error: unknown, fallback: string) => void
   readonly clearError: () => void
 }
@@ -45,6 +47,7 @@ interface MappingWorkspaceOptions {
 export interface MappingWorkspace {
   activate(): void
   deactivate(): void
+  finishGesture(): void
   projectChanged(): void
 }
 
@@ -199,8 +202,8 @@ export function createMappingWorkspace(options: MappingWorkspaceOptions): Mappin
   let spaceDown = false
   let gesture:
     | { readonly type: 'pan'; x: number; y: number }
-    | { readonly type: 'drag'; regionId: string; start: Point; x: number; y: number }
-    | { readonly type: 'resize'; region: MappingRegion; handle: MappingResizeHandle; start: Point }
+    | { readonly type: 'drag'; regionId: string; start: Point; x: number; y: number; groupId: number }
+    | { readonly type: 'resize'; region: MappingRegion; handle: MappingResizeHandle; start: Point; groupId: number }
     | null = null
 
   function project(): Project {
@@ -686,7 +689,7 @@ export function createMappingWorkspace(options: MappingWorkspaceOptions): Mappin
     const current = selectedRegion()
     const handle = current ? hitMappingResizeHandle(current, pointPx, camera) : null
     if (current && handle) {
-      gesture = { type: 'resize', region: current, handle, start: point }
+      gesture = { type: 'resize', region: current, handle, start: point, groupId: options.beginHistoryGroup() }
       canvas.classList.add('dragging')
       canvas.setPointerCapture(event.pointerId)
       return
@@ -700,7 +703,8 @@ export function createMappingWorkspace(options: MappingWorkspaceOptions): Mappin
     }
     if (selectedRegionId !== hit.id) selectRegion(hit.id)
     inspectAt(point, hit.id)
-    gesture = { type: 'drag', regionId: hit.id, start: point, x: hit.position.x, y: hit.position.y }
+    gesture = { type: 'drag', regionId: hit.id, start: point, x: hit.position.x, y: hit.position.y,
+      groupId: options.beginHistoryGroup() }
     canvas.classList.add('dragging')
     canvas.setPointerCapture(event.pointerId)
   })
@@ -720,13 +724,14 @@ export function createMappingWorkspace(options: MappingWorkspaceOptions): Mappin
       return
     }
     if (gesture?.type === 'drag') {
+      const groupId = gesture.groupId
       const x = Math.max(0, Math.round(gesture.x + point.x - gesture.start.x))
       const y = Math.max(0, Math.round(gesture.y + point.y - gesture.start.y))
       const region = findMappingRegion(model(), gesture.regionId)
       if (region && (region.position.x !== x || region.position.y !== y)) {
         const regionId = gesture.regionId
         try {
-          options.runCommand(source => updateMappingRegionV2(source, regionId, { x, y }))
+          options.runCommand(source => updateMappingRegionV2(source, regionId, { x, y }), groupId)
         } catch (error) {
           options.showError(error, 'Unable to move Mapping Region.')
           return
@@ -736,6 +741,7 @@ export function createMappingWorkspace(options: MappingWorkspaceOptions): Mappin
       return
     }
     if (gesture?.type === 'resize') {
+      const groupId = gesture.groupId
       const geometry = resizeMappingRegion(gesture.region, gesture.handle, point.x - gesture.start.x, point.y - gesture.start.y)
       const current = findMappingRegion(model(), gesture.region.id)
       if (current && (
@@ -743,7 +749,7 @@ export function createMappingWorkspace(options: MappingWorkspaceOptions): Mappin
         current.size.width !== geometry.width || current.size.height !== geometry.height
       )) {
         try {
-          options.runCommand(source => updateMappingRegionV2(source, current.id, geometry))
+          options.runCommand(source => updateMappingRegionV2(source, current.id, geometry), groupId)
         } catch (error) {
           options.showError(error, 'Unable to resize Mapping Region.')
           return
@@ -760,9 +766,15 @@ export function createMappingWorkspace(options: MappingWorkspaceOptions): Mappin
   })
 
   function finishPointer(event: PointerEvent): void {
-    gesture = null
-    canvas.classList.remove('dragging')
+    finishGesture()
     if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId)
+  }
+
+  function finishGesture(): void {
+    const previous = gesture
+    gesture = null
+    if (previous?.type === 'drag' || previous?.type === 'resize') options.endHistoryGroup(previous.groupId)
+    canvas.classList.remove('dragging')
   }
 
   canvas.addEventListener('pointerup', finishPointer)
@@ -827,7 +839,11 @@ export function createMappingWorkspace(options: MappingWorkspaceOptions): Mappin
       render()
       requestAnimationFrame(fit)
     },
-    deactivate: () => { active = false },
+    deactivate: () => {
+      active = false
+      finishGesture()
+    },
+    finishGesture,
     projectChanged: render,
   }
 }

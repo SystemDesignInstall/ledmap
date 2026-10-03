@@ -101,4 +101,45 @@ describe('Project document history', () => {
     expect([document.canUndo, document.canRedo, sessionDirty(document.session)]).toEqual([false, false, true])
     expect(document.session.savedStateId).toBeNull()
   })
+
+  it('collapses a grouped drag back to its original clean state without consuming redo', async () => {
+    const document = controller()
+    document.transactV2(project => addScreenV2(project))
+    await document.save(false, async () => ({ canceled: false, filePath: 'project.ledmap' }))
+    document.transactV2(project => setScreenPositionV2(project, 'screen-1', 5, 0))
+    document.undo()
+    const savedId = document.session.stateId
+    const previousDepth = document.historyDepth
+    const group = document.beginHistoryGroup()
+    document.transactV2(project => setScreenPositionV2(project, 'screen-1', 10, 0), group)
+    document.transactV2(project => setScreenPositionV2(project, 'screen-1', 0, 0), group)
+    expect(sessionDirty(document.session)).toBe(true)
+    document.endHistoryGroup(group)
+    expect(document.session.stateId).toBe(savedId)
+    expect(sessionDirty(document.session)).toBe(false)
+    expect(document.historyDepth).toBe(previousDepth)
+    expect(document.canRedo).toBe(true)
+    document.redo()
+    expect(document.session.project.design.composition.placements[0]?.x).toBe(5)
+  })
+
+  it('keeps a whole group as one Undo step and finalizes it before Save', async () => {
+    const document = controller()
+    document.transactV2(project => addScreenV2(project))
+    const initial = serializeProjectSession(document.session)
+    const group = document.beginHistoryGroup()
+    document.transactV2(project => setScreenPositionV2(project, 'screen-1', 1, 0), group)
+    document.transactV2(project => setScreenPositionV2(project, 'screen-1', 2, 0), group)
+    document.transactV2(project => setScreenPositionV2(project, 'screen-1', 3, 0), group)
+    const saved = document.save(false, async request => {
+      expect(JSON.parse(request.text).project.design.composition.placements[0]?.x).toBe(3)
+      return { canceled: false, filePath: 'project.ledmap' }
+    })
+    expect(await saved).toBe(true)
+    expect(document.historyDepth).toBe(2)
+    expect(sessionDirty(document.session)).toBe(false)
+    document.undo()
+    expect(serializeProjectSession(document.session)).toBe(initial)
+    expect(sessionDirty(document.session)).toBe(true)
+  })
 })

@@ -35,6 +35,12 @@ const api: LedmapDesktopApi = {
     return () => ipcRenderer.removeListener(ipcChannels.requestDiscardBeforeClose, listener)
   },
   finishCloseAfterDiscard: (discarded: boolean) => ipcRenderer.send(ipcChannels.finishCloseAfterDiscard, discarded),
+  onRequestSettleBeforeClose: callback => {
+    const listener = (): void => callback()
+    ipcRenderer.on(ipcChannels.requestSettleBeforeClose, listener)
+    return () => ipcRenderer.removeListener(ipcChannels.requestSettleBeforeClose, listener)
+  },
+  finishCloseAfterSettle: (settled: boolean) => ipcRenderer.send(ipcChannels.finishCloseAfterSettle, settled),
   listDisplays: () => ipcRenderer.invoke(ipcChannels.listDisplays),
   startLiveOutput: (request: StartLiveOutputRequest) => ipcRenderer.invoke(ipcChannels.startLiveOutput, request),
   updateLiveOutput: (request: UpdateLiveOutputRequest) => ipcRenderer.invoke(ipcChannels.updateLiveOutput, request),

@@ -91,6 +91,8 @@ const fitProject = element<HTMLButtonElement>('fit-project')
 const addScreenButton = element<HTMLButtonElement>('add-screen')
 const newProjectButton = element<HTMLButtonElement>('new-project')
 const openProjectButton = element<HTMLButtonElement>('open-project')
+const undoProjectButton = element<HTMLButtonElement>('undo-project')
+const redoProjectButton = element<HTMLButtonElement>('redo-project')
 const saveProjectButton = element<HTMLButtonElement>('save-project')
 const saveProjectAsButton = element<HTMLButtonElement>('save-project-as')
 const documentError = element<HTMLDivElement>('document-error')
@@ -167,6 +169,9 @@ let dragState: {
   appliedDx: number
   appliedDy: number
 } | null = null
+let dragHistoryGroupId: number | null = null
+let arrowHistoryGroupId: number | null = null
+let arrowHistoryKey: string | null = null
 let panState: { lastX: number; lastY: number } | null = null
 let marqueeGesture: { start: Point; baseSelection: readonly string[] } | null = null
 let resizeGesture: {
@@ -192,11 +197,27 @@ function directionLabel(direction: Direction): string {
   return labels[direction]
 }
 
-function applyV2(command: (project: LedMapProjectV2) => LedMapProjectV2): void {
+function applyV2(command: (project: LedMapProjectV2) => LedMapProjectV2, groupId?: number): void {
   const before = documentController.session
-  documentController.transactV2(command)
+  documentController.transactV2(command, groupId)
   autosave.mutation(before, documentController.session)
   syncDocumentState()
+}
+
+function finishHistoryGroup(groupId?: number): void {
+  const before = documentController.session
+  documentController.endHistoryGroup(groupId)
+  autosave.mutation(before, documentController.session)
+  syncDocumentState()
+  if (before !== documentController.session) render()
+}
+
+function finishArrowHistoryGroup(): void {
+  if (arrowHistoryGroupId === null) return
+  const groupId = arrowHistoryGroupId
+  arrowHistoryGroupId = null
+  arrowHistoryKey = null
+  finishHistoryGroup(groupId)
 }
 
 function syncDocumentState(): void {
@@ -207,6 +228,29 @@ function syncDocumentState(): void {
     dirty,
   })
   saveProjectButton.disabled = !dirty && session.sourceSchemaVersion === 3
+  undoProjectButton.disabled = !documentController.canUndo
+  redoProjectButton.disabled = !documentController.canRedo
+}
+
+function restoreHistory(redo: boolean): void {
+  endPointerGesture()
+  mappingWorkspace?.finishGesture()
+  finishArrowHistoryGroup()
+  const before = documentController.session
+  const restored = redo ? documentController.redo() : documentController.undo()
+  autosave.mutation(before, documentController.session)
+  syncDocumentState()
+  if (!restored) return
+  const project = currentProject()
+  const knownScreens = new Set<string>(project.screens.map(screen => screen.screen.id))
+  selectedScreenIds = selectedScreenIds.filter(id => knownScreens.has(id))
+  if (activeScreenId && !knownScreens.has(activeScreenId)) activeScreenId = project.screens[0]?.screen.id ?? null
+  const selected = selection
+  if (selected?.type === 'screen' && !knownScreens.has(selected.id)) selection = null
+  if (selected?.type === 'cabinetGrid' && !project.screens.some(screen => screen.grid.id === selected.id)) selection = null
+  if (selected?.type === 'cabinet' && !project.screens.some(screen =>
+    screen.screen.id === selected.screenId && screen.cabinets.some(cabinet => cabinet.id === selected.id))) selection = null
+  render()
 }
 
 function showDocumentError(error: unknown, fallback: string): void {
@@ -220,6 +264,8 @@ function clearDocumentError(): void {
 }
 
 function replaceDocument(next: ProjectSession): void {
+  mappingWorkspace?.finishGesture()
+  finishArrowHistoryGroup()
   sessionWorkspaceProject(next)
   documentController.replace(next)
   selection = null
@@ -237,6 +283,10 @@ function replaceDocument(next: ProjectSession): void {
 }
 
 async function saveDocument(saveAs: boolean): Promise<boolean> {
+  endPointerGesture()
+  mappingWorkspace?.finishGesture()
+  finishArrowHistoryGroup()
+  finishHistoryGroup()
   clearDocumentError()
   try {
     const saved = await documentController.save(saveAs, request => window.ledmapDesktop.saveProject(request),
@@ -255,7 +305,15 @@ async function saveDocument(saveAs: boolean): Promise<boolean> {
 async function canReplaceDocument(): Promise<boolean> {
   await documentController.settleSaves()
   const started = documentController.session
-  if (!sessionDirty(started)) { await autosave.settle(); return true }
+  if (!sessionDirty(started)) {
+    try {
+      await autosave.settle()
+      return documentController.session === started
+    } catch (error) {
+      showDocumentError(error, 'Unable to reconcile the recovery snapshot.')
+      return false
+    }
+  }
   const choice = await window.ledmapDesktop.confirmUnsavedChanges()
   if (documentController.session !== started) return false
   if (choice === 'cancel') return false
@@ -846,10 +904,10 @@ function selectedPositions(): Readonly<Record<string, LayoutPoint>> {
     .map(screen => [screen.screen.id, { x: screen.x, y: screen.y }]))
 }
 
-function applyScreenPositions(positions: Readonly<Record<string, LayoutPoint>>): boolean {
+function applyScreenPositions(positions: Readonly<Record<string, LayoutPoint>>, groupId?: number): boolean {
   try {
     const before = documentController.session
-    applyV2(project => setScreenPositionsV2(project, positions))
+    applyV2(project => setScreenPositionsV2(project, positions), groupId)
     return documentController.session !== before
   } catch (error) {
     showDocumentError(error, 'Unable to move the selected Screens.')
@@ -948,6 +1006,11 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 function endPointerGesture(): void {
+  if (dragHistoryGroupId !== null) {
+    const groupId = dragHistoryGroupId
+    dragHistoryGroupId = null
+    finishHistoryGroup(groupId)
+  }
   pointerMode = 'none'
   dragState = null
   panState = null
@@ -1020,6 +1083,7 @@ canvas.addEventListener('pointerdown', event => {
     const bounds = selectionBounds(selectedRects)
     if (!bounds) return
     pointerMode = 'drag'
+    dragHistoryGroupId = documentController.beginHistoryGroup()
     dragState = {
       screenIds: [...selectedScreenIds],
       startProject: projectPoint,
@@ -1105,7 +1169,7 @@ canvas.addEventListener('pointermove', event => {
         const start = dragState!.positions[id]!
         return [id, { x: start.x + snapped.dx, y: start.y + snapped.dy }]
       }))
-      if (applyScreenPositions(positions)) {
+      if (applyScreenPositions(positions, dragHistoryGroupId ?? undefined)) {
         dragState.appliedDx = snapped.dx
         dragState.appliedDy = snapped.dy
       }
@@ -1342,6 +1406,8 @@ deleteScreenButton.addEventListener('click', deleteSelection)
 
 newProjectButton.addEventListener('click', () => { void newDocument() })
 openProjectButton.addEventListener('click', () => { void openDocument() })
+undoProjectButton.addEventListener('click', () => restoreHistory(false))
+redoProjectButton.addEventListener('click', () => restoreHistory(true))
 saveProjectButton.addEventListener('click', () => { void saveDocument(false) })
 saveProjectAsButton.addEventListener('click', () => { void saveDocument(true) })
 
@@ -1363,10 +1429,30 @@ window.ledmapDesktop.onRequestDiscardBeforeClose(() => {
     window.ledmapDesktop.finishCloseAfterDiscard(false)
   })
 })
+window.ledmapDesktop.onRequestSettleBeforeClose(() => {
+  const started = documentController.session
+  let timeout: ReturnType<typeof setTimeout> | undefined
+  const limited = Promise.race([autosave.settle().then(() => true), new Promise<boolean>(resolve => {
+    timeout = setTimeout(() => resolve(false), 5_000)
+  })])
+  void limited.then(settled => {
+    if (timeout) clearTimeout(timeout)
+    const ready = settled && documentController.session === started && !sessionDirty(documentController.session)
+    if (!ready && !settled) showDocumentError(new Error('Recovery cleanup is still pending. Retry Close.'),
+      'Unable to reconcile recovery.')
+    window.ledmapDesktop.finishCloseAfterSettle(ready)
+  }).catch(error => {
+    if (timeout) clearTimeout(timeout)
+    showDocumentError(error, 'Unable to reconcile recovery.')
+    window.ledmapDesktop.finishCloseAfterSettle(false)
+  })
+})
 
 mappingWorkspace = createMappingWorkspace({
   getProject: () => currentProject(),
-  runCommand: command => applyV2(command),
+  runCommand: (command, groupId) => applyV2(command, groupId),
+  beginHistoryGroup: () => documentController.beginHistoryGroup(),
+  endHistoryGroup: groupId => finishHistoryGroup(groupId),
   showError: showDocumentError,
   clearError: clearDocumentError,
 })
@@ -1450,6 +1536,7 @@ function setAppMode(mode: AppMode): void {
   hardwareWorkspace?.deactivate()
   testWorkspace?.deactivate()
   exportWorkspace?.deactivate()
+  finishArrowHistoryGroup()
   endPointerGesture()
   if (layoutActive) {
     requestAnimationFrame(() => draw())
@@ -1466,15 +1553,15 @@ hardwareModeButton.addEventListener('click', () => setAppMode('hardware'))
 testModeButton.addEventListener('click', () => setAppMode('test'))
 exportModeButton.addEventListener('click', () => setAppMode('export'))
 
-function isEditableControl(target: EventTarget | null): boolean {
-  return target instanceof HTMLElement && (
-    target.matches('input, select, textarea') || target.isContentEditable
-  )
+function isNativeTextEditingTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return false
+  return target.closest('input, select, textarea') !== null ||
+    (target instanceof HTMLElement && target.isContentEditable)
 }
 
 window.addEventListener('keydown', event => {
   if (appMode !== 'layout') return
-  if (isEditableControl(event.target)) return
+  if (isNativeTextEditingTarget(event.target)) return
   const arrows: Readonly<Record<string, readonly [number, number]>> = {
     ArrowLeft: [-1, 0],
     ArrowRight: [1, 0],
@@ -1483,9 +1570,14 @@ window.addEventListener('keydown', event => {
   }
   const direction = arrows[event.key]
   if (direction && selectedScreenIds.length > 0) {
+    if (arrowHistoryKey !== event.key) finishArrowHistoryGroup()
+    if (arrowHistoryGroupId === null) {
+      arrowHistoryKey = event.key
+      arrowHistoryGroupId = documentController.beginHistoryGroup()
+    }
     const step = event.shiftKey ? 10 : 1
     const positions = nudgePositions(selectedPositions(), selectedScreenIds, direction[0] * step, direction[1] * step)
-    if (applyScreenPositions(positions)) render()
+    if (applyScreenPositions(positions, arrowHistoryGroupId)) render()
     event.preventDefault()
     return
   }
@@ -1508,10 +1600,30 @@ window.addEventListener('keydown', event => {
 })
 
 window.addEventListener('keyup', event => {
+  if (event.key === arrowHistoryKey) finishArrowHistoryGroup()
   if (appMode !== 'layout') return
   if (event.code === 'Space') {
     spaceDown = false
     canvas.classList.remove('space-grab')
+  }
+})
+
+window.addEventListener('blur', () => {
+  finishArrowHistoryGroup()
+  endPointerGesture()
+  mappingWorkspace?.finishGesture()
+})
+
+window.addEventListener('keydown', event => {
+  if (event.defaultPrevented || event.isComposing || isNativeTextEditingTarget(event.target) ||
+      event.altKey || (!event.ctrlKey && !event.metaKey)) return
+  const key = event.key.toLowerCase()
+  if (key === 'z') {
+    event.preventDefault()
+    restoreHistory(event.shiftKey)
+  } else if (key === 'y' && event.ctrlKey && !event.shiftKey) {
+    event.preventDefault()
+    restoreHistory(true)
   }
 })
 

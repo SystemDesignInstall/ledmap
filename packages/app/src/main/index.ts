@@ -207,6 +207,15 @@ function registerIpc(): void {
     state.allowClose = true
     window.close()
   })
+  ipcMain.on(ipcChannels.finishCloseAfterSettle, (event, settled: unknown) => {
+    const window = BrowserWindow.fromWebContents(event.sender)
+    const state = stateFor(event.sender)
+    if (!window || !state) return
+    state.closePromptActive = false
+    if (settled !== true || state.dirty) return
+    state.allowClose = true
+    window.close()
+  })
 
   ipcMain.handle(ipcChannels.listDisplays, () => liveOutputManager?.displays() ?? [])
 
@@ -275,10 +284,14 @@ async function createWindow(): Promise<void> {
   window.once('ready-to-show', () => window.show())
   window.on('close', event => {
     const state = stateFor(window.webContents)
-    if (!state || state.allowClose || !state.dirty) return
+    if (!state || state.allowClose) return
     event.preventDefault()
     if (state.closePromptActive) return
     state.closePromptActive = true
+    if (!state.dirty) {
+      window.webContents.send(ipcChannels.requestSettleBeforeClose)
+      return
+    }
     void promptUnsaved(window).then(choice => {
       state.closePromptActive = false
       if (choice === 'discard') {

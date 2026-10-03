@@ -200,4 +200,32 @@ describe('AutosaveCoordinator', () => {
     await autosave.settle()
     expect(discarded).toHaveLength(0)
   })
+
+  it('reconciles a long grouped gesture that autosaved before returning to its clean start', async () => {
+    vi.useFakeTimers()
+    const { document, autosave, writes, discarded, edit } = fixture()
+    edit(project => addScreenV2(project))
+    const saved = document.session
+    await document.save(false, async () => ({ canceled: false, filePath: 'project.ledmap' }))
+    await autosave.saved(saved, document.session, 'a'.repeat(64))
+    const group = document.beginHistoryGroup()
+    for (let x = 1; x <= 31; x++) {
+      const before = document.session
+      document.transactV2(project => setScreenPositionV2(project, 'screen-1', x, 0), group)
+      autosave.mutation(before, document.session)
+      await vi.advanceTimersByTimeAsync(1_000)
+    }
+    expect(writes.length).toBeGreaterThan(0)
+    const beforeReturn = document.session
+    document.transactV2(project => setScreenPositionV2(project, 'screen-1', 0, 0), group)
+    document.endHistoryGroup(group)
+    autosave.mutation(beforeReturn, document.session)
+    await autosave.settle()
+    expect(sessionDirty(document.session)).toBe(false)
+    expect(document.canUndo).toBe(true)
+    expect(discarded.at(-1)).toBe(autosave.recoveryId)
+    const count = writes.length
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(writes).toHaveLength(count)
+  })
 })

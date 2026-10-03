@@ -16,6 +16,8 @@ export interface ProjectSession<TProject = LedMapProjectV2> {
   readonly project: TProject
   readonly revision: number
   readonly savedRevision: number
+  readonly stateId: number
+  readonly savedStateId: number | null
   readonly documentId: string
   readonly currentFilePath: string | null
   readonly sourceSchemaVersion: 1 | 2 | 3
@@ -23,7 +25,7 @@ export interface ProjectSession<TProject = LedMapProjectV2> {
 }
 
 export function sessionDirty(session: ProjectSession): boolean {
-  return session.revision !== session.savedRevision
+  return session.stateId !== session.savedStateId
 }
 
 export function createProjectSession(documentId: string): ProjectSession {
@@ -31,6 +33,8 @@ export function createProjectSession(documentId: string): ProjectSession {
     project: createEmptyProjectV2(),
     revision: 0,
     savedRevision: 0,
+    stateId: 0,
+    savedStateId: 0,
     documentId,
     currentFilePath: null,
     sourceSchemaVersion: 3,
@@ -46,6 +50,8 @@ export function loadProjectSession(text: string, currentFilePath: string, docume
     project,
     revision: 0,
     savedRevision: 0,
+    stateId: 0,
+    savedStateId: 0,
     documentId,
     currentFilePath,
     sourceSchemaVersion: loaded.sourceSchemaVersion,
@@ -57,7 +63,8 @@ export function recoverProjectSession(text: string, documentId: string): Project
   const loaded = loadProjectV3(text)
   projectV2WorkspaceReadModel(loaded.project)
   return Object.freeze({ project: loaded.project, extensions: loaded.extensions, documentId,
-    revision: 1, savedRevision: 0, currentFilePath: null, sourceSchemaVersion: 3 })
+    revision: 1, savedRevision: 0, stateId: 1, savedStateId: null,
+    currentFilePath: null, sourceSchemaVersion: 3 })
 }
 
 export function sessionWorkspaceProject(session: ProjectSession): Project {
@@ -88,7 +95,13 @@ export function commitProjectV2(session: ProjectSession, command: (project: LedM
   if (diagnostic) throw new DomainError('PROJECT_V2_INVALID', `${diagnostic.code}: ${diagnostic.message}`)
   projectV2WorkspaceReadModel(candidate)
   if (!Number.isSafeInteger(session.revision + 1)) throw new DomainError('PROJECT_REVISION_OVERFLOW', 'Project revision exceeds the safe integer range')
-  return Object.freeze({ ...session, project: candidate, revision: session.revision + 1 })
+  return Object.freeze({ ...session, project: candidate, revision: session.revision + 1,
+    stateId: session.revision + 1 })
+}
+
+export function restoreProjectSessionState(session: ProjectSession, project: LedMapProjectV2, stateId: number): ProjectSession {
+  if (!Number.isSafeInteger(session.revision + 1)) throw new DomainError('PROJECT_REVISION_OVERFLOW', 'Project revision exceeds the safe integer range')
+  return Object.freeze({ ...session, project, stateId, revision: session.revision + 1 })
 }
 
 export function serializeProjectSession(session: ProjectSession): string {
@@ -99,9 +112,13 @@ export function markProjectSessionSaved(
   session: ProjectSession,
   documentId: string,
   savedRevision: number,
+  savedStateId: number,
   currentFilePath: string,
 ): ProjectSession {
   if (session.documentId !== documentId) return session
   if (savedRevision > session.revision) throw new DomainError('PROJECT_REVISION_INVALID', 'Saved revision exceeds current revision')
-  return Object.freeze({ ...session, savedRevision, currentFilePath, sourceSchemaVersion: 3 })
+  if (!Number.isSafeInteger(savedStateId) || savedStateId < 0 || savedStateId > savedRevision) {
+    throw new DomainError('PROJECT_STATE_ID_INVALID', 'Saved state identity is invalid')
+  }
+  return Object.freeze({ ...session, savedRevision, savedStateId, currentFilePath, sourceSchemaVersion: 3 })
 }

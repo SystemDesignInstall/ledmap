@@ -111,7 +111,7 @@ describe('AutosaveCoordinator', () => {
     await autosave.settle()
     const older = document.session
     edit(project => setScreenPositionV2(project, 'screen-1', 3, 0))
-    document.replace(markProjectSessionSaved(document.session, older.documentId, older.revision, 'C:\\new.ledmap'))
+    document.replace(markProjectSessionSaved(document.session, older.documentId, older.revision, older.stateId, 'C:\\new.ledmap'))
     await autosave.saved(older, document.session, 'a'.repeat(64))
     expect(saves[0]).toMatchObject({ savedRevision: 1, currentRevision: 2, sourcePath: 'C:\\new.ledmap' })
     await vi.advanceTimersByTimeAsync(2_000)
@@ -134,5 +134,70 @@ describe('AutosaveCoordinator', () => {
     await discarding
     expect(discarded).toHaveLength(1)
     expect(document.session.documentId).toBe('replacement')
+  })
+
+  it('cancels a pending dirty snapshot and clears committed recovery on Undo to saved state', async () => {
+    vi.useFakeTimers()
+    const { document, autosave, writes, discarded, edit } = fixture()
+    edit(project => addScreenV2(project))
+    await vi.advanceTimersByTimeAsync(2_000)
+    await autosave.settle()
+    const before = document.session
+    document.undo()
+    autosave.mutation(before, document.session)
+    await autosave.settle()
+    expect(discarded).toEqual([autosave.recoveryId])
+    expect(sessionDirty(document.session)).toBe(false)
+    const written = writes.length
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(writes).toHaveLength(written)
+    const clean = document.session
+    document.redo()
+    autosave.mutation(clean, document.session)
+    await vi.advanceTimersByTimeAsync(2_000)
+    await autosave.settle()
+    expect(writes.at(-1)?.snapshotRevision).toBe(document.session.revision)
+  })
+
+  it('orders clean cleanup after an in-flight write and keeps a new dirty state', async () => {
+    vi.useFakeTimers()
+    const { document, autosave, transport, discarded, writes, edit } = fixture()
+    let release!: () => void
+    const blocked = new Promise<void>(resolve => { release = resolve })
+    transport.writeRecovery = async request => { writes.push(request); if (writes.length === 1) await blocked }
+    edit(project => addScreenV2(project))
+    await vi.advanceTimersByTimeAsync(2_000)
+    const dirty = document.session
+    document.undo()
+    autosave.mutation(dirty, document.session)
+    expect(discarded).toHaveLength(0)
+    release()
+    await autosave.settle()
+    expect(discarded).toHaveLength(1)
+    const clean = document.session
+    document.redo()
+    autosave.mutation(clean, document.session)
+    await vi.advanceTimersByTimeAsync(2_000)
+    await autosave.settle()
+    expect(writes.at(-1)?.snapshotRevision).toBe(document.session.revision)
+  })
+
+  it('does not delete recovery if the project becomes dirty before clean cleanup starts', async () => {
+    vi.useFakeTimers()
+    const { document, autosave, transport, discarded, edit } = fixture()
+    let release!: () => void
+    const blocked = new Promise<void>(resolve => { release = resolve })
+    transport.writeRecovery = async () => { await blocked }
+    edit(project => addScreenV2(project))
+    await vi.advanceTimersByTimeAsync(2_000)
+    const dirty = document.session
+    document.undo()
+    autosave.mutation(dirty, document.session)
+    const clean = document.session
+    document.redo()
+    autosave.mutation(clean, document.session)
+    release()
+    await autosave.settle()
+    expect(discarded).toHaveLength(0)
   })
 })

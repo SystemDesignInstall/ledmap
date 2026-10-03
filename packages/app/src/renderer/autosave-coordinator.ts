@@ -48,6 +48,22 @@ export class AutosaveCoordinator {
     active.failures = 0
     if (this.retryTimer) { clearTimeout(this.retryTimer); this.retryTimer = null }
     if (sessionDirty(after)) this.schedule(active)
+    else {
+      this.cancelTimers()
+      this.reconcileClean(active, after.stateId)
+    }
+  }
+
+  private reconcileClean(active: ActiveRecovery, stateId: number): void {
+    this.pending = this.pending.then(async () => {
+      if (this.active !== active) return
+      const current = this.getSession()
+      if (current.documentId !== active.documentId || sessionDirty(current) || current.stateId !== stateId) return
+      await this.transport.discardRecovery(active.recoveryId)
+      active.lastCommittedRevision = Math.max(active.lastCommittedRevision, current.revision)
+      const latest = this.getSession()
+      if (this.active === active && latest.documentId === active.documentId && sessionDirty(latest)) this.trigger(active)
+    }).catch(error => { this.diagnostic(error) })
   }
 
   private schedule(active: ActiveRecovery): void {
@@ -65,7 +81,8 @@ export class AutosaveCoordinator {
     this.pending = this.pending.then(async () => {
       if (this.active !== active || active.stopped) return
       const current = this.getSession()
-      if (current.documentId !== active.documentId || snapshot.revision <= current.savedRevision ||
+      if (current.documentId !== active.documentId || !sessionDirty(current) ||
+          snapshot.revision <= current.savedRevision ||
           snapshot.revision <= active.lastCommittedRevision) return
       try {
         const text = serializeProjectSession(snapshot)
@@ -95,14 +112,18 @@ export class AutosaveCoordinator {
     const sourcePath = current.currentFilePath
     active.sourcePath = sourcePath
     active.baselineSourceSha256 = sha256
-    if (!sessionDirty(current)) this.cancelTimers()
-    else if (!this.idleTimer && !this.maxTimer) this.schedule(active)
-    this.pending = this.pending.then(async () => {
-      if (!sourcePath) return
-      await this.transport.reconcileRecovery({ recoveryId: active.recoveryId, sessionEpoch: active.sessionEpoch,
-        savedRevision: snapshot.revision, currentRevision: current.revision, sourcePath,
-        baselineSourceSha256: sha256 })
-    }).catch(error => { this.diagnostic(error) })
+    if (!sessionDirty(current)) {
+      this.cancelTimers()
+      this.reconcileClean(active, current.stateId)
+    } else {
+      if (!this.idleTimer && !this.maxTimer) this.schedule(active)
+      this.pending = this.pending.then(async () => {
+        if (!sourcePath || this.active !== active) return
+        await this.transport.reconcileRecovery({ recoveryId: active.recoveryId, sessionEpoch: active.sessionEpoch,
+          savedRevision: snapshot.revision, currentRevision: current.revision, sourcePath,
+          baselineSourceSha256: sha256 })
+      }).catch(error => { this.diagnostic(error) })
+    }
     let timeout: ReturnType<typeof setTimeout> | undefined
     await Promise.race([this.pending, new Promise<void>(resolve => {
       timeout = setTimeout(resolve, 5_000)

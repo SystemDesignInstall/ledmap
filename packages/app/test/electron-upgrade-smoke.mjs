@@ -35,8 +35,11 @@ async function close(application) {
 
 async function scenario(action, name, saveAsPath = null) {
   const legacyPath = resolve(directory, `${name}.ledmap`)
+  const userData = resolve(directory, `${name}-user-data`)
+  await mkdir(userData, { recursive: true })
   await writeFile(legacyPath, legacy, 'utf8')
   const env = { ...process.env, LEDMAP_SMOKE_PROJECT_PATH: legacyPath, LEDMAP_SMOKE_UPGRADE_ACTION: action,
+    LEDMAP_SMOKE_USER_DATA: userData,
     ...(saveAsPath ? { LEDMAP_SMOKE_SAVE_AS_PATH: saveAsPath } : {}) }
   delete env.ELECTRON_RUN_AS_NODE
   delete env.ELECTRON_RENDERER_URL

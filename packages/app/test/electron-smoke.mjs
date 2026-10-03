@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
-import { mkdir, readFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { _electron as electron } from 'playwright'
@@ -29,6 +29,7 @@ const exportFiles = [
   'ledmap-generic-mapping-screen-2.json',
 ]
 await mkdir(output, { recursive: true })
+const smokeUserData = await mkdtemp(resolve(output, 'user-data-'))
 await mkdir(exportDirectory, { recursive: true })
 await rm(projectPath, { force: true })
 await Promise.all(exportFiles.map(name => rm(resolve(exportDirectory, name), { force: true })))
@@ -36,6 +37,7 @@ await Promise.all(exportFiles.map(name => rm(resolve(exportDirectory, name), { f
 const env = {
   ...process.env,
   LEDMAP_SMOKE_PROJECT_PATH: projectPath,
+  LEDMAP_SMOKE_USER_DATA: smokeUserData,
   LEDMAP_SMOKE_UNSAVED_ACTION: 'discard',
   LEDMAP_SMOKE_SIMULATED_DISPLAYS: '1',
   LEDMAP_SMOKE_EXPORT_DIR: exportDirectory,

@@ -34,6 +34,9 @@ const exportFileService = new ExportFileService()
 const projectWriter = new StagedProjectWriter()
 let recoveryStore: RecoveryStore | null = null
 
+const smokeUserData = process.env['LEDMAP_SMOKE_USER_DATA']
+if (smokeUserData) app.setPath('userData', smokeUserData)
+
 function stateFor(contents: WebContents): WindowState | undefined {
   return windowStates.get(contents.id)
 }
@@ -141,6 +144,28 @@ function registerIpc(): void {
     if (!BrowserWindow.fromWebContents(event.sender) || !recoveryStore) throw new Error('Recovery storage is unavailable.')
     return recoveryStore.discard(value)
   })
+  ipcMain.handle(ipcChannels.reviewRecovery, async event => {
+    const window = BrowserWindow.fromWebContents(event.sender)
+    if (!window || !recoveryStore) throw new Error('Recovery storage is unavailable.')
+    for (const candidate of await recoveryStore.candidates()) {
+      if (candidate.classification === 'REDUNDANT') continue
+      const smokeChoice = process.env['LEDMAP_SMOKE_RECOVERY_ACTION']
+      const response = smokeChoice === 'recover' ? 0 : smokeChoice === 'discard' ? 1 : smokeChoice === 'later' ? 2 :
+        (await dialog.showMessageBox(window, {
+          type: 'warning', title: 'Recover LedMAP project?',
+          message: candidate.classification === 'CONFLICT'
+            ? 'A recovery snapshot exists, but the original file has changed or is unavailable.'
+            : 'Unsaved LedMAP work was found.',
+          detail: `${candidate.manifest.displayName}\n${candidate.manifest.sourcePath ?? 'Untitled project'}\n` +
+            `Snapshot: ${candidate.manifest.updatedAt}\nRecover opens an unsaved copy; it does not overwrite the original.`,
+          buttons: ['Recover', 'Discard', 'Later'], defaultId: 0, cancelId: 2, noLink: true,
+        })).response
+      if (response === 1) { await recoveryStore.discard(candidate.manifest.recoveryId); continue }
+      if (response === 0) return { recoveryId: candidate.manifest.recoveryId, text: candidate.text,
+        classification: candidate.classification }
+    }
+    return null
+  })
 
   ipcMain.handle(ipcChannels.confirmUnsaved, async event => {
     const window = BrowserWindow.fromWebContents(event.sender)
@@ -168,6 +193,14 @@ function registerIpc(): void {
 
   ipcMain.on(ipcChannels.finishCloseAfterSave, (event, saved: unknown) => {
     if (saved !== true) return
+    const window = BrowserWindow.fromWebContents(event.sender)
+    const state = stateFor(event.sender)
+    if (!window || !state) return
+    state.allowClose = true
+    window.close()
+  })
+  ipcMain.on(ipcChannels.finishCloseAfterDiscard, (event, discarded: unknown) => {
+    if (discarded !== true) return
     const window = BrowserWindow.fromWebContents(event.sender)
     const state = stateFor(event.sender)
     if (!window || !state) return
@@ -249,8 +282,7 @@ async function createWindow(): Promise<void> {
     void promptUnsaved(window).then(choice => {
       state.closePromptActive = false
       if (choice === 'discard') {
-        state.allowClose = true
-        window.close()
+        window.webContents.send(ipcChannels.requestDiscardBeforeClose)
       } else if (choice === 'save') {
         window.webContents.send(ipcChannels.requestSaveBeforeClose)
       }

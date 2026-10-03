@@ -28,6 +28,13 @@ const api: LedmapDesktopApi = {
   writeRecovery: (request: RecoverySnapshotRequest) => ipcRenderer.invoke(ipcChannels.writeRecovery, request),
   reconcileRecovery: (request: RecoverySaveCommit) => ipcRenderer.invoke(ipcChannels.reconcileRecovery, request),
   discardRecovery: (recoveryId: string) => ipcRenderer.invoke(ipcChannels.discardRecovery, recoveryId),
+  reviewRecovery: () => ipcRenderer.invoke(ipcChannels.reviewRecovery),
+  onRequestDiscardBeforeClose: callback => {
+    const listener = (): void => callback()
+    ipcRenderer.on(ipcChannels.requestDiscardBeforeClose, listener)
+    return () => ipcRenderer.removeListener(ipcChannels.requestDiscardBeforeClose, listener)
+  },
+  finishCloseAfterDiscard: (discarded: boolean) => ipcRenderer.send(ipcChannels.finishCloseAfterDiscard, discarded),
   listDisplays: () => ipcRenderer.invoke(ipcChannels.listDisplays),
   startLiveOutput: (request: StartLiveOutputRequest) => ipcRenderer.invoke(ipcChannels.startLiveOutput, request),
   updateLiveOutput: (request: UpdateLiveOutputRequest) => ipcRenderer.invoke(ipcChannels.updateLiveOutput, request),

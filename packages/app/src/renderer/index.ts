@@ -6,7 +6,7 @@ import {
 import type { LedMapProjectV2 } from '@ledmap/core'
 import { ProjectDocumentController } from './document.js'
 import { AutosaveCoordinator } from './autosave-coordinator.js'
-import { createProjectSession, sessionDirty, sessionWorkspaceProject, type ProjectSession } from './project-session.js'
+import { createProjectSession, recoverProjectSession, sessionDirty, sessionWorkspaceProject, type ProjectSession } from './project-session.js'
 import {
   addScreenV2, deleteScreensV2, duplicateScreenV2, renameScreenV2, resizeScreenGridV2,
   setScreenPositionV2, setScreenPositionsV2, updateScreenCabinetConfigV2,
@@ -1348,6 +1348,21 @@ saveProjectAsButton.addEventListener('click', () => { void saveDocument(true) })
 window.ledmapDesktop.onRequestSaveBeforeClose(() => {
   void saveDocument(false).then(saved => window.ledmapDesktop.finishCloseAfterSave(saved && !sessionDirty(documentController.session)))
 })
+window.ledmapDesktop.onRequestDiscardBeforeClose(() => {
+  let timeout: ReturnType<typeof setTimeout> | undefined
+  const limited = Promise.race([autosave.discard().then(() => true), new Promise<boolean>(resolve => {
+    timeout = setTimeout(() => resolve(false), 5_000)
+  })])
+  void limited.then(discarded => {
+    if (timeout) clearTimeout(timeout)
+    if (!discarded) showDocumentError(new Error('Recovery cleanup is still pending. Retry Close.'), 'Unable to discard recovery.')
+    window.ledmapDesktop.finishCloseAfterDiscard(discarded)
+  }).catch(error => {
+    if (timeout) clearTimeout(timeout)
+    showDocumentError(error, 'Unable to discard recovery.')
+    window.ledmapDesktop.finishCloseAfterDiscard(false)
+  })
+})
 
 mappingWorkspace = createMappingWorkspace({
   getProject: () => currentProject(),
@@ -1581,3 +1596,18 @@ const hook: LedmapHook = {
 }
 
 ;(window as unknown as { __ledmap: LedmapHook }).__ledmap = hook
+
+async function reviewStartupRecovery(): Promise<void> {
+  const started = documentController.session
+  try {
+    const selected = await window.ledmapDesktop.reviewRecovery()
+    if (!selected || documentController.session !== started) return
+    const recovered = recoverProjectSession(selected.text, `document-${++documentSerial}`)
+    replaceDocument(recovered)
+    autosave.attach(recovered, null, selected.recoveryId)
+  } catch (error) {
+    showDocumentError(error, 'Unable to inspect recovery snapshots.')
+  }
+}
+
+void reviewStartupRecovery()

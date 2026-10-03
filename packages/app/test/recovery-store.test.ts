@@ -110,6 +110,19 @@ describe('RecoveryStore', () => {
     expect(await readFile(source, 'utf8')).toBe(text)
   })
 
+  it('does not read or delete a manifest symlink outside recovery storage', async () => {
+    const { root, source } = await fixture()
+    const store = new RecoveryStore(root)
+    await store.writeSnapshot(snapshot())
+    const manifestPath = join(root, 'manifests', `${id}.json`)
+    await writeFile(source, await readFile(manifestPath))
+    await rm(manifestPath)
+    await symlink(source, manifestPath, 'file')
+    expect(await store.candidates()).toEqual([])
+    await expect(store.discard(id)).rejects.toThrow('Unsafe recovery file')
+    expect((await readFile(source, 'utf8')).includes('ledmap-recovery')).toBe(true)
+  })
+
   it('ignores malformed candidates without preventing other recovery discovery', async () => {
     const { root } = await fixture()
     const store = new RecoveryStore(root)
@@ -117,5 +130,19 @@ describe('RecoveryStore', () => {
     await mkdir(join(root, 'manifests'), { recursive: true })
     await writeFile(join(root, 'manifests', '33333333-3333-4333-8333-333333333333.json'), '{broken')
     expect(await store.candidates()).toHaveLength(1)
+  })
+
+  it('orders multiple candidates deterministically and preserves others after one Discard', async () => {
+    const { root } = await fixture()
+    const store = new RecoveryStore(root)
+    const secondId = '44444444-4444-4444-8444-444444444444'
+    await store.writeSnapshot(snapshot())
+    await store.writeSnapshot(snapshot({ recoveryId: secondId }))
+    const candidates = await store.candidates()
+    expect(candidates).toHaveLength(2)
+    expect(candidates.map(candidate => candidate.manifest.recoveryId).sort()).toEqual([id, secondId])
+    await store.discard(candidates[0]!.manifest.recoveryId)
+    expect((await store.candidates()).map(candidate => candidate.manifest.recoveryId))
+      .toEqual([candidates[1]!.manifest.recoveryId])
   })
 })

@@ -33,7 +33,7 @@ export class AutosaveCoordinator {
     private readonly diagnostic: (error: unknown) => void = () => undefined,
   ) {}
 
-  attach(session: ProjectSession, baselineSourceSha256: string | null, recoveryId = crypto.randomUUID()): void {
+  attach(session: ProjectSession, baselineSourceSha256: string | null, recoveryId: string = crypto.randomUUID()): void {
     this.cancelTimers()
     this.active = { recoveryId, sessionEpoch: crypto.randomUUID(), documentId: session.documentId,
       sourcePath: session.currentFilePath, baselineSourceSha256, lastCommittedRevision: 0, failures: 0, stopped: false }
@@ -103,7 +103,11 @@ export class AutosaveCoordinator {
         savedRevision: snapshot.revision, currentRevision: current.revision, sourcePath,
         baselineSourceSha256: sha256 })
     }).catch(error => { this.diagnostic(error) })
-    await this.pending
+    let timeout: ReturnType<typeof setTimeout> | undefined
+    await Promise.race([this.pending, new Promise<void>(resolve => {
+      timeout = setTimeout(resolve, 5_000)
+    })])
+    if (timeout) clearTimeout(timeout)
   }
 
   async discard(): Promise<void> {

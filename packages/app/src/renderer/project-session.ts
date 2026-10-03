@@ -2,6 +2,7 @@ import {
   createEmptyProjectV2,
   createProjectV2,
   loadLedMapProject,
+  loadProjectV3,
   serializeProjectV3,
   validateProjectV2Structural,
   DomainError,
@@ -50,6 +51,13 @@ export function loadProjectSession(text: string, currentFilePath: string, docume
     sourceSchemaVersion: loaded.sourceSchemaVersion,
     extensions: loaded.extensions,
   })
+}
+
+export function recoverProjectSession(text: string, documentId: string): ProjectSession {
+  const loaded = loadProjectV3(text)
+  projectV2WorkspaceReadModel(loaded.project)
+  return Object.freeze({ project: loaded.project, extensions: loaded.extensions, documentId,
+    revision: 1, savedRevision: 0, currentFilePath: null, sourceSchemaVersion: 3 })
 }
 
 export function sessionWorkspaceProject(session: ProjectSession): Project {

@@ -6,6 +6,7 @@ import {
   commitProjectV2,
   createProjectSession,
   loadProjectSession,
+  recoverProjectSession,
   serializeProjectSession,
   sessionDirty,
   sessionWorkspaceProject,
@@ -14,6 +15,17 @@ import {
 import { compactReadyProject } from './v2-parity-fixtures.js'
 
 describe('ProjectSession V2 ownership', () => {
+  it('recovers a V3 snapshot into a new dirty untitled runtime epoch', () => {
+    const changed = commitProjectV2(createProjectSession('old-epoch'), project => addScreenV2(project))
+    const recovered = recoverProjectSession(serializeProjectSession(changed), 'new-epoch')
+    expect(recovered.documentId).toBe('new-epoch')
+    expect(recovered.project).toEqual(changed.project)
+    expect(recovered.currentFilePath).toBeNull()
+    expect(recovered.sourceSchemaVersion).toBe(3)
+    expect(recovered.revision).toBe(1)
+    expect(recovered.savedRevision).toBe(0)
+    expect(sessionDirty(recovered)).toBe(true)
+  })
   it('does not advance a revision for a semantic no-op, even with newly allocated objects', () => {
     const session = createProjectSession('session-1')
     expect(commitProjectV2(session, project => ({ ...project }))).toBe(session)

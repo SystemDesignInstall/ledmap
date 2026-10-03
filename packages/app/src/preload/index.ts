@@ -4,6 +4,8 @@ import {
   type DesktopDocumentState,
   type LedmapDesktopApi,
   type SaveProjectRequest,
+  type RecoverySnapshotRequest,
+  type RecoverySaveCommit,
   type SimulateDisplayChangeRequest,
   type StartLiveOutputRequest,
   type UpdateLiveOutputRequest,
@@ -23,6 +25,9 @@ const api: LedmapDesktopApi = {
     ipcRenderer.on(ipcChannels.requestSaveBeforeClose, listener)
     return () => ipcRenderer.removeListener(ipcChannels.requestSaveBeforeClose, listener)
   },
+  writeRecovery: (request: RecoverySnapshotRequest) => ipcRenderer.invoke(ipcChannels.writeRecovery, request),
+  reconcileRecovery: (request: RecoverySaveCommit) => ipcRenderer.invoke(ipcChannels.reconcileRecovery, request),
+  discardRecovery: (recoveryId: string) => ipcRenderer.invoke(ipcChannels.discardRecovery, recoveryId),
   listDisplays: () => ipcRenderer.invoke(ipcChannels.listDisplays),
   startLiveOutput: (request: StartLiveOutputRequest) => ipcRenderer.invoke(ipcChannels.startLiveOutput, request),
   updateLiveOutput: (request: UpdateLiveOutputRequest) => ipcRenderer.invoke(ipcChannels.updateLiveOutput, request),

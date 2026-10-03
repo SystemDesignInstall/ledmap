@@ -9,6 +9,9 @@ export const ipcChannels = {
   setDocumentState: 'project:set-document-state',
   requestSaveBeforeClose: 'project:request-save-before-close',
   finishCloseAfterSave: 'project:finish-close-after-save',
+  writeRecovery: 'recovery:write',
+  reconcileRecovery: 'recovery:reconcile-save',
+  discardRecovery: 'recovery:discard',
   listDisplays: 'live-output:list-displays',
   startLiveOutput: 'live-output:start',
   updateLiveOutput: 'live-output:update',
@@ -29,6 +32,7 @@ export interface OpenProjectResult {
   readonly canceled: boolean
   readonly filePath?: string
   readonly text?: string
+  readonly sha256?: string
 }
 
 export interface SaveProjectRequest {
@@ -41,6 +45,28 @@ export interface SaveProjectRequest {
 export interface SaveProjectResult {
   readonly canceled: boolean
   readonly filePath?: string
+  readonly sha256?: string
+}
+
+export interface RecoverySnapshotRequest {
+  readonly recoveryId: string
+  readonly sessionEpoch: string
+  readonly text: string
+  readonly sourcePath: string | null
+  readonly displayName: string
+  readonly snapshotRevision: number
+  readonly observedSavedRevision: number
+  readonly sourceSchemaVersion: 1 | 2 | 3
+  readonly baselineSourceSha256: string | null
+}
+
+export interface RecoverySaveCommit {
+  readonly recoveryId: string
+  readonly sessionEpoch: string
+  readonly savedRevision: number
+  readonly currentRevision: number
+  readonly sourcePath: string
+  readonly baselineSourceSha256: string
 }
 
 export interface DesktopDocumentState {
@@ -137,6 +163,9 @@ export interface LedmapDesktopApi {
   setDocumentState(state: DesktopDocumentState): void
   finishCloseAfterSave(saved: boolean): void
   onRequestSaveBeforeClose(callback: () => void): () => void
+  writeRecovery(request: RecoverySnapshotRequest): Promise<void>
+  reconcileRecovery(request: RecoverySaveCommit): Promise<void>
+  discardRecovery(recoveryId: string): Promise<void>
   listDisplays(): Promise<readonly DisplayDescriptor[]>
   startLiveOutput(request: StartLiveOutputRequest): Promise<LiveOutputState>
   updateLiveOutput(request: UpdateLiveOutputRequest): Promise<LiveOutputState>

@@ -5,6 +5,7 @@ import {
 } from './v2-view-model.js'
 import type { LedMapProjectV2 } from '@ledmap/core'
 import { ProjectDocumentController } from './document.js'
+import { AutosaveCoordinator } from './autosave-coordinator.js'
 import { createProjectSession, sessionDirty, sessionWorkspaceProject, type ProjectSession } from './project-session.js'
 import {
   addScreenV2, deleteScreensV2, duplicateScreenV2, renameScreenV2, resizeScreenGridV2,
@@ -129,6 +130,9 @@ const exportWorkspaceElement = element<HTMLElement>('export-workspace')
 
 let documentSerial = 0
 const documentController = new ProjectDocumentController(() => `document-${++documentSerial}`)
+const autosave = new AutosaveCoordinator(() => documentController.session, window.ledmapDesktop,
+  error => showDocumentError(error, 'Recovery snapshot is currently unavailable.'))
+autosave.attach(documentController.session, null)
 
 function currentProject(): Project {
   return sessionWorkspaceProject(documentController.session)
@@ -189,7 +193,9 @@ function directionLabel(direction: Direction): string {
 }
 
 function applyV2(command: (project: LedMapProjectV2) => LedMapProjectV2): void {
+  const before = documentController.session
   documentController.transactV2(command)
+  autosave.mutation(before, documentController.session)
   syncDocumentState()
 }
 
@@ -234,7 +240,10 @@ async function saveDocument(saveAs: boolean): Promise<boolean> {
   clearDocumentError()
   try {
     const saved = await documentController.save(saveAs, request => window.ledmapDesktop.saveProject(request),
-      () => window.ledmapDesktop.confirmLegacyUpgrade())
+      () => window.ledmapDesktop.confirmLegacyUpgrade(),
+      async (snapshot, current, result) => {
+        if (result.sha256) await autosave.saved(snapshot, current, result.sha256)
+      })
     syncDocumentState()
     return saved
   } catch (error) {
@@ -246,30 +255,45 @@ async function saveDocument(saveAs: boolean): Promise<boolean> {
 async function canReplaceDocument(): Promise<boolean> {
   await documentController.settleSaves()
   const started = documentController.session
-  if (!sessionDirty(started)) return true
+  if (!sessionDirty(started)) { await autosave.settle(); return true }
   const choice = await window.ledmapDesktop.confirmUnsavedChanges()
   if (documentController.session !== started) return false
   if (choice === 'cancel') return false
-  if (choice === 'discard') return true
+  if (choice === 'discard') {
+    try { await autosave.discard(); return true } catch (error) {
+      showDocumentError(error, 'Unable to discard the recovery snapshot.')
+      return false
+    }
+  }
   return await saveDocument(false) && !sessionDirty(documentController.session)
 }
 
 async function newDocument(): Promise<void> {
   if (!await canReplaceDocument()) return
   clearDocumentError()
-  replaceDocument(createProjectSession(`document-${++documentSerial}`))
+  const next = createProjectSession(`document-${++documentSerial}`)
+  replaceDocument(next)
+  autosave.attach(next, null)
 }
 
 async function openDocument(): Promise<void> {
   if (!await canReplaceDocument()) return
   clearDocumentError()
   try {
-    const result = await documentController.open(() => window.ledmapDesktop.openProject())
+    let baseline: string | null = null
+    const result = await documentController.open(async () => {
+      const opened = await window.ledmapDesktop.openProject()
+      baseline = opened.sha256 ?? null
+      return opened
+    })
     if (result === 'stale') {
       showDocumentError(new Error('Project changed while Open was pending. Retry Open.'), 'Unable to open the project.')
       return
     }
-    if (result === 'opened') replaceDocument(documentController.session)
+    if (result === 'opened') {
+      replaceDocument(documentController.session)
+      autosave.attach(documentController.session, baseline)
+    }
   } catch (error) {
     showDocumentError(error, 'Unable to open the project.')
   }

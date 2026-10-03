@@ -40,6 +40,7 @@ export class ProjectDocumentController {
     saveAs: boolean,
     write: (request: SaveProjectRequest) => Promise<SaveProjectResult>,
     confirmLegacyUpgrade?: () => Promise<LegacyUpgradeChoice>,
+    onSaved?: (snapshot: ProjectSession, current: ProjectSession, result: SaveProjectResult) => Promise<void>,
   ): Promise<boolean> {
     const requestedDocumentId = this.current.documentId
     const run = async () => {
@@ -58,6 +59,7 @@ export class ProjectDocumentController {
           ? { preserveOriginal: true } : {}) })
       if (result.canceled || !result.filePath || this.current.documentId !== snapshot.documentId) return false
       this.current = markProjectSessionSaved(this.current, snapshot.documentId, snapshot.revision, result.filePath)
+      if (onSaved) await onSaved(snapshot, this.current, result)
       return true
     }
     const operation = this.pendingSaves === 0 ? run() : this.saveQueue.then(run)

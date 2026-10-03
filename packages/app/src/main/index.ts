@@ -1,12 +1,14 @@
 import { app, BrowserWindow, dialog, ipcMain, type WebContents } from 'electron'
 import { readFile, realpath } from 'node:fs/promises'
-import { basename, extname, resolve } from 'node:path'
+import { basename, extname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   ipcChannels,
   type DesktopDocumentState,
   type SaveProjectRequest,
   type SaveProjectResult,
+  type RecoverySnapshotRequest,
+  type RecoverySaveCommit,
   type LegacyUpgradeChoice,
   type SimulateDisplayChangeRequest,
   type StartLiveOutputRequest,
@@ -16,6 +18,7 @@ import {
 import { LiveOutputManager } from './live-output.js'
 import { ExportFileService } from './export-files.js'
 import { StagedProjectWriter } from './staged-project-write.js'
+import { RecoveryStore, sha256 } from './recovery-store.js'
 
 interface WindowState {
   currentFilePath: string | null
@@ -29,6 +32,7 @@ const ledmapFilter = [{ name: 'LedMAP Project', extensions: ['ledmap'] }]
 let liveOutputManager: LiveOutputManager | null = null
 const exportFileService = new ExportFileService()
 const projectWriter = new StagedProjectWriter()
+let recoveryStore: RecoveryStore | null = null
 
 function stateFor(contents: WebContents): WindowState | undefined {
   return windowStates.get(contents.id)
@@ -86,7 +90,8 @@ function registerIpc(): void {
       filters: ledmapFilter,
     })).filePaths[0]
     if (!filePath) return { canceled: true }
-    return { canceled: false, filePath, text: await readFile(filePath, 'utf8') }
+    const bytes = await readFile(filePath)
+    return { canceled: false, filePath, text: bytes.toString('utf8'), sha256: sha256(bytes) }
   })
 
   ipcMain.handle(ipcChannels.saveProject, async (event, value: unknown): Promise<SaveProjectResult> => {
@@ -121,7 +126,20 @@ function registerIpc(): void {
       if (original.toLowerCase() === target.toLowerCase()) throw new Error('Choose a different path to preserve the original legacy project.')
     }
     await projectWriter.write(normalized, request.text)
-    return { canceled: false, filePath: normalized }
+    return { canceled: false, filePath: normalized, sha256: sha256(Buffer.from(request.text, 'utf8')) }
+  })
+
+  ipcMain.handle(ipcChannels.writeRecovery, (event, value: RecoverySnapshotRequest) => {
+    if (!BrowserWindow.fromWebContents(event.sender) || !recoveryStore) throw new Error('Recovery storage is unavailable.')
+    return recoveryStore.writeSnapshot(value).then(() => undefined)
+  })
+  ipcMain.handle(ipcChannels.reconcileRecovery, (event, value: RecoverySaveCommit) => {
+    if (!BrowserWindow.fromWebContents(event.sender) || !recoveryStore) throw new Error('Recovery storage is unavailable.')
+    return recoveryStore.reconcileSave(value)
+  })
+  ipcMain.handle(ipcChannels.discardRecovery, (event, value: string) => {
+    if (!BrowserWindow.fromWebContents(event.sender) || !recoveryStore) throw new Error('Recovery storage is unavailable.')
+    return recoveryStore.discard(value)
   })
 
   ipcMain.handle(ipcChannels.confirmUnsaved, async event => {
@@ -253,6 +271,7 @@ async function createWindow(): Promise<void> {
 registerIpc()
 
 app.whenReady().then(async () => {
+  recoveryStore = new RecoveryStore(join(app.getPath('userData'), 'recovery', 'v1'))
   liveOutputManager = new LiveOutputManager()
   liveOutputManager.attachDisplayEvents()
   await createWindow()

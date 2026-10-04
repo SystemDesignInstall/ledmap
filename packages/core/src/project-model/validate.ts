@@ -182,18 +182,74 @@ export function assertProjectV2EditorStructure(project: LedMapProjectV2): void {
   for (const output of mediaOutputs.values()) {
     positive(output.resolution.width, `MediaOutputCanvas ${output.id} width`)
     positive(output.resolution.height, `MediaOutputCanvas ${output.id} height`)
+    if (!Array.isArray(output.mappingOrder)) fail('PROJECT_INVALID_ORDER', `MediaOutputCanvas ${output.id} mappingOrder must be an array`)
   }
+  const mappingsById = new Map(project.content.outputMappings.map(mapping => [mapping.id, mapping]))
   for (const mapping of project.content.outputMappings) {
-    if (!screens.has(mapping.screenId)) fail('PROJECT_UNKNOWN_SCREEN', `OutputMapping ${mapping.id} references unknown Screen ${mapping.screenId}`)
+    const screen = screens.get(mapping.screenId)
+    if (!screen) fail('PROJECT_UNKNOWN_SCREEN', `OutputMapping ${mapping.id} references unknown Screen ${mapping.screenId}`)
     if (!mediaOutputs.has(mapping.mediaOutputId)) {
       fail('PROJECT_UNKNOWN_MEDIA_OUTPUT', `OutputMapping ${mapping.id} references unknown MediaOutputCanvas ${mapping.mediaOutputId}`)
     }
-    if (mapping.position !== undefined && (!Number.isSafeInteger(mapping.position.x) || !Number.isSafeInteger(mapping.position.y))) {
-      fail('PROJECT_INVALID_GEOMETRY', `OutputMapping ${mapping.id} position must use signed safe integers`)
+    if (typeof mapping.name !== 'string' || mapping.name.length < 1) {
+      fail('PROJECT_INVALID_NAME', `OutputMapping ${mapping.id} name must be a non-empty string`)
     }
-    for (const point of mapping.mask?.points ?? []) {
-      if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) {
-        fail('PROJECT_INVALID_GEOMETRY', `OutputMapping ${mapping.id} mask must use finite coordinates`)
+    if (typeof mapping.enabled !== 'boolean') {
+      fail('PROJECT_INVALID_ORDER', `OutputMapping ${mapping.id} enabled must be boolean`)
+    }
+    if (mapping.inputRotation !== 0 && mapping.inputRotation !== 90 && mapping.inputRotation !== 180 && mapping.inputRotation !== 270) {
+      fail('PROJECT_INVALID_GEOMETRY', `OutputMapping ${mapping.id} inputRotation must be 0, 90, 180 or 270`)
+    }
+    if (mapping.outputRotation !== 0 && mapping.outputRotation !== 90 && mapping.outputRotation !== 180 && mapping.outputRotation !== 270) {
+      fail('PROJECT_INVALID_GEOMETRY', `OutputMapping ${mapping.id} outputRotation must be 0, 90, 180 or 270`)
+    }
+    if (typeof mapping.flipX !== 'boolean' || typeof mapping.flipY !== 'boolean') {
+      fail('PROJECT_INVALID_GEOMETRY', `OutputMapping ${mapping.id} flips must be boolean`)
+    }
+    nonnegative(mapping.screenRect.x, `OutputMapping ${mapping.id} screenRect x`)
+    nonnegative(mapping.screenRect.y, `OutputMapping ${mapping.id} screenRect y`)
+    positive(mapping.screenRect.width, `OutputMapping ${mapping.id} screenRect width`)
+    positive(mapping.screenRect.height, `OutputMapping ${mapping.id} screenRect height`)
+    if (!Number.isSafeInteger(mapping.outputRect.x) || !Number.isSafeInteger(mapping.outputRect.y)) {
+      fail('PROJECT_INVALID_GEOMETRY', `OutputMapping ${mapping.id} outputRect position must use signed safe integers`)
+    }
+    positive(mapping.outputRect.width, `OutputMapping ${mapping.id} outputRect width`)
+    positive(mapping.outputRect.height, `OutputMapping ${mapping.id} outputRect height`)
+    if (screen && (mapping.screenRect.x + mapping.screenRect.width > screen.resolution.width ||
+        mapping.screenRect.y + mapping.screenRect.height > screen.resolution.height)) {
+      fail('PROJECT_INVALID_GEOMETRY', `OutputMapping ${mapping.id} screenRect exceeds Screen ${screen.id}`)
+    }
+    if (mapping.mask !== undefined) {
+      if (typeof mapping.mask.enabled !== 'boolean') {
+        fail('PROJECT_INVALID_GEOMETRY', `OutputMapping ${mapping.id} mask enabled must be boolean`)
+      }
+      if (!Array.isArray(mapping.mask.points)) {
+        fail('PROJECT_INVALID_GEOMETRY', `OutputMapping ${mapping.id} mask must have points`)
+      }
+      if (mapping.mask.enabled && mapping.mask.points.length < 3) {
+        fail('PROJECT_INVALID_GEOMETRY', `OutputMapping ${mapping.id} mask must have at least 3 points`)
+      }
+      for (const point of mapping.mask.points) {
+        if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) {
+          fail('PROJECT_INVALID_GEOMETRY', `OutputMapping ${mapping.id} mask must use finite coordinates`)
+        }
+      }
+    }
+  }
+  for (const output of mediaOutputs.values()) {
+    const seen = new Set<string>()
+    for (const mappingId of output.mappingOrder) {
+      if (seen.has(mappingId)) fail('PROJECT_DUPLICATE_MAPPING_ORDER', `MediaOutputCanvas ${output.id} lists OutputMapping ${mappingId} more than once`)
+      seen.add(mappingId)
+      const mapping = mappingsById.get(mappingId)
+      if (!mapping) fail('PROJECT_UNKNOWN_OUTPUT_MAPPING', `MediaOutputCanvas ${output.id} lists unknown OutputMapping ${mappingId}`)
+      if (mapping.mediaOutputId !== output.id) {
+        fail('PROJECT_MAPPING_ORDER_PARENT_MISMATCH', `OutputMapping ${mappingId} belongs to ${mapping.mediaOutputId}, not ${output.id}`)
+      }
+    }
+    for (const mapping of project.content.outputMappings) {
+      if (mapping.mediaOutputId === output.id && !seen.has(mapping.id)) {
+        fail('PROJECT_MISSING_MAPPING_ORDER', `OutputMapping ${mapping.id} is missing from MediaOutputCanvas ${output.id} mappingOrder`)
       }
     }
   }

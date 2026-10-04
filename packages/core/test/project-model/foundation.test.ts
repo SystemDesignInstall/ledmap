@@ -194,10 +194,15 @@ describe('project model v2 foundation', () => {
         }],
         mediaOutputs: [{
           id: asMediaOutputCanvasId('output-1'), name: 'Output', resolution: { width: 1920, height: 1080 },
+          mappingOrder: [asOutputMappingId('output-mapping-1')],
         }],
         outputMappings: [{
-          id: asOutputMappingId('output-mapping-1'), screenId,
-          mediaOutputId: asMediaOutputCanvasId('output-1'), mask: { points: [maskPoint] },
+          id: asOutputMappingId('output-mapping-1'), name: 'output-mapping-1', enabled: true, screenId,
+          mediaOutputId: asMediaOutputCanvasId('output-1'),
+          screenRect: { x: 0, y: 0, width: 512, height: 384 },
+          outputRect: { x: 0, y: 0, width: 512, height: 384 },
+          inputRotation: 0, outputRotation: 0, flipX: false, flipY: false,
+          mask: { enabled: true, points: [maskPoint, { x: 512, y: 0 }, { x: 0, y: 384 }] },
         }],
       },
       hardware: {

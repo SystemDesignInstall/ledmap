@@ -15,13 +15,13 @@ import {
 import { compactReadyProject } from './v2-parity-fixtures.js'
 
 describe('ProjectSession V2 ownership', () => {
-  it('recovers a V4 snapshot into a new dirty untitled runtime epoch', () => {
+  it('recovers a V5 snapshot into a new dirty untitled runtime epoch', () => {
     const changed = commitProjectV2(createProjectSession('old-epoch'), project => addScreenV2(project))
     const recovered = recoverProjectSession(serializeProjectSession(changed), 'new-epoch')
     expect(recovered.documentId).toBe('new-epoch')
     expect(recovered.project).toEqual(changed.project)
     expect(recovered.currentFilePath).toBeNull()
-    expect(recovered.sourceSchemaVersion).toBe(4)
+    expect(recovered.sourceSchemaVersion).toBe(5)
     expect(recovered.revision).toBe(1)
     expect(recovered.savedRevision).toBe(0)
     expect(sessionDirty(recovered)).toBe(true)
@@ -32,7 +32,7 @@ describe('ProjectSession V2 ownership', () => {
     expect(sessionDirty(session)).toBe(false)
   })
 
-  it('advances exactly once for each real V2 mutation and reopens the schema-v4 wire result', () => {
+  it('advances exactly once for each real V2 mutation and reopens the schema-v5 wire result', () => {
     const empty = createProjectSession('session-1')
     const added = commitProjectV2(empty, project => addScreenV2(project))
     const moved = commitProjectV2(added, project => setScreenPositionV2(project, 'screen-1', 240, 80))
@@ -41,7 +41,7 @@ describe('ProjectSession V2 ownership', () => {
     expect(moved.savedRevision).toBe(0)
     expect(sessionDirty(moved)).toBe(true)
     const stored = serializeProjectSession(moved)
-    expect(JSON.parse(stored)).toMatchObject({ format: 'ledmap', schemaVersion: 4 })
+    expect(JSON.parse(stored)).toMatchObject({ format: 'ledmap', schemaVersion: 5 })
     const reopened = loadProjectSession(stored, 'project.ledmap', 'session-2')
     expect(reopened.project).toEqual(moved.project)
     expect(reopened.project.design.cabinets[0]).toMatchObject({ moduleColumns: 1, moduleRows: 1 })
@@ -113,7 +113,7 @@ describe('ProjectSession V2 ownership', () => {
     expect(session.revision).toBe(0)
   })
 
-  it('persists V2-only metadata in native v4', () => {
+  it('persists V2-only metadata in native v5', () => {
     const session: ProjectSession = {
       ...createProjectSession('session-1'),
       project: createProjectV2({ ...createProjectSession('seed').project, metadata: { name: 'V2 only' } }),
@@ -148,7 +148,7 @@ describe('ProjectSession V2 ownership', () => {
     expect(session.project).toBe(base)
   })
 
-  it('persists V2-only Stage state through native v4 Save and Open', () => {
+  it('persists V2-only Stage state through native v5 Save and Open', () => {
     const empty = createProjectSession('session-1')
     const session: ProjectSession = {
       ...empty,

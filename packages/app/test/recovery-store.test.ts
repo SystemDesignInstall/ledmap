@@ -21,7 +21,7 @@ async function fixture(): Promise<{ root: string; source: string }> {
 
 function snapshot(overrides: Partial<RecoverySnapshotRequest> = {}): RecoverySnapshotRequest {
   return { recoveryId: id, sessionEpoch: epoch, text, sourcePath: null, displayName: 'Untitled',
-    snapshotRevision: 1, observedSavedRevision: 0, sourceSchemaVersion: 4,
+    snapshotRevision: 1, observedSavedRevision: 0, sourceSchemaVersion: 5,
     baselineSourceSha256: null, ...overrides }
 }
 
@@ -30,7 +30,7 @@ afterEach(async () => {
 })
 
 describe('RecoveryStore', () => {
-  it('commits one verified V4 payload behind a versioned manifest', async () => {
+  it('commits one verified V5 payload behind a versioned manifest', async () => {
     const { root } = await fixture()
     const store = new RecoveryStore(root)
     const manifest = await store.writeSnapshot(snapshot())

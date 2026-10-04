@@ -44,7 +44,7 @@ describe('V2 production dependency boundary', () => {
       const source = readFileSync(file, 'utf8')
       if (file === resolve(appRoot, 'renderer', 'project-session.ts')) {
         expect(source).toContain('loadLedMapProject(text)')
-        expect(source).toContain('serializeProjectV4(')
+        expect(source).toContain('serializeProjectV5(')
       }
       expect(source, file).not.toMatch(/EditableProject|serializeEditableProject|projectV2AsEditableReadModel|inspectEditableProject|commitLegacyProject/)
     }

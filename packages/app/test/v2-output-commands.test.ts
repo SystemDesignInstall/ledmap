@@ -19,7 +19,7 @@ function fixture() {
 describe('direct V2 Output Mapping commands', () => {
   it('creates, updates and deletes Media Outputs without changing unrelated domains', () => {
     const { output, mediaOutputId } = fixture()
-    expect(output.content.mediaOutputs[0]).toMatchObject({ name: 'Main', resolution: { width: 1920, height: 1080 } })
+    expect(output.content.mediaOutputs[0]).toMatchObject({ name: 'Main', resolution: { width: 1920, height: 1080 }, mappingOrder: [] })
     expect(updateMediaOutputV2(output, mediaOutputId, { name: 'Main', width: 1920 })).toBe(output)
     const changed = updateMediaOutputV2(output, mediaOutputId, { name: 'Wall', width: 1280 })
     expect(changed.content.mediaOutputs[0]).toMatchObject({ name: 'Wall', resolution: { width: 1280, height: 1080 } })
@@ -35,22 +35,26 @@ describe('direct V2 Output Mapping commands', () => {
       .toThrow(/PROJECT_INVALID_GEOMETRY/)
     const withMapping = addOutputMappingV2(output, screenId, mediaOutputId, { x: 0, y: 0 })
     const mapping = withMapping.content.outputMappings[0]!
-    expect(mapping.position).toEqual({ x: 0, y: 0 })
+    expect(mapping.outputRect.x).toBe(0)
+    expect(mapping.outputRect.y).toBe(0)
+    expect(withMapping.content.mediaOutputs[0]?.mappingOrder).toEqual([mapping.id])
     expect(() => deleteMediaOutputV2(withMapping, mediaOutputId)).toThrow(/PROJECT_MEDIA_OUTPUT_IN_USE/)
     expect(() => deleteScreensV2(withMapping, [screenId])).toThrow(/PROJECT_SCREEN_IN_USE/)
     const masked = { ...withMapping, content: { ...withMapping.content,
-      outputMappings: [{ ...mapping, mask: { points: [{ x: 0.5, y: 1.5 }] } }] } }
+      outputMappings: [{ ...mapping, mask: { enabled: true, points: [{ x: 0, y: 0 }, { x: 4, y: 0 }, { x: 0, y: 4 }] } }] } }
     const moved = updateOutputMappingV2(masked, mapping.id, { position: { x: -1, y: 2 } })
-    expect(moved.content.outputMappings[0]).toMatchObject({ id: mapping.id, position: { x: -1, y: 2 },
-      mask: { points: [{ x: 0.5, y: 1.5 }] } })
+    expect(moved.content.outputMappings[0]).toMatchObject({ id: mapping.id, outputRect: expect.objectContaining({ x: -1, y: 2 }) })
+    expect(moved.content.outputMappings[0]?.mask?.points).toHaveLength(3)
     expect(updateOutputMappingV2(moved, mapping.id, { position: { x: -1, y: 2 } })).toBe(moved)
     expect(moved.content.mappingRegions).toBe(output.content.mappingRegions)
     expect(moved.hardware).toBe(output.hardware)
     expect(moved.operations.signalRoutes).toBe(output.operations.signalRoutes)
-    expect(deleteOutputMappingV2(moved, mapping.id).content.outputMappings).toEqual([])
+    const deleted = deleteOutputMappingV2(moved, mapping.id)
+    expect(deleted.content.outputMappings).toEqual([])
+    expect(deleted.content.mediaOutputs[0]?.mappingOrder).toEqual([])
   })
 
-  it('honors no-op revisions, one grouped drag Undo step, V4 Save/Open and recovery-ready snapshots', () => {
+  it('honors no-op revisions, one grouped drag Undo step, V5 Save/Open and recovery-ready snapshots', () => {
     const document = new ProjectDocumentController(() => 'document-1')
     document.transactV2(project => addScreenV2(project))
     document.transactV2(project => addMediaOutputV2(project, 1920, 1080))
@@ -65,14 +69,14 @@ describe('direct V2 Output Mapping commands', () => {
     document.transactV2(project => updateOutputMappingV2(project, mappingId, { position: { x: 4, y: 5 } }), group)
     document.transactV2(project => updateOutputMappingV2(project, mappingId, { position: { x: 8, y: 9 } }), group)
     document.endHistoryGroup(group)
-    expect(document.session.project.content.outputMappings[0]?.position).toEqual({ x: 8, y: 9 })
+    expect(document.session.project.content.outputMappings[0]?.outputRect).toMatchObject({ x: 8, y: 9 })
     expect(document.undo()).toBe(true)
-    expect(document.session.project.content.outputMappings[0]?.position).toEqual({ x: 0, y: 0 })
+    expect(document.session.project.content.outputMappings[0]?.outputRect).toMatchObject({ x: 0, y: 0 })
     expect(document.redo()).toBe(true)
-    expect(document.session.project.content.outputMappings[0]?.position).toEqual({ x: 8, y: 9 })
+    expect(document.session.project.content.outputMappings[0]?.outputRect).toMatchObject({ x: 8, y: 9 })
     const text = serializeProjectSession(document.session)
-    expect(JSON.parse(text).schemaVersion).toBe(4)
-    expect(loadProjectSession(text, 'output.ledmap', 'document-2').project.content.outputMappings[0]?.position)
-      .toEqual({ x: 8, y: 9 })
+    expect(JSON.parse(text).schemaVersion).toBe(5)
+    expect(loadProjectSession(text, 'output.ledmap', 'document-2').project.content.outputMappings[0]?.outputRect)
+      .toMatchObject({ x: 8, y: 9 })
   })
 })

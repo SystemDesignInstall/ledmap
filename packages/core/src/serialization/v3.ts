@@ -1,12 +1,4 @@
-import {
-  asCabinetGridId, asCabinetId, asInputCanvasId, asMappingRegionId, asModuleId,
-  asPortId, asProcessorId, asReceiverId, asScreenId,
-} from '../model/ids.js'
 import { createProjectV2 } from '../project-model/create.js'
-import {
-  asBackupRouteId, asHardwareAssignmentId, asLiveOutputTargetId, asMediaOutputCanvasId,
-  asOutputMappingId, asSignalRouteId,
-} from '../project-model/ids.js'
 import { validateProjectV2Structural } from '../project-model/read-projections.js'
 import type { LedMapProjectV2 } from '../project-model/types.js'
 import { writeDocument } from './canonical.js'
@@ -15,6 +7,8 @@ import { cloneJsonValue, compareUtf16, deepFreeze, isPlainRecord, parseJsonText 
 import { assertOwnDataProperties, checkExtensionsPayload } from './schema.js'
 import type { JsonObject } from './types.js'
 import { checkProjectV3Wire } from './v3-schema.js'
+import { checkProjectV5Wire } from './v5-schema.js'
+import { downgradeV5WireToV3Wire, fromV5Wire, migrateLegacyWireToV5Wire, validateV5Structural } from './v5.js'
 import type { LedMapDocumentV3, ProjectV3Wire } from './v3-types.js'
 
 export interface LoadedProjectV3 {
@@ -35,63 +29,7 @@ export function validateStructural(project: LedMapProjectV2): void {
 }
 
 export function fromWire(wire: ProjectV3Wire): LedMapProjectV2 {
-  return {
-    metadata: { ...wire.metadata },
-    design: {
-      screens: wire.design.screens.map(value => ({
-        ...value, id: asScreenId(value.id),
-        cabinetGridOrder: value.cabinetGridOrder.map(asCabinetGridId),
-        mappingRegionOrder: value.mappingRegionOrder.map(asMappingRegionId),
-      })),
-      cabinetGrids: wire.design.cabinetGrids.map(value => ({ ...value,
-        id: asCabinetGridId(value.id), screenId: asScreenId(value.screenId) })),
-      cabinets: wire.design.cabinets.map(value => ({ ...value,
-        id: asCabinetId(value.id), gridId: asCabinetGridId(value.gridId) })),
-      modules: wire.design.modules.map(value => ({ ...value,
-        id: asModuleId(value.id), cabinetId: asCabinetId(value.cabinetId) })),
-      composition: { placements: wire.design.composition.placements.map(value => ({ ...value,
-        screenId: asScreenId(value.screenId) })) },
-      ...(wire.design.stage === undefined ? {} : { stage: { placements: wire.design.stage.placements.map(value => ({
-        ...value, screenId: asScreenId(value.screenId),
-      })) } }),
-    },
-    content: {
-      inputCanvases: wire.content.inputCanvases.map(value => ({ ...value, id: asInputCanvasId(value.id) })),
-      mappingRegions: wire.content.mappingRegions.map(value => ({ ...value,
-        id: asMappingRegionId(value.id), inputCanvasId: asInputCanvasId(value.inputCanvasId),
-        screenId: asScreenId(value.screenId), gridId: asCabinetGridId(value.gridId),
-      })),
-      mediaOutputs: wire.content.mediaOutputs.map(value => ({ ...value, id: asMediaOutputCanvasId(value.id) })),
-      outputMappings: wire.content.outputMappings.map(value => ({ ...value,
-        id: asOutputMappingId(value.id), screenId: asScreenId(value.screenId),
-        mediaOutputId: asMediaOutputCanvasId(value.mediaOutputId),
-      })),
-    },
-    hardware: {
-      processors: wire.hardware.processors.map(value => ({ ...value, id: asProcessorId(value.id) })),
-      ports: wire.hardware.ports.map(value => ({ ...value,
-        id: asPortId(value.id), processorId: asProcessorId(value.processorId) })),
-      receivers: wire.hardware.receivers.map(value => ({ ...value,
-        id: asReceiverId(value.id), processorId: asProcessorId(value.processorId), portId: asPortId(value.portId) })),
-      assignments: wire.hardware.assignments.map(value => ({ ...value,
-        id: asHardwareAssignmentId(value.id), target: { kind: 'cabinet', cabinetId: asCabinetId(value.target.cabinetId) },
-        receiverId: asReceiverId(value.receiverId),
-      })),
-      processorOrder: wire.hardware.processorOrder.map(asProcessorId),
-      receiverOrder: wire.hardware.receiverOrder.map(value => ({
-        portId: asPortId(value.portId), receiverIds: value.receiverIds.map(asReceiverId),
-      })),
-    },
-    operations: {
-      signalRoutes: wire.operations.signalRoutes.map(value => ({
-        id: asSignalRouteId(value.id), receiverId: asReceiverId(value.receiverId),
-        orderedCabinetIds: value.orderedCabinetIds.map(asCabinetId),
-      })),
-      backupRoutes: wire.operations.backupRoutes.map(value => ({ id: asBackupRouteId(value.id) })),
-      liveOutputTargets: wire.operations.liveOutputTargets.map(value => ({ id: asLiveOutputTargetId(value.id) })),
-    },
-    remap: { rules: wire.remap.rules.map(value => ({ ...value })) },
-  }
+  return fromV5Wire(migrateLegacyWireToV5Wire(wire))
 }
 
 export function parseProjectV3Document(text: string): LedMapDocumentV3 {
@@ -114,8 +52,10 @@ export function parseProjectV3Document(text: string): LedMapDocumentV3 {
 
 export function loadProjectV3(text: string): LoadedProjectV3 {
   const document = parseProjectV3Document(text)
-  const candidate = fromWire(document.project)
-  validateStructural(candidate)
+  const v5wire = migrateLegacyWireToV5Wire(document.project)
+  const checked = checkProjectV5Wire(v5wire, 'document')
+  const candidate = fromV5Wire(checked)
+  validateV5Structural(candidate)
   const project = createProjectV2(candidate)
   return Object.freeze({ project, extensions: document.extensions, sourceSchemaVersion: 3 })
 }
@@ -125,8 +65,10 @@ export function serializeProjectV3(input: { readonly project: LedMapProjectV2; r
   assertOwnDataProperties(input, [])
   const unknown = Object.getOwnPropertyNames(input).filter(key => !['project', 'extensions'].includes(key)).sort(compareUtf16)
   if (unknown.length > 0) throw new SerializationError('SERIALIZATION_INVALID_INPUT', `Unknown input field ${unknown[0]!}`, [unknown[0]!])
-  const project = checkProjectV3Wire(input.project, 'runtime')
-  validateStructural(input.project)
+  const v5wire = checkProjectV5Wire(input.project, 'runtime')
+  validateV5Structural(input.project)
+  const project = downgradeV5WireToV3Wire(v5wire)
+  checkProjectV3Wire(project, 'runtime')
   const extensions = input.extensions === undefined ? {} : checkExtensionsPayload(input.extensions, ['extensions'], 'runtime')
   return writeDocument({ format: 'ledmap', schemaVersion: 3, project,
     extensions: cloneJsonValue(extensions, ['extensions']) as JsonObject })

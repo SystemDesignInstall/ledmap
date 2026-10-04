@@ -6,7 +6,8 @@ import { cloneJsonValue, compareUtf16, deepFreeze, isPlainRecord, parseJsonText 
 import { assertOwnDataProperties, checkExtensionsPayload } from './schema.js'
 import type { JsonObject } from './types.js'
 import { checkProjectV4Wire } from './v3-schema.js'
-import { fromWire, validateStructural } from './v3.js'
+import { checkProjectV5Wire } from './v5-schema.js'
+import { downgradeV5WireToV4Wire, fromV5Wire, migrateLegacyWireToV5Wire, validateV5Structural } from './v5.js'
 import type { LedMapDocumentV4 } from './v4-types.js'
 
 export interface LoadedProjectV4 {
@@ -39,8 +40,10 @@ export function parseProjectV4Document(text: string): LedMapDocumentV4 {
 
 export function loadProjectV4(text: string): LoadedProjectV4 {
   const document = parseProjectV4Document(text)
-  const candidate = fromWire(document.project)
-  validateStructural(candidate)
+  const v5wire = migrateLegacyWireToV5Wire(document.project)
+  const checked = checkProjectV5Wire(v5wire, 'document')
+  const candidate = fromV5Wire(checked)
+  validateV5Structural(candidate)
   return Object.freeze({ project: createProjectV2(candidate), extensions: document.extensions, sourceSchemaVersion: 4 })
 }
 
@@ -49,9 +52,11 @@ export function serializeProjectV4(input: { readonly project: LedMapProjectV2; r
   assertOwnDataProperties(input, [])
   const unknown = Object.getOwnPropertyNames(input).filter(key => !['project', 'extensions'].includes(key)).sort(compareUtf16)
   if (unknown.length > 0) throw new SerializationError('SERIALIZATION_INVALID_INPUT', `Unknown input field ${unknown[0]!}`, [unknown[0]!])
-  const project = checkProjectV4Wire(input.project, 'runtime')
-  validateStructural(input.project)
+  const v5wire = checkProjectV5Wire(input.project, 'runtime')
+  validateV5Structural(input.project)
+  const v4wire = downgradeV5WireToV4Wire(v5wire)
+  checkProjectV4Wire(v4wire, 'runtime')
   const extensions = input.extensions === undefined ? {} : checkExtensionsPayload(input.extensions, ['extensions'], 'runtime')
-  return writeDocument({ format: 'ledmap', schemaVersion: 4, project,
+  return writeDocument({ format: 'ledmap', schemaVersion: 4, project: v4wire,
     extensions: cloneJsonValue(extensions, ['extensions']) as JsonObject })
 }

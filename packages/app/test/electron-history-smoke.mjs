@@ -127,7 +127,7 @@ try {
   await page.locator('#save-project').click()
   await page.waitForFunction(() => !window.__ledmap.document().dirty)
   const saved = JSON.parse(await readFile(projectPath, 'utf8'))
-  assert.equal(saved.schemaVersion, 4)
+  assert.equal(saved.schemaVersion, 5)
   assert.equal(saved.project.design.composition.placements[0].x, 1)
   await page.locator('#undo-project').click()
   assert.equal((await state()).document.dirty, true)

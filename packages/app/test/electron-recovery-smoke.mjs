@@ -87,7 +87,7 @@ try {
   await running.page.locator('#save-project').click()
   await running.page.waitForFunction(() => window.__ledmap.document().dirty === false)
   await waitForCount(1)
-  assert.equal(JSON.parse(await readFile(savedPath, 'utf8')).schemaVersion, 4)
+  assert.equal(JSON.parse(await readFile(savedPath, 'utf8')).schemaVersion, 5)
 } finally { await exit(running.app) }
 
 running = await launch('recover')

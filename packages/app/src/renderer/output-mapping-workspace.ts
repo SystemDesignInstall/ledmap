@@ -99,11 +99,9 @@ function item(label: string, selected: boolean, click: () => void, detail?: stri
 
 function diagnosticLabel(code: string): string {
   const labels: Record<string, string> = {
-    OUTPUT_MAPPING_UNPLACED: 'Unplaced: choose X and Y',
     OUTPUT_MAPPING_PARTIALLY_CLIPPED: 'Partially clipped by output bounds',
     OUTPUT_MAPPING_OUTSIDE: 'Entirely outside output bounds',
-    OUTPUT_MAPPING_OVERLAP: 'Visible mappings overlap; no z-order is defined',
-    OUTPUT_MASK_UNSUPPORTED: 'Saved mask is preserved but not interpreted',
+    OUTPUT_MAPPING_OVERLAP: 'Visible mappings overlap; strict overlap blocks conflicted pixels',
   }
   return labels[code] ?? code
 }
@@ -171,8 +169,8 @@ export function createOutputMappingWorkspace(options: Options): OutputMappingWor
         tree.append(item(screen?.name ?? mapping.screenId, mapping.id === selectedMappingId, () => {
           selectedMappingId = mapping.id
           render()
-        }, placement?.coverage === 'unplaced' ? 'UNPLACED' :
-          `${mapping.position?.x}, ${mapping.position?.y} · ${placement?.coverage ?? ''}${mapping.mask ? ' · mask unsupported' : ''}`))
+        }, placement?.coverage === 'disabled' ? 'DISABLED' :
+          `${mapping.outputRect.x}, ${mapping.outputRect.y} · ${placement?.coverage ?? ''}${mapping.mask?.enabled ? ' · mask' : ''}`))
       }
     }
   }
@@ -228,22 +226,15 @@ export function createOutputMappingWorkspace(options: Options): OutputMappingWor
             render()
           }
         }),
-      numberField('Output position X', mapping.position?.x,
-        x => { run(project => updateOutputMappingV2(project, mapping.id, { position: { x, y: mapping.position?.y ?? 0 } })) }),
-      numberField('Output position Y', mapping.position?.y,
-        y => { run(project => updateOutputMappingV2(project, mapping.id, { position: { x: mapping.position?.x ?? 0, y } })) }),
+      numberField('Output position X', mapping.outputRect.x,
+        x => { run(project => updateOutputMappingV2(project, mapping.id, { position: { x, y: mapping.outputRect.y } })) }),
+      numberField('Output position Y', mapping.outputRect.y,
+        y => { run(project => updateOutputMappingV2(project, mapping.id, { position: { x: mapping.outputRect.x, y } })) }),
     )
-    if (mapping.position === undefined) {
-      const place = document.createElement('button')
-      place.type = 'button'
-      place.textContent = 'Place at (0, 0)'
-      place.addEventListener('click', () => { run(project => updateOutputMappingV2(project, mapping.id, { position: { x: 0, y: 0 } })) })
-      properties.append(place)
-    }
-    if (mapping.mask) {
+    if (mapping.mask?.enabled) {
       const hint = document.createElement('p')
-      hint.className = 'hint output-diagnostic-error'
-      hint.textContent = `Mask: ${mapping.mask.points.length} saved points. Preserved, not editable or pixel-resolvable in this MVP.`
+      hint.className = 'hint'
+      hint.textContent = `Mask: ${mapping.mask.points.length} points · ${mapping.mask.enabled ? 'enabled' : 'disabled'}.`
       properties.append(hint)
     }
   }
@@ -302,15 +293,16 @@ export function createOutputMappingWorkspace(options: Options): OutputMappingWor
   }
 
   function drawPlacement(ctx: CanvasRenderingContext2D, placement: OutputMappingPlacement, inspection: MediaOutputMappingInspection): void {
-    if (!placement.position) return
+    if (!placement.enabled || !placement.visibleRect) return
     const screen = project().design.screens.find(value => value.id === placement.screenId)
     if (!screen) return
-    const x = transform.x + placement.position.x * transform.scale
-    const y = transform.y + placement.position.y * transform.scale
-    const width = screen.resolution.width * transform.scale
-    const height = screen.resolution.height * transform.scale
+    const x = transform.x + placement.outputRect.x * transform.scale
+    const y = transform.y + placement.outputRect.y * transform.scale
+    const width = placement.outputRect.width * transform.scale
+    const height = placement.outputRect.height * transform.scale
+    const mapping = project().content.outputMappings.find(value => value.id === placement.mappingId)
     const overlapped = inspection.diagnostics.some(value => value.code === 'OUTPUT_MAPPING_OVERLAP' && value.mappingIds.includes(placement.mappingId))
-    ctx.strokeStyle = overlapped ? '#ea7e83' : placement.maskUnsupported ? '#dca16a' :
+    ctx.strokeStyle = overlapped ? '#ea7e83' : mapping?.mask?.enabled ? '#dca16a' :
       placement.mappingId === selectedMappingId ? '#f1d47e' : '#69d5b7'
     ctx.lineWidth = placement.mappingId === selectedMappingId ? 3 : 2
     ctx.strokeRect(x, y, width, height)
@@ -389,10 +381,10 @@ export function createOutputMappingWorkspace(options: Options): OutputMappingWor
     if (!placement) return
     selectedMappingId = placement.mappingId
     render()
-    if (!placement.position) return
+    if (!placement.enabled) return
     const group = options.beginHistoryGroup()
     drag = { id: placement.mappingId, group, startX: event.offsetX, startY: event.offsetY,
-      x: placement.position.x, y: placement.position.y }
+      x: placement.outputRect.x, y: placement.outputRect.y }
     canvas.setPointerCapture(event.pointerId)
     canvas.classList.add('dragging')
   })

@@ -89,7 +89,22 @@
           <button id="output-add-mapping" type="button">+ Output Mapping</button>
           <button id="output-delete-selection" type="button">Delete</button>
         </div>
-        <span class="tool-label">Screen pixels → Media Output pixels · translation only</span>
+        <div class="tool-group" role="group" aria-label="Slice coordinate space">
+          <button id="output-view-input" type="button" aria-pressed="false">Input</button>
+          <button id="output-view-output" type="button" aria-pressed="true">Output</button>
+        </div>
+        <div class="tool-group">
+          <button id="output-split-rows" type="button" title="Split selected slice into rows">Split rows</button>
+          <button id="output-order-up" type="button" title="Move earlier in output order">Order ↑</button>
+          <button id="output-order-down" type="button" title="Move later in output order">Order ↓</button>
+        </div>
+        <div class="tool-group">
+          <button id="output-fit" type="button">Fit</button>
+          <button id="output-actual-size" type="button">100%</button>
+          <button id="output-zoom-out" type="button" aria-label="Output Mapping zoom out">−</button>
+          <button id="output-zoom-in" type="button" aria-label="Output Mapping zoom in">+</button>
+        </div>
+        <span class="tool-label">Slice · Input rect → Output rect · rotate / flip / mask</span>
       </div>
       <div id="hardware-toolbar" class="layout-toolbar hardware-toolbar" aria-label="Hardware tools" hidden>
         <div class="tool-group">

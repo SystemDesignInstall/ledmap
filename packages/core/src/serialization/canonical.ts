@@ -2,6 +2,7 @@ import { compareUtf16 } from './json.js'
 import type { EditableProjectDocument, JsonValue } from './types.js'
 import type { LedMapDocumentV3 } from './v3-types.js'
 import type { LedMapDocumentV4 } from './v4-types.js'
+import type { LedMapDocumentV5 } from './v5-types.js'
 
 function indent(depth: number): string {
   return '  '.repeat(depth)
@@ -28,7 +29,7 @@ function writeJson(value: JsonValue, depth: number, sortKeys: boolean): string {
   return '{\n' + entries.join(',\n') + '\n' + indent(depth) + '}'
 }
 
-export function writeDocument(document: EditableProjectDocument | LedMapDocumentV3 | LedMapDocumentV4): string {
+export function writeDocument(document: EditableProjectDocument | LedMapDocumentV3 | LedMapDocumentV4 | LedMapDocumentV5): string {
   const entries = [
     indent(1) + writeScalar('format') + ': ' + writeScalar(document.format),
     indent(1) + writeScalar('schemaVersion') + ': ' + writeScalar(document.schemaVersion),

@@ -1,7 +1,9 @@
 import { DomainError } from '../model/errors.js'
 import type {
   LedMapProjectV2,
+  MediaOutputCanvas,
   OutputMapping,
+  PixelRect,
   PolygonMask,
   ProjectCabinet,
   ProjectCabinetGrid,
@@ -42,15 +44,29 @@ function cloneSignalRoute(route: SignalRoute): SignalRoute {
 
 function clonePolygonMask(mask: PolygonMask): PolygonMask {
   return Object.freeze({
+    enabled: mask.enabled,
     points: Object.freeze(mask.points.map(point => Object.freeze({ ...point }))),
   })
+}
+
+function clonePixelRect(rect: PixelRect): PixelRect {
+  return Object.freeze({ ...rect })
 }
 
 function cloneOutputMapping(mapping: OutputMapping): OutputMapping {
   return Object.freeze({
     ...mapping,
-    ...(mapping.position === undefined ? {} : { position: Object.freeze({ ...mapping.position }) }),
+    screenRect: clonePixelRect(mapping.screenRect),
+    outputRect: clonePixelRect(mapping.outputRect),
     ...(mapping.mask === undefined ? {} : { mask: clonePolygonMask(mapping.mask) }),
+  })
+}
+
+function cloneMediaOutputCanvas(output: MediaOutputCanvas): MediaOutputCanvas {
+  return Object.freeze({
+    ...output,
+    resolution: Object.freeze({ ...output.resolution }),
+    mappingOrder: Object.freeze([...output.mappingOrder]),
   })
 }
 
@@ -101,10 +117,7 @@ export function createProjectV2(input: LedMapProjectV2): LedMapProjectV2 {
         resolution: Object.freeze({ ...canvas.resolution }),
       }))),
       mappingRegions: Object.freeze(input.content.mappingRegions.map(cloneMappingRegion)),
-      mediaOutputs: Object.freeze(input.content.mediaOutputs.map(output => Object.freeze({
-        ...output,
-        resolution: Object.freeze({ ...output.resolution }),
-      }))),
+      mediaOutputs: Object.freeze(input.content.mediaOutputs.map(cloneMediaOutputCanvas)),
       outputMappings: Object.freeze(input.content.outputMappings.map(cloneOutputMapping)),
     }),
     hardware: Object.freeze({

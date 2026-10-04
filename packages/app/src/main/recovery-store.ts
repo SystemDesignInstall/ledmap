@@ -25,7 +25,7 @@ export interface RecoveryManifest {
   readonly updatedAt: string
   readonly snapshotRevision: number
   readonly observedSavedRevision: number
-  readonly sourceSchemaVersion: 1 | 2 | 3 | 4
+  readonly sourceSchemaVersion: 1 | 2 | 3 | 4 | 5
   readonly payloadSha256: string
   readonly baselineSourceSha256: string | null
 }
@@ -38,7 +38,7 @@ export interface RecoverySnapshotRequest {
   readonly displayName: string
   readonly snapshotRevision: number
   readonly observedSavedRevision: number
-  readonly sourceSchemaVersion: 1 | 2 | 3 | 4
+  readonly sourceSchemaVersion: 1 | 2 | 3 | 4 | 5
   readonly baselineSourceSha256: string | null
 }
 
@@ -95,7 +95,7 @@ export function parseRecoveryManifest(text: string): RecoveryManifest {
       !validDate(data['createdAt']) || !validDate(data['updatedAt']) ||
       !validRevision(data['snapshotRevision']) || !validRevision(data['observedSavedRevision']) ||
       data['observedSavedRevision'] > data['snapshotRevision'] ||
-      (data['sourceSchemaVersion'] !== 1 && data['sourceSchemaVersion'] !== 2 && data['sourceSchemaVersion'] !== 3 && data['sourceSchemaVersion'] !== 4) ||
+      (data['sourceSchemaVersion'] !== 1 && data['sourceSchemaVersion'] !== 2 && data['sourceSchemaVersion'] !== 3 && data['sourceSchemaVersion'] !== 4 && data['sourceSchemaVersion'] !== 5) ||
       typeof data['payloadSha256'] !== 'string' || !hashPattern.test(data['payloadSha256']) ||
       (data['baselineSourceSha256'] !== null &&
         (typeof data['baselineSourceSha256'] !== 'string' || !hashPattern.test(data['baselineSourceSha256'])))) {
@@ -168,7 +168,7 @@ export class RecoveryStore {
           Buffer.byteLength(input.text, 'utf8') > 512 * 1024 * 1024 ||
           (input.sourcePath !== null && (typeof input.sourcePath !== 'string' || !isAbsolute(input.sourcePath))) ||
           typeof input.displayName !== 'string' || input.displayName.length > 200 ||
-          (input.sourceSchemaVersion !== 1 && input.sourceSchemaVersion !== 2 && input.sourceSchemaVersion !== 3 && input.sourceSchemaVersion !== 4) ||
+          (input.sourceSchemaVersion !== 1 && input.sourceSchemaVersion !== 2 && input.sourceSchemaVersion !== 3 && input.sourceSchemaVersion !== 4 && input.sourceSchemaVersion !== 5) ||
           (input.baselineSourceSha256 !== null && (typeof input.baselineSourceSha256 !== 'string' ||
             !hashPattern.test(input.baselineSourceSha256))) ||
           (previous?.sessionEpoch === input.sessionEpoch && previous.snapshotRevision > input.snapshotRevision)) {
@@ -216,7 +216,7 @@ export class RecoveryStore {
         return
       }
       const updated = parseRecoveryManifest(JSON.stringify({ ...previous, sourcePath: input.sourcePath,
-        sourceSchemaVersion: 4, observedSavedRevision: previous.sessionEpoch === input.sessionEpoch
+        sourceSchemaVersion: 5, observedSavedRevision: previous.sessionEpoch === input.sessionEpoch
           ? input.savedRevision : previous.observedSavedRevision,
         baselineSourceSha256: input.baselineSourceSha256, updatedAt: new Date().toISOString() }))
       await this.writer.write(this.manifestPath(input.recoveryId), JSON.stringify(updated))

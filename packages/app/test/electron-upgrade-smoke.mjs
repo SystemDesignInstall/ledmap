@@ -61,11 +61,11 @@ async function scenario(action, name, saveAsPath = null) {
       assert.equal((await page.evaluate(() => window.__ledmap.document())).sourceSchemaVersion, 2)
       assert.equal(await readFile(legacyPath, 'utf8'), legacy)
     } else {
-      await page.waitForFunction(() => window.__ledmap.document().sourceSchemaVersion === 4)
+      await page.waitForFunction(() => window.__ledmap.document().sourceSchemaVersion === 5)
       const target = action === 'save-as' ? saveAsPath : legacyPath
       assert.ok(target)
       const stored = JSON.parse(await readFile(target, 'utf8'))
-      assert.equal(stored.schemaVersion, 4)
+      assert.equal(stored.schemaVersion, 5)
       assert.deepEqual(stored.extensions['vendor.unknown'].ordered, [3, 1, 2])
       if (action === 'save-as') {
         assert.equal(await readFile(legacyPath, 'utf8'), legacy)

@@ -126,17 +126,35 @@ export interface MediaOutputCanvas {
   readonly id: MediaOutputCanvasId
   readonly name: string
   readonly resolution: Size
+  readonly mappingOrder: readonly OutputMappingId[]
+}
+
+export type QuarterTurn = 0 | 90 | 180 | 270
+
+export interface PixelRect {
+  readonly x: number
+  readonly y: number
+  readonly width: number
+  readonly height: number
 }
 
 export interface PolygonMask {
+  readonly enabled: boolean
   readonly points: readonly Point[]
 }
 
 export interface OutputMapping {
   readonly id: OutputMappingId
+  readonly name: string
+  readonly enabled: boolean
   readonly screenId: ScreenId
   readonly mediaOutputId: MediaOutputCanvasId
-  readonly position?: Point
+  readonly screenRect: PixelRect
+  readonly outputRect: PixelRect
+  readonly inputRotation: QuarterTurn
+  readonly outputRotation: QuarterTurn
+  readonly flipX: boolean
+  readonly flipY: boolean
   readonly mask?: PolygonMask
 }
 

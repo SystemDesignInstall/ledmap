@@ -64,12 +64,12 @@ async function waitForRecovery(x) {
       for (const name of (await readdir(resolve(root, 'manifests'))).filter(value => value.endsWith('.json'))) {
         const manifest = JSON.parse(await readFile(resolve(root, 'manifests', name), 'utf8'))
         const payload = JSON.parse(await readFile(resolve(root, 'payloads', manifest.payloadFile), 'utf8'))
-        if (payload.schemaVersion === 4 && payload.project.content.outputMappings[1]?.position.x === x) return
+        if (payload.schemaVersion === 5 && payload.project.content.outputMappings[1]?.outputRect.x === x) return
       }
     } catch { }
     await new Promise(resolvePromise => setTimeout(resolvePromise, 100))
   }
-  throw new Error('Output Mapping V4 recovery snapshot was not created.')
+  throw new Error('Output Mapping V5 recovery snapshot was not created.')
 }
 
 let running = await launch()
@@ -86,7 +86,7 @@ try {
   await page.waitForFunction(() => window.__ledmapOutputMapping.dump().mappings.length === 1)
   await setNumber(page, 'Output position X', 10)
   await setNumber(page, 'Output position Y', 20)
-  assert.deepEqual((await dump(page)).mappings[0].position, { x: 10, y: 20 })
+  assert.deepEqual((await dump(page)).mappings[0].outputRect, { x: 10, y: 20 })
   assert.deepEqual(await pixel(page, outputId, 11, 22), { status: 'resolved',
     mappingId: 'output-mapping-1', screenId: 'screen-1', screenX: 1, screenY: 2 })
   const canvas = page.locator('#output-mapping-canvas')
@@ -97,11 +97,11 @@ try {
   await page.mouse.down()
   await page.mouse.move(bounds.x + end.x, bounds.y + end.y, { steps: 4 })
   await page.mouse.up()
-  assert.deepEqual((await dump(page)).mappings[0].position, { x: 110, y: 70 })
+  assert.deepEqual((await dump(page)).mappings[0].outputRect, { x: 110, y: 70 })
   await page.locator('#undo-project').click()
-  assert.deepEqual((await dump(page)).mappings[0].position, { x: 10, y: 20 })
+  assert.deepEqual((await dump(page)).mappings[0].outputRect, { x: 10, y: 20 })
   await page.locator('#redo-project').click()
-  assert.deepEqual((await dump(page)).mappings[0].position, { x: 110, y: 70 })
+  assert.deepEqual((await dump(page)).mappings[0].outputRect, { x: 110, y: 70 })
   await page.locator('#output-add-mapping').click()
   await page.locator('select[aria-label="Mapped Screen"]').selectOption('screen-2')
   assert.equal((await pixel(page, outputId, 110, 70)).status, 'blocked')
@@ -113,8 +113,8 @@ try {
   await page.locator('#save-project').click()
   await page.waitForFunction(() => window.__ledmap.document().dirty === false)
   saved = JSON.parse(await readFile(projectPath, 'utf8'))
-  assert.equal(saved.schemaVersion, 4)
-  assert.deepEqual(saved.project.content.outputMappings.map(value => value.position),
+  assert.equal(saved.schemaVersion, 5)
+  assert.deepEqual(saved.project.content.outputMappings.map(value => ({ x: value.outputRect.x, y: value.outputRect.y })),
     [{ x: 110, y: 70 }, { x: 400, y: 100 }])
   await setNumber(page, 'Output position X', 500)
   await waitForRecovery(500)
@@ -124,17 +124,20 @@ try {
 running = await launch('recover')
 try {
   const page = running.page
-  await page.waitForFunction(() => window.__ledmapOutputMapping.dump().mappings[1]?.position.x === 500)
+  await page.waitForFunction(() => window.__ledmapOutputMapping.dump().mappings[1]?.outputRect.x === 500)
   assert.equal((await page.evaluate(() => window.__ledmap.document())).dirty, true)
   assert.deepEqual(errors, [])
 } finally { await exit(running.app) }
 
 const legacy = structuredClone(saved)
-legacy.schemaVersion = 3
-delete legacy.project.content.outputMappings[0].position
-legacy.project.content.outputMappings[0].mask = { points: [{ x: 0, y: 0 }] }
+legacy.schemaVersion = 4
+for (const media of legacy.project.content.mediaOutputs) delete media.mappingOrder
+legacy.project.content.outputMappings = legacy.project.content.outputMappings.map(mapping => ({
+  id: mapping.id, screenId: mapping.screenId, mediaOutputId: mapping.mediaOutputId,
+  position: { x: mapping.outputRect.x, y: mapping.outputRect.y },
+}))
 legacy.project.content.outputMappings = [legacy.project.content.outputMappings[0]]
-const legacyPath = resolve(output, 'old-v3-output-mapping.ledmap')
+const legacyPath = resolve(output, 'old-v4-output-mapping.ledmap')
 await writeFile(legacyPath, JSON.stringify(legacy), 'utf8')
 const legacyData = await mkdtemp(resolve(output, 'legacy-user-data-'))
 running = await launch('later', legacyPath, legacyData)
@@ -142,19 +145,17 @@ try {
   const page = running.page
   await page.locator('#open-project').click()
   await page.waitForFunction(() => window.__ledmapOutputMapping.dump().mappings.length === 1)
-  assert.equal((await page.evaluate(() => window.__ledmap.document())).sourceSchemaVersion, 3)
+  assert.equal((await page.evaluate(() => window.__ledmap.document())).sourceSchemaVersion, 4)
   await page.locator('#output-mapping-mode').click()
   await page.locator('#output-mapping-tree .output-tree-item').nth(1).click()
-  assert.match(await page.locator('#output-mapping-diagnostics').innerText(), /Unplaced[\s\S]*mask/i)
-  assert.equal((await dump(page)).mappings[0].position, undefined)
-  await page.locator('button', { hasText: 'Place at (0, 0)' }).click()
+  assert.deepEqual({ x: (await dump(page)).mappings[0].outputRect.x, y: (await dump(page)).mappings[0].outputRect.y }, { x: 110, y: 70 })
   await page.locator('#save-project').click()
-  await page.waitForFunction(() => window.__ledmap.document().sourceSchemaVersion === 4)
+  await page.waitForFunction(() => window.__ledmap.document().sourceSchemaVersion === 5)
   const upgraded = JSON.parse(await readFile(legacyPath, 'utf8'))
-  assert.deepEqual(upgraded.project.content.outputMappings[0].position, { x: 0, y: 0 })
-  assert.deepEqual(upgraded.project.content.outputMappings[0].mask, { points: [{ x: 0, y: 0 }] })
+  assert.equal(upgraded.schemaVersion, 5)
+  assert.deepEqual({ x: upgraded.project.content.outputMappings[0].outputRect.x, y: upgraded.project.content.outputMappings[0].outputRect.y }, { x: 110, y: 70 })
   assert.deepEqual(errors, [])
 } finally { await exit(running.app) }
 
-console.log('Electron Output Mapping smoke passed: placement, pixel lookup, drag history, overlap, V4 Save, recovery and V3 upgrade.')
+console.log('Electron Output Mapping smoke passed: placement, pixel lookup, drag history, overlap, V5 Save, recovery and V4 upgrade.')
 process.exit(0)

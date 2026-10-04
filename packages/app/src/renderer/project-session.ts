@@ -2,7 +2,7 @@ import {
   createEmptyProjectV2,
   createProjectV2,
   loadLedMapProject,
-  serializeProjectV4,
+  serializeProjectV5,
   validateProjectV2Structural,
   DomainError,
   type JsonObject,
@@ -19,7 +19,7 @@ export interface ProjectSession<TProject = LedMapProjectV2> {
   readonly savedStateId: number | null
   readonly documentId: string
   readonly currentFilePath: string | null
-  readonly sourceSchemaVersion: 1 | 2 | 3 | 4
+  readonly sourceSchemaVersion: 1 | 2 | 3 | 4 | 5
   readonly extensions: JsonObject
 }
 
@@ -36,7 +36,7 @@ export function createProjectSession(documentId: string): ProjectSession {
     savedStateId: 0,
     documentId,
     currentFilePath: null,
-    sourceSchemaVersion: 4,
+    sourceSchemaVersion: 5,
     extensions: Object.freeze({}),
   })
 }
@@ -63,7 +63,7 @@ export function recoverProjectSession(text: string, documentId: string): Project
   projectV2WorkspaceReadModel(loaded.project)
   return Object.freeze({ project: loaded.project, extensions: loaded.extensions, documentId,
     revision: 1, savedRevision: 0, stateId: 1, savedStateId: null,
-    currentFilePath: null, sourceSchemaVersion: 4 })
+    currentFilePath: null, sourceSchemaVersion: loaded.sourceSchemaVersion })
 }
 
 export function sessionWorkspaceProject(session: ProjectSession): Project {
@@ -104,7 +104,7 @@ export function restoreProjectSessionState(session: ProjectSession, project: Led
 }
 
 export function serializeProjectSession(session: ProjectSession): string {
-  return serializeProjectV4({ project: session.project, extensions: session.extensions })
+  return serializeProjectV5({ project: session.project, extensions: session.extensions })
 }
 
 export function markProjectSessionSaved(
@@ -119,5 +119,5 @@ export function markProjectSessionSaved(
   if (!Number.isSafeInteger(savedStateId) || savedStateId < 0 || savedStateId > savedRevision) {
     throw new DomainError('PROJECT_STATE_ID_INVALID', 'Saved state identity is invalid')
   }
-  return Object.freeze({ ...session, savedRevision, savedStateId, currentFilePath, sourceSchemaVersion: 4 })
+  return Object.freeze({ ...session, savedRevision, savedStateId, currentFilePath, sourceSchemaVersion: 5 })
 }

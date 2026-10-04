@@ -248,12 +248,31 @@ dialog::backdrop { background: #06090dc7; backdrop-filter: blur(2px); }
 .export-contract { margin: 0 12px 14px; padding: 10px; border-top: 1px solid var(--line); color: #b8c7d5; font-size: 10px; }
 .export-contract p { overflow-wrap: anywhere; margin: 6px 0 0; color: var(--muted); line-height: 1.5; }
 
+.output-mapping-workspace { grid-template-columns: 260px minmax(0, 1fr) 300px; }
+.output-mapping-toolbar { gap: 14px; }
+.output-mapping-tree { display: flex; flex-direction: column; gap: 5px; }
+.output-tree-item { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; width: 100%; min-width: 0; text-align: left; white-space: normal; }
+.output-tree-item[aria-pressed="true"] { border-color: #4ba88f; background: #173a32; color: #a4f0da; }
+.output-tree-item strong { overflow: hidden; max-width: 100%; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.output-tree-item small { color: var(--muted); font-size: 9px; line-height: 1.35; overflow-wrap: anywhere; }
+.output-tree-item + .output-tree-item { margin-left: 8px; width: calc(100% - 8px); }
+#output-mapping-viewport { position: relative; flex: 1; min-height: 160px; overflow: hidden; border: 1px solid #202b38; border-radius: 6px; background: var(--canvas); }
+#output-mapping-canvas { cursor: move; }
+#output-mapping-preview-status { color: #87a0b9; font-size: 10px; text-align: right; }
+#output-mapping-diagnostics p { margin: 7px 0; color: #d4b27a; font-size: 10px; line-height: 1.4; overflow-wrap: anywhere; }
+#output-mapping-diagnostics .output-diagnostic-error, .output-diagnostic-error { color: #e8a0a6; }
+.output-mapping-inspector .properties-body { display: flex; flex-direction: column; gap: 10px; padding-top: 14px; }
+.output-field { display: flex; flex-direction: column; gap: 4px; color: var(--muted); font-size: 10px; }
+.output-field input, .output-field select { min-width: 0; width: 100%; padding: 7px; border: 1px solid var(--line); border-radius: 4px; background: #0e151e; color: var(--text); }
+.output-mapping-inspector .hint { font-size: 10px; line-height: 1.45; }
+
 @media (max-width: 1120px) {
   .workspace { grid-template-columns: 190px minmax(0, 1fr) 244px; }
   .mapping-workspace { grid-template-columns: 210px minmax(0, 1fr) 270px; }
   .hardware-workspace { grid-template-columns: 230px minmax(0, 1fr) 270px; }
   .test-workspace { grid-template-columns: 215px minmax(0, 1fr) 280px; }
   .export-workspace { grid-template-columns: 190px minmax(0, 1fr) 260px; }
+  .output-mapping-workspace { grid-template-columns: 210px minmax(0, 1fr) 260px; }
   .live-output-list { grid-template-columns: 1fr; }
   .titlebar { grid-template-columns: 150px minmax(380px, 1fr) auto; }
   .mode-switcher .mode { min-width: 66px; }

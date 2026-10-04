@@ -202,7 +202,7 @@ try {
   assert.equal(await page.locator('#empty h2').innerText(), 'No screens yet')
   assert.match(await page.locator('#empty').innerText(), /Add your first Screen/)
   assert.equal((await documentState()).dirty, false)
-  assert.match(await page.locator('.mode-switcher').innerText(), /Layout\s+Mapping\s+Hardware\s+Test\s+Export/)
+  assert.match(await page.locator('.mode-switcher').innerText(), /Layout\s+Mapping\s+Output Mapping\s+Hardware\s+Test\s+Export/)
   assert.equal((await page.locator('.mode-switcher .mode:disabled').count()), 0)
   assert.doesNotMatch(await page.locator('body').innerText(), /ALPHA|In-memory session/)
   await page.locator('#test-mode').click()

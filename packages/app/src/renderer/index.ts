@@ -24,6 +24,7 @@ import {
   type SelectionBox,
 } from './layout-interaction.js'
 import { createMappingWorkspace, type MappingWorkspace } from './mapping-workspace.js'
+import { createOutputMappingWorkspace, type OutputMappingWorkspace } from './output-mapping-workspace.js'
 import { createHardwareWorkspace, type HardwareWorkspace } from './hardware-workspace.js'
 import { createTestWorkspace, type TestWorkspace } from './test-workspace.js'
 import { createLiveOutputController, type LiveOutputController } from './live-output.js'
@@ -116,10 +117,13 @@ const treeScreenCount = element<HTMLSpanElement>('tree-screen-count')
 const screenFormError = element<HTMLParagraphElement>('screen-form-error')
 const layoutModeButton = element<HTMLButtonElement>('layout-mode')
 const mappingModeButton = element<HTMLButtonElement>('mapping-mode')
+const outputMappingModeButton = element<HTMLButtonElement>('output-mapping-mode')
 const layoutToolbar = element<HTMLDivElement>('layout-toolbar')
 const mappingToolbar = element<HTMLDivElement>('mapping-toolbar')
+const outputMappingToolbar = element<HTMLDivElement>('output-mapping-toolbar')
 const layoutWorkspace = element<HTMLElement>('layout-workspace')
 const mappingWorkspaceElement = element<HTMLElement>('mapping-workspace')
+const outputMappingWorkspaceElement = element<HTMLElement>('output-mapping-workspace')
 const hardwareModeButton = element<HTMLButtonElement>('hardware-mode')
 const hardwareToolbar = element<HTMLDivElement>('hardware-toolbar')
 const hardwareWorkspaceElement = element<HTMLElement>('hardware-workspace')
@@ -139,9 +143,10 @@ autosave.attach(documentController.session, null)
 function currentProject(): Project {
   return sessionWorkspaceProject(documentController.session)
 }
-type AppMode = 'layout' | 'mapping' | 'hardware' | 'test' | 'export'
+type AppMode = 'layout' | 'mapping' | 'output-mapping' | 'hardware' | 'test' | 'export'
 let appMode: AppMode = 'layout'
 let mappingWorkspace: MappingWorkspace | null = null
+let outputMappingWorkspace: OutputMappingWorkspace | null = null
 let hardwareWorkspace: HardwareWorkspace | null = null
 let testWorkspace: TestWorkspace | null = null
 let liveOutputController: LiveOutputController | null = null
@@ -235,6 +240,7 @@ function syncDocumentState(): void {
 function restoreHistory(redo: boolean): void {
   endPointerGesture()
   mappingWorkspace?.finishGesture()
+  outputMappingWorkspace?.finishGesture()
   finishArrowHistoryGroup()
   const before = documentController.session
   const restored = redo ? documentController.redo() : documentController.undo()
@@ -265,6 +271,7 @@ function clearDocumentError(): void {
 
 function replaceDocument(next: ProjectSession): void {
   mappingWorkspace?.finishGesture()
+  outputMappingWorkspace?.finishGesture()
   finishArrowHistoryGroup()
   sessionWorkspaceProject(next)
   documentController.replace(next)
@@ -277,6 +284,7 @@ function replaceDocument(next: ProjectSession): void {
   syncDocumentState()
   render()
   if (appMode === 'mapping') mappingWorkspace?.activate()
+  if (appMode === 'output-mapping') outputMappingWorkspace?.activate()
   if (appMode === 'hardware') hardwareWorkspace?.activate()
   if (appMode === 'test') testWorkspace?.activate()
   if (appMode === 'export') exportWorkspace?.activate()
@@ -285,6 +293,7 @@ function replaceDocument(next: ProjectSession): void {
 async function saveDocument(saveAs: boolean): Promise<boolean> {
   endPointerGesture()
   mappingWorkspace?.finishGesture()
+  outputMappingWorkspace?.finishGesture()
   finishArrowHistoryGroup()
   finishHistoryGroup()
   clearDocumentError()
@@ -363,6 +372,7 @@ function render(): void {
   renderStatus()
   if (appMode === 'layout') draw()
   mappingWorkspace?.projectChanged()
+  outputMappingWorkspace?.projectChanged()
   hardwareWorkspace?.projectChanged()
   testWorkspace?.projectChanged()
   exportWorkspace?.projectChanged()
@@ -1457,6 +1467,15 @@ mappingWorkspace = createMappingWorkspace({
   clearError: clearDocumentError,
 })
 
+outputMappingWorkspace = createOutputMappingWorkspace({
+  getProject: () => documentController.session.project,
+  runCommand: (command, groupId) => applyV2(command, groupId),
+  beginHistoryGroup: () => documentController.beginHistoryGroup(),
+  endHistoryGroup: groupId => finishHistoryGroup(groupId),
+  showError: showDocumentError,
+  clearError: clearDocumentError,
+})
+
 hardwareWorkspace = createHardwareWorkspace({
   getProject: () => currentProject(),
   getProjectV2: () => documentController.session.project,
@@ -1499,17 +1518,20 @@ function setAppMode(mode: AppMode): void {
   appMode = mode
   const layoutActive = mode === 'layout'
   const mappingActive = mode === 'mapping'
+  const outputMappingActive = mode === 'output-mapping'
   const hardwareActive = mode === 'hardware'
   const testActive = mode === 'test'
   const exportActive = mode === 'export'
   layoutModeButton.classList.toggle('active', layoutActive)
   mappingModeButton.classList.toggle('active', mappingActive)
+  outputMappingModeButton.classList.toggle('active', outputMappingActive)
   hardwareModeButton.classList.toggle('active', hardwareActive)
   testModeButton.classList.toggle('active', testActive)
   exportModeButton.classList.toggle('active', exportActive)
   for (const [button, isActive] of [
     [layoutModeButton, layoutActive],
     [mappingModeButton, mappingActive],
+    [outputMappingModeButton, outputMappingActive],
     [hardwareModeButton, hardwareActive],
     [testModeButton, testActive],
     [exportModeButton, exportActive],
@@ -1519,11 +1541,13 @@ function setAppMode(mode: AppMode): void {
   }
   layoutToolbar.hidden = !layoutActive
   mappingToolbar.hidden = !mappingActive
+  outputMappingToolbar.hidden = !outputMappingActive
   hardwareToolbar.hidden = !hardwareActive
   testToolbar.hidden = !testActive
   exportToolbar.hidden = !exportActive
   layoutWorkspace.hidden = !layoutActive
   mappingWorkspaceElement.hidden = !mappingActive
+  outputMappingWorkspaceElement.hidden = !outputMappingActive
   hardwareWorkspaceElement.hidden = !hardwareActive
   testWorkspaceElement.hidden = !testActive
   exportWorkspaceElement.hidden = !exportActive
@@ -1533,6 +1557,7 @@ function setAppMode(mode: AppMode): void {
   document.querySelectorAll<HTMLElement>('.test-status').forEach(item => { item.hidden = !testActive })
   document.querySelectorAll<HTMLElement>('.export-status').forEach(item => { item.hidden = !exportActive })
   mappingWorkspace?.deactivate()
+  outputMappingWorkspace?.deactivate()
   hardwareWorkspace?.deactivate()
   testWorkspace?.deactivate()
   exportWorkspace?.deactivate()
@@ -1542,6 +1567,7 @@ function setAppMode(mode: AppMode): void {
     requestAnimationFrame(() => draw())
   }
   if (mappingActive) mappingWorkspace?.activate()
+  if (outputMappingActive) outputMappingWorkspace?.activate()
   if (hardwareActive) hardwareWorkspace?.activate()
   if (testActive) testWorkspace?.activate()
   if (exportActive) exportWorkspace?.activate()
@@ -1549,6 +1575,7 @@ function setAppMode(mode: AppMode): void {
 
 layoutModeButton.addEventListener('click', () => setAppMode('layout'))
 mappingModeButton.addEventListener('click', () => setAppMode('mapping'))
+outputMappingModeButton.addEventListener('click', () => setAppMode('output-mapping'))
 hardwareModeButton.addEventListener('click', () => setAppMode('hardware'))
 testModeButton.addEventListener('click', () => setAppMode('test'))
 exportModeButton.addEventListener('click', () => setAppMode('export'))
@@ -1612,6 +1639,7 @@ window.addEventListener('blur', () => {
   finishArrowHistoryGroup()
   endPointerGesture()
   mappingWorkspace?.finishGesture()
+  outputMappingWorkspace?.finishGesture()
 })
 
 window.addEventListener('keydown', event => {

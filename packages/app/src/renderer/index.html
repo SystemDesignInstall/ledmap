@@ -14,6 +14,7 @@
         <nav class="mode-switcher" aria-label="Workflow mode">
           <button id="layout-mode" type="button" class="mode active" aria-current="page">Layout</button>
           <button id="mapping-mode" type="button" class="mode">Mapping</button>
+          <button id="output-mapping-mode" type="button" class="mode">Output Mapping</button>
           <button id="hardware-mode" type="button" class="mode">Hardware</button>
           <button id="test-mode" type="button" class="mode">Test</button>
           <button id="export-mode" type="button" class="mode">Export</button>
@@ -77,6 +78,14 @@
           <button id="mapping-zoom-out" type="button" aria-label="Mapping zoom out">−</button>
           <button id="mapping-zoom-in" type="button" aria-label="Mapping zoom in">+</button>
         </div>
+      </div>
+      <div id="output-mapping-toolbar" class="layout-toolbar output-mapping-toolbar" aria-label="Output Mapping tools" hidden>
+        <div class="tool-group">
+          <button id="output-add-media" class="primary" type="button">+ Media Output</button>
+          <button id="output-add-mapping" type="button">+ Output Mapping</button>
+          <button id="output-delete-selection" type="button">Delete</button>
+        </div>
+        <span class="tool-label">Screen pixels → Media Output pixels · translation only</span>
       </div>
       <div id="hardware-toolbar" class="layout-toolbar hardware-toolbar" aria-label="Hardware tools" hidden>
         <div class="tool-group">
@@ -210,6 +219,29 @@
         <div id="mapping-properties" class="properties-body">
           <p class="hint">Select a Screen or Mapping Region.</p>
         </div>
+      </aside>
+    </main>
+
+    <main id="output-mapping-workspace" class="workspace output-mapping-workspace" hidden>
+      <aside class="tree-panel output-project-panel">
+        <div class="panel-title-row"><div><span class="eyebrow">MEDIA OUTPUT</span><h1>Outputs &amp; Mappings</h1></div></div>
+        <div id="output-mapping-tree" class="output-mapping-tree" role="tree" aria-label="Media Outputs and Output Mappings"></div>
+        <div class="mapping-diagnostics-heading"><span class="eyebrow">DIAGNOSTICS</span></div>
+        <div id="output-mapping-diagnostics" class="mapping-diagnostics"></div>
+      </aside>
+      <article class="canvas-workspace">
+        <div class="canvas-heading">
+          <div><span class="eyebrow">OUTPUT MAPPING WORKSPACE</span><h2 id="output-mapping-title">Media Output</h2></div>
+          <span id="output-mapping-preview-status" role="status">Synthetic preview</span>
+        </div>
+        <div id="output-mapping-viewport">
+          <canvas id="output-mapping-canvas" role="img" aria-label="Media Output mapping preview"></canvas>
+          <div id="output-mapping-empty" class="canvas-empty"><h2>No Media Output</h2><p>Add an output to place Screens in its independent pixel space.</p></div>
+        </div>
+      </article>
+      <aside class="properties-panel output-mapping-inspector">
+        <div class="panel-heading"><span class="eyebrow">INSPECTOR</span><h2 id="output-mapping-inspector-title">Output Mapping</h2></div>
+        <div id="output-mapping-properties" class="properties-body"><p class="hint">Select a Media Output or mapping.</p></div>
       </aside>
     </main>
 

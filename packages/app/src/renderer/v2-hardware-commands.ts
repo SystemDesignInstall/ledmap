@@ -3,6 +3,7 @@ import {
   allocateHardware,
   asHardwareAssignmentId,
   asSignalRouteId,
+  assertProjectV2HardwareContract,
   cabinetOrder,
   createPort,
   createProcessor,
@@ -328,6 +329,67 @@ export function unassignCabinetsV2(project: LedMapProjectV2, receiverId: string,
   const after = before.filter(id => !selected.has(id))
   if (sameIds(before, after)) return project
   return withChains(project, new Map([[receiverId, after]]))
+}
+
+export function reorderSignalRouteV2(
+  project: LedMapProjectV2, receiverId: string, orderedCabinetIds: readonly string[],
+): LedMapProjectV2 {
+  receiverOf(project, receiverId)
+  const routes = project.operations.signalRoutes.filter(route => route.receiverId === receiverId)
+  if (routes.length !== 1) throw new Error(`Receiver ${receiverId} requires exactly one SignalRoute for reorder.`)
+  const route = routes[0]!
+  const current = route.orderedCabinetIds
+  const next = [...orderedCabinetIds] as CabinetId[]
+  const assigned = project.hardware.assignments.filter(value => value.receiverId === receiverId).map(value => value.target.cabinetId)
+  const currentSet = new Set(current)
+  const nextSet = new Set(next)
+  const assignedSet = new Set(assigned)
+  if (current.length === 0 || current.length !== currentSet.size || next.length !== nextSet.size || assigned.length !== assignedSet.size ||
+      next.length !== current.length || current.length !== assigned.length ||
+      current.some(id => !assignedSet.has(id)) || next.some(id => !currentSet.has(id))) {
+    throw new Error(`SignalRoute for Receiver ${receiverId} must be an exact permutation of its assigned Cabinets.`)
+  }
+  if (sameIds(current, next)) return project
+  return { ...project, operations: { ...project.operations,
+    signalRoutes: project.operations.signalRoutes.map(value => value === route ? { ...value, orderedCabinetIds: next } : value),
+  } }
+}
+
+export function moveCabinetToReceiverV2(project: LedMapProjectV2, cabinetId: string, targetReceiverId: string): LedMapProjectV2 {
+  receiverOf(project, targetReceiverId)
+  assertProjectV2HardwareContract(project)
+  const matches = project.hardware.assignments.filter(value => value.target.cabinetId === cabinetId)
+  if (matches.length !== 1) throw new Error(`Cabinet ${cabinetId} requires exactly one HardwareAssignment for transfer.`)
+  const assignment = matches[0]!
+  const sourceReceiverId = assignment.receiverId
+  if (sourceReceiverId === targetReceiverId) return project
+  const sourceRoute = project.operations.signalRoutes.find(route => route.receiverId === sourceReceiverId)
+  if (!sourceRoute || !sourceRoute.orderedCabinetIds.includes(cabinetId as CabinetId)) {
+    throw new Error(`Cabinet ${cabinetId} is missing from Receiver ${sourceReceiverId} SignalRoute.`)
+  }
+  const targetRoute = project.operations.signalRoutes.find(route => route.receiverId === targetReceiverId)
+  const targetReceiver = receiverOf(project, targetReceiverId)
+  const targetIds = [...(targetRoute?.orderedCabinetIds ?? []), cabinetId as CabinetId]
+  const used = targetIds.reduce((total, id) => total + cabinetPixels(project, id), 0)
+  if (!Number.isSafeInteger(used) || (targetReceiver.pixelCapacity !== undefined && used > targetReceiver.pixelCapacity)) {
+    throw new Error(`Assignment uses ${used.toLocaleString('en-US')} of ${targetReceiver.pixelCapacity?.toLocaleString('en-US') ?? 'unlimited'} Receiver pixels.`)
+  }
+  const remaining = sourceRoute.orderedCabinetIds.filter(id => id !== cabinetId)
+  const signalRoutes = project.operations.signalRoutes.flatMap(route => {
+    if (route === sourceRoute) return remaining.length === 0 ? [] : [{ ...route, orderedCabinetIds: remaining }]
+    if (route === targetRoute) return [{ ...route, orderedCabinetIds: targetIds }]
+    return [route]
+  })
+  if (!targetRoute) signalRoutes.push({
+    id: asSignalRouteId(compatibilityId('route', targetReceiverId)),
+    receiverId: targetReceiver.id,
+    orderedCabinetIds: targetIds,
+  })
+  return { ...project,
+    hardware: { ...project.hardware, assignments: project.hardware.assignments.map(value => value === assignment
+      ? { ...value, receiverId: targetReceiver.id } : value) },
+    operations: { ...project.operations, signalRoutes },
+  }
 }
 
 export function previewHardwareAllocationV2(project: LedMapProjectV2): AllocationProposal {

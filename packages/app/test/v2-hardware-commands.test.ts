@@ -4,9 +4,11 @@ import {
   convertEditableProjectToV2,
   projectV2AsEditableReadModel,
   resolveHardware,
+  selectV2HardwareEngineInput,
   type LedMapProjectV2,
 } from '@ledmap/core'
 import { describe, expect, it } from 'vitest'
+import { ProjectDocumentController } from '../src/renderer/document.js'
 import {
   addPort, addProcessor, addReceiver, applyHardwareAllocation, assignCabinets, deletePort, deleteProcessor, deleteReceiver,
   hardwareCabinetOrder, moveProcessor, moveReceiver, previewHardwareAllocation, renameProcessor,
@@ -15,7 +17,8 @@ import {
 import {
   addPortV2, addProcessorV2, addReceiverV2, applyHardwareAllocationV2, assignCabinetsV2,
   deletePortV2, deleteProcessorV2, deleteReceiverV2, moveProcessorV2, moveReceiverV2,
-  orderedSelectedCabinetsV2, previewHardwareAllocationV2, renameProcessorV2,
+  moveCabinetToReceiverV2, orderedSelectedCabinetsV2, previewHardwareAllocationV2, renameProcessorV2,
+  reorderSignalRouteV2,
   requireCurrentHardwarePreview, setProcessorPortCountV2, unassignCabinetsV2,
   updatePortV2, updateReceiverV2,
 } from '../src/renderer/v2-hardware-commands.js'
@@ -279,6 +282,147 @@ describe('direct V2 Hardware commands', () => {
     expect(orderedSelectedCabinetsV2(changed, v2.design.cabinets.map(value => value.id))).not.toEqual(
       orderedSelectedCabinetsV2(v2, v2.design.cabinets.map(value => value.id)),
     )
+  })
+
+  it('reorders exactly one SignalRoute without changing assignment metadata or other domains', () => {
+    let v2 = withReceivers(2)
+    const [first, second, third] = v2.design.cabinets.map(value => value.id)
+    v2 = assignCabinetsV2(v2, 'receiver-1', [first!, second!, third!])
+    v2 = assignCabinetsV2(v2, 'receiver-2', v2.design.cabinets.slice(3).map(value => value.id))
+    const route = v2.operations.signalRoutes[0]!
+    const assignments = v2.hardware.assignments
+    const reordered = reorderSignalRouteV2(v2, 'receiver-1', [third!, first!, second!])
+    expect(chainFor(reordered, 'receiver-1')).toEqual([third, first, second])
+    expect(reordered.operations.signalRoutes[0]?.id).toBe(route.id)
+    expect(reordered.hardware).toBe(v2.hardware)
+    expect(reordered.design).toBe(v2.design)
+    expect(reordered.content).toBe(v2.content)
+    expect(reordered.hardware.assignments).toBe(assignments)
+    expect(reorderSignalRouteV2(reordered, 'receiver-1', [third!, first!, second!])).toBe(reordered)
+    expectRoutesMatchAssignments(reordered)
+    const before = resolveHardware(selectV2HardwareEngineInput(v2))
+    const after = resolveHardware(selectV2HardwareEngineInput(reordered))
+    expect(addressPixel(before, { cabinet: first!, coordinate: { x: 0, y: 0 } }).dataIndex).toBe(0)
+    expect(addressPixel(after, { cabinet: third!, coordinate: { x: 0, y: 0 } }).dataIndex).toBe(0)
+    expect(addressPixel(after, { cabinet: first!, coordinate: { x: 0, y: 0 } }).dataIndex).toBe(
+      v2.design.cabinets[2]!.pixelWidth * v2.design.cabinets[2]!.pixelHeight,
+    )
+  })
+
+  it('rejects missing, extra, duplicate and foreign Cabinets in reorder without mutation', () => {
+    let v2 = withReceivers(2)
+    const [first, second, third, foreign] = v2.design.cabinets.map(value => value.id)
+    v2 = assignCabinetsV2(v2, 'receiver-1', [first!, second!, third!])
+    v2 = assignCabinetsV2(v2, 'receiver-2', [foreign!])
+    for (const invalid of [
+      [first!, second!],
+      [first!, second!, third!, foreign!],
+      [first!, first!, third!],
+      [first!, second!, foreign!],
+    ]) expect(() => reorderSignalRouteV2(v2, 'receiver-1', invalid)).toThrow(/exact permutation/)
+    expect(() => reorderSignalRouteV2(v2, 'missing', [first!, second!, third!])).toThrow(/Unknown Receiver/)
+    expect(v2.operations.signalRoutes[0]?.orderedCabinetIds).toEqual([first, second, third])
+    expectRoutesMatchAssignments(v2)
+  })
+
+  it('requires one valid route whose Cabinet set equals the Receiver assignment set', () => {
+    let v2 = withReceivers(2)
+    const cabinet = v2.design.cabinets[0]!.id
+    v2 = assignCabinetsV2(v2, 'receiver-1', [cabinet])
+    const route = v2.operations.signalRoutes[0]!
+    const withoutRoute = { ...v2, operations: { ...v2.operations, signalRoutes: [] } }
+    expect(() => reorderSignalRouteV2(withoutRoute, 'receiver-1', [cabinet])).toThrow(/exactly one SignalRoute/)
+    const duplicateRoute = { ...v2, operations: { ...v2.operations, signalRoutes: [route, { ...route, id: asSignalRouteId('other') }] } }
+    expect(() => reorderSignalRouteV2(duplicateRoute, 'receiver-1', [cabinet])).toThrow(/exactly one SignalRoute/)
+    const mismatched = { ...v2, operations: { ...v2.operations,
+      signalRoutes: [{ ...route, orderedCabinetIds: [cabinet, v2.design.cabinets[1]!.id] }],
+    } }
+    expect(() => reorderSignalRouteV2(mismatched, 'receiver-1', [cabinet, v2.design.cabinets[1]!.id])).toThrow(/exact permutation/)
+    const emptyRoute = { ...v2, hardware: { ...v2.hardware, assignments: [] }, operations: { ...v2.operations,
+      signalRoutes: [{ ...route, orderedCabinetIds: [] }],
+    } }
+    expect(() => reorderSignalRouteV2(emptyRoute, 'receiver-1', [])).toThrow(/exact permutation/)
+  })
+
+  it('does not advance revision or history for an identical route', () => {
+    let v2 = withReceivers(1)
+    const cabinet = v2.design.cabinets[0]!.id
+    v2 = assignCabinetsV2(v2, 'receiver-1', [cabinet])
+    const controller = new ProjectDocumentController(() => 'document-1')
+    controller.replace({ ...createProjectSession('document-1'), project: v2 })
+    const previous = controller.session
+    controller.transactV2(source => reorderSignalRouteV2(source, 'receiver-1', [cabinet]))
+    expect(controller.session).toBe(previous)
+    expect(controller.session.revision).toBe(0)
+    expect(controller.canUndo).toBe(false)
+  })
+
+  it('transfers one Cabinet atomically, preserving assignment metadata and route identities', () => {
+    let v2 = withReceivers(2)
+    const [first, second, third] = v2.design.cabinets.map(value => value.id)
+    v2 = assignCabinetsV2(v2, 'receiver-1', [first!, second!])
+    v2 = assignCabinetsV2(v2, 'receiver-2', [third!])
+    v2 = { ...v2, hardware: { ...v2.hardware, assignments: v2.hardware.assignments.map(value =>
+      value.target.cabinetId === first ? { ...value, locked: false, origin: 'manual' as const } : value) } }
+    const assignment = v2.hardware.assignments.find(value => value.target.cabinetId === first)!
+    const sourceId = v2.operations.signalRoutes.find(value => value.receiverId === 'receiver-1')!.id
+    const targetId = v2.operations.signalRoutes.find(value => value.receiverId === 'receiver-2')!.id
+    expect(moveCabinetToReceiverV2(v2, first!, 'receiver-1')).toBe(v2)
+    const moved = moveCabinetToReceiverV2(v2, first!, 'receiver-2')
+    expect(moved.hardware.assignments.find(value => value.id === assignment.id)).toEqual({ ...assignment, receiverId: 'receiver-2' })
+    expect(moved.operations.signalRoutes.find(value => value.receiverId === 'receiver-1')).toMatchObject({ id: sourceId, orderedCabinetIds: [second] })
+    expect(moved.operations.signalRoutes.find(value => value.receiverId === 'receiver-2')).toMatchObject({ id: targetId, orderedCabinetIds: [third, first] })
+    expect(moved.hardware.processorOrder).toBe(v2.hardware.processorOrder)
+    expect(moved.hardware.receiverOrder).toBe(v2.hardware.receiverOrder)
+    expect(moved.design).toBe(v2.design)
+    expectRoutesMatchAssignments(moved)
+    const back = moveCabinetToReceiverV2(moved, first!, 'receiver-1')
+    expect(chainFor(back, 'receiver-1')).toEqual([second, first])
+    expect(chainFor(back, 'receiver-2')).toEqual([third])
+    expect(back.hardware.assignments.find(value => value.id === assignment.id)).toEqual(assignment)
+  })
+
+  it('removes an empty source route and creates a canonical target route for first assignment', () => {
+    let v2 = withReceivers(2)
+    const cabinet = v2.design.cabinets[0]!.id
+    v2 = assignCabinetsV2(v2, 'receiver-1', [cabinet])
+    const moved = moveCabinetToReceiverV2(v2, cabinet, 'receiver-2')
+    expect(moved.operations.signalRoutes).toHaveLength(1)
+    expect(moved.operations.signalRoutes[0]).toMatchObject({
+      id: asSignalRouteId('route:10:receiver-2'), receiverId: 'receiver-2', orderedCabinetIds: [cabinet],
+    })
+    expectRoutesMatchAssignments(moved)
+  })
+
+  it('rejects an over-capacity or invalid transfer without source removal or partial assignment change', () => {
+    let v2 = withReceivers(2)
+    const [first, second] = v2.design.cabinets.map(value => value.id)
+    v2 = assignCabinetsV2(v2, 'receiver-1', [first!])
+    v2 = assignCabinetsV2(v2, 'receiver-2', [second!])
+    const pixels = v2.design.cabinets[1]!.pixelWidth * v2.design.cabinets[1]!.pixelHeight
+    v2 = updateReceiverV2(v2, 'receiver-2', { pixelCapacity: pixels })
+    const session = { ...createProjectSession('document-1'), project: v2 }
+    expect(() => commitProjectV2(session, source => moveCabinetToReceiverV2(source, first!, 'receiver-2'))).toThrow(/Receiver pixels/)
+    expect(() => commitProjectV2(session, source => moveCabinetToReceiverV2(source, first!, 'missing'))).toThrow(/Unknown Receiver/)
+    expect(session.project).toBe(v2)
+    expect(session.revision).toBe(0)
+    expect(chainFor(v2, 'receiver-1')).toEqual([first])
+    expectRoutesMatchAssignments(v2)
+  })
+
+  it('preserves manually reordered fixed prefix through Auto Allocate, including unlocked assignments', () => {
+    let v2 = withReceivers(8)
+    const [first, fourth, seventh] = [v2.design.cabinets[0]!.id, v2.design.cabinets[3]!.id, v2.design.cabinets[6]!.id]
+    v2 = assignCabinetsV2(v2, 'receiver-1', [fourth, first, seventh])
+    v2 = { ...v2, hardware: { ...v2.hardware, assignments: v2.hardware.assignments.map(value =>
+      value.target.cabinetId === first ? { ...value, locked: false, origin: 'manual' as const } : value) } }
+    const assignment = v2.hardware.assignments.find(value => value.target.cabinetId === first)!
+    const preview = previewHardwareAllocationV2(v2)
+    expect(preview.topology.receivers[0]?.cabinets.slice(0, 3)).toEqual([fourth, first, seventh])
+    const allocated = applyHardwareAllocationV2(v2, preview)
+    expect(chainFor(allocated, 'receiver-1').slice(0, 3)).toEqual([fourth, first, seventh])
+    expect(allocated.hardware.assignments.find(value => value.target.cabinetId === first)).toEqual(assignment)
+    expectRoutesMatchAssignments(allocated)
   })
 })
 

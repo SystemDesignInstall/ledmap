@@ -956,7 +956,7 @@ try {
   await mappingPage.screenshot({ path: resolve(output, 'export-center.png') })
 
   assert.deepEqual(failures, [])
-  console.log('Electron smoke passed: Layout through deterministic Export with pixel-exact PNG, byte-identical JSON/CSV and unre-based shared-Port addresses.')
+  console.log('Electron smoke passed: Composition through deterministic Export with pixel-exact PNG, byte-identical JSON/CSV and unre-based shared-Port addresses.')
   console.log(`Project: ${projectPath}`)
 } finally {
   await close(running.app)

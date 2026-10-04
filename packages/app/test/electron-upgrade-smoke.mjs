@@ -61,11 +61,11 @@ async function scenario(action, name, saveAsPath = null) {
       assert.equal((await page.evaluate(() => window.__ledmap.document())).sourceSchemaVersion, 2)
       assert.equal(await readFile(legacyPath, 'utf8'), legacy)
     } else {
-      await page.waitForFunction(() => window.__ledmap.document().sourceSchemaVersion === 3)
+      await page.waitForFunction(() => window.__ledmap.document().sourceSchemaVersion === 4)
       const target = action === 'save-as' ? saveAsPath : legacyPath
       assert.ok(target)
       const stored = JSON.parse(await readFile(target, 'utf8'))
-      assert.equal(stored.schemaVersion, 3)
+      assert.equal(stored.schemaVersion, 4)
       assert.deepEqual(stored.extensions['vendor.unknown'].ordered, [3, 1, 2])
       if (action === 'save-as') {
         assert.equal(await readFile(legacyPath, 'utf8'), legacy)
@@ -82,5 +82,5 @@ await scenario('upgrade', 'upgrade')
 await scenario('save-as', 'save-as', resolve(directory, 'new-v3.ledmap'))
 const protectedPath = resolve(directory, 'protected.ledmap')
 await scenario('save-as', 'protected', protectedPath)
-console.log('Electron upgrade smoke passed: Cancel, in-place V3 upgrade, Save As preservation and same-path protection.')
+console.log('Electron upgrade smoke passed: Cancel, in-place V4 upgrade, Save As preservation and same-path protection.')
 process.exit(0)

@@ -3,6 +3,7 @@ import { canonicalArrayIndex, compareUtf16, isPlainRecord } from './json.js'
 import { assertOwnDataProperties } from './schema.js'
 import type { JsonValue } from './types.js'
 import type { ProjectV3Wire } from './v3-types.js'
+import type { ProjectV4Wire } from './v4-types.js'
 
 type Scalar = 'string' | 'boolean' | 'positive' | 'nonnegative' | 'signed' | 'finite'
 type Spec = Scalar | { readonly enum: readonly string[] } | { readonly record: Readonly<Record<string, Spec>> }
@@ -14,7 +15,7 @@ const point = { record: { x: 'nonnegative', y: 'nonnegative' } } as const
 const size = { record: { width: 'positive', height: 'positive' } } as const
 const idOnly = { record: { id: 'string' } } as const
 
-const projectShape: Spec = { record: {
+function projectShapeForVersion(version: 3 | 4): Spec { return { record: {
   metadata: { record: { name: { optional: 'string' }, description: { optional: 'string' } } },
   design: { record: {
     screens: { array: { record: {
@@ -55,6 +56,7 @@ const projectShape: Spec = { record: {
     mediaOutputs: { array: { record: { id: 'string', name: 'string', resolution: size } } },
     outputMappings: { array: { record: {
       id: 'string', screenId: 'string', mediaOutputId: 'string',
+      ...(version === 4 ? { position: { optional: { record: { x: 'signed', y: 'signed' } } } as const } : {}),
       mask: { optional: { record: { points: { array: { record: { x: 'finite', y: 'finite' } } } } } },
     } } },
   } },
@@ -84,7 +86,10 @@ const projectShape: Spec = { record: {
   remap: { record: { rules: { array: { record: {
     id: 'string', version: 'string', type: 'string',
   } } } } },
-} }
+} } }
+
+const projectShapeV3 = projectShapeForVersion(3)
+const projectShapeV4 = projectShapeForVersion(4)
 
 function fail(mode: Mode, path: SerializationPath, message: string): never {
   throw new SerializationError(mode === 'document' ? 'SERIALIZATION_INVALID_SCHEMA' : 'SERIALIZATION_INVALID_INPUT', message, path)
@@ -140,5 +145,9 @@ function check(value: unknown, spec: Spec, path: SerializationPath, mode: Mode):
 }
 
 export function checkProjectV3Wire(value: unknown, mode: Mode): ProjectV3Wire {
-  return check(value, projectShape, ['project'], mode) as unknown as ProjectV3Wire
+  return check(value, projectShapeV3, ['project'], mode) as unknown as ProjectV3Wire
+}
+
+export function checkProjectV4Wire(value: unknown, mode: Mode): ProjectV4Wire {
+  return check(value, projectShapeV4, ['project'], mode) as unknown as ProjectV4Wire
 }

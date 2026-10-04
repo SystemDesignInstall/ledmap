@@ -331,7 +331,7 @@ try {
   assert.equal((await documentState()).currentFilePath, projectPath)
   assert.doesNotMatch(await windowTitle(), / \*/)
   const stored = JSON.parse(await readFile(projectPath, 'utf8'))
-  assert.equal(stored.schemaVersion, 3)
+  assert.equal(stored.schemaVersion, 4)
   assert.equal(stored.project.design.screens.length, 5)
   assert.deepEqual(
     stored.project.design.composition.placements.map(entry => [entry.x, entry.y]),
@@ -577,7 +577,7 @@ try {
   await mappingPage.locator('#save-project').click()
   await mappingPage.waitForFunction(() => window.__ledmap.document().dirty === false)
   const hardwareStored = JSON.parse(await readFile(projectPath, 'utf8'))
-  assert.equal(hardwareStored.schemaVersion, 3)
+  assert.equal(hardwareStored.schemaVersion, 4)
   assert.equal(hardwareStored.project.hardware.processors.length, 2)
   assert.equal(hardwareStored.project.hardware.receivers.length, 9)
   assert.doesNotMatch(JSON.stringify(hardwareStored.project.hardware), /HardwareProfile|profileRef/i)

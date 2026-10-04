@@ -122,7 +122,7 @@ try {
   await page.locator('#save-project').click()
   await page.waitForFunction(() => window.__ledmap.document().dirty === false)
   const saved = JSON.parse(await readFile(projectPath, 'utf8'))
-  assert.equal(saved.schemaVersion, 3)
+  assert.equal(saved.schemaVersion, 4)
   assert.deepEqual(saved.project.operations.signalRoutes.map(value => value.orderedCabinetIds), [
     ['screen-1/C03', 'screen-1/C02'], ['screen-1/C01'],
   ])

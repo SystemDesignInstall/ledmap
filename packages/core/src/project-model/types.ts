@@ -136,6 +136,7 @@ export interface OutputMapping {
   readonly id: OutputMappingId
   readonly screenId: ScreenId
   readonly mediaOutputId: MediaOutputCanvasId
+  readonly position?: Point
   readonly mask?: PolygonMask
 }
 

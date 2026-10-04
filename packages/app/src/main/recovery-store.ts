@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { createReadStream } from 'node:fs'
 import { lstat, mkdir, readFile, readdir, unlink } from 'node:fs/promises'
 import { basename, isAbsolute, join } from 'node:path'
-import { loadProjectV3 } from '@ledmap/core'
+import { loadLedMapProject } from '@ledmap/core'
 import { StagedProjectWriter } from './staged-project-write.js'
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
@@ -25,7 +25,7 @@ export interface RecoveryManifest {
   readonly updatedAt: string
   readonly snapshotRevision: number
   readonly observedSavedRevision: number
-  readonly sourceSchemaVersion: 1 | 2 | 3
+  readonly sourceSchemaVersion: 1 | 2 | 3 | 4
   readonly payloadSha256: string
   readonly baselineSourceSha256: string | null
 }
@@ -38,7 +38,7 @@ export interface RecoverySnapshotRequest {
   readonly displayName: string
   readonly snapshotRevision: number
   readonly observedSavedRevision: number
-  readonly sourceSchemaVersion: 1 | 2 | 3
+  readonly sourceSchemaVersion: 1 | 2 | 3 | 4
   readonly baselineSourceSha256: string | null
 }
 
@@ -95,7 +95,7 @@ export function parseRecoveryManifest(text: string): RecoveryManifest {
       !validDate(data['createdAt']) || !validDate(data['updatedAt']) ||
       !validRevision(data['snapshotRevision']) || !validRevision(data['observedSavedRevision']) ||
       data['observedSavedRevision'] > data['snapshotRevision'] ||
-      (data['sourceSchemaVersion'] !== 1 && data['sourceSchemaVersion'] !== 2 && data['sourceSchemaVersion'] !== 3) ||
+      (data['sourceSchemaVersion'] !== 1 && data['sourceSchemaVersion'] !== 2 && data['sourceSchemaVersion'] !== 3 && data['sourceSchemaVersion'] !== 4) ||
       typeof data['payloadSha256'] !== 'string' || !hashPattern.test(data['payloadSha256']) ||
       (data['baselineSourceSha256'] !== null &&
         (typeof data['baselineSourceSha256'] !== 'string' || !hashPattern.test(data['baselineSourceSha256'])))) {
@@ -168,13 +168,13 @@ export class RecoveryStore {
           Buffer.byteLength(input.text, 'utf8') > 512 * 1024 * 1024 ||
           (input.sourcePath !== null && (typeof input.sourcePath !== 'string' || !isAbsolute(input.sourcePath))) ||
           typeof input.displayName !== 'string' || input.displayName.length > 200 ||
-          (input.sourceSchemaVersion !== 1 && input.sourceSchemaVersion !== 2 && input.sourceSchemaVersion !== 3) ||
+          (input.sourceSchemaVersion !== 1 && input.sourceSchemaVersion !== 2 && input.sourceSchemaVersion !== 3 && input.sourceSchemaVersion !== 4) ||
           (input.baselineSourceSha256 !== null && (typeof input.baselineSourceSha256 !== 'string' ||
             !hashPattern.test(input.baselineSourceSha256))) ||
           (previous?.sessionEpoch === input.sessionEpoch && previous.snapshotRevision > input.snapshotRevision)) {
         throw new Error('Invalid recovery revision.')
       }
-      const payload = loadProjectV3(input.text)
+      const payload = loadLedMapProject(input.text)
       if (!payload.project) throw new Error('Invalid recovery payload.')
       const payloadFile = `${input.recoveryId}-${randomUUID()}.json`
       const payloadPath = this.payloadPath(payloadFile)
@@ -182,7 +182,7 @@ export class RecoveryStore {
       await this.writer.write(payloadPath, input.text)
       const stored = await readRegularFile(payloadPath, 512 * 1024 * 1024)
       if (sha256(stored) !== sha256(bytes)) throw new Error('Recovery payload hash mismatch.')
-      loadProjectV3(stored.toString('utf8'))
+      loadLedMapProject(stored.toString('utf8'))
       const now = new Date().toISOString()
       const manifest = parseRecoveryManifest(JSON.stringify({
         format: 'ledmap-recovery', manifestVersion: 1, recoveryId: input.recoveryId,
@@ -216,7 +216,7 @@ export class RecoveryStore {
         return
       }
       const updated = parseRecoveryManifest(JSON.stringify({ ...previous, sourcePath: input.sourcePath,
-        sourceSchemaVersion: 3, observedSavedRevision: previous.sessionEpoch === input.sessionEpoch
+        sourceSchemaVersion: 4, observedSavedRevision: previous.sessionEpoch === input.sessionEpoch
           ? input.savedRevision : previous.observedSavedRevision,
         baselineSourceSha256: input.baselineSourceSha256, updatedAt: new Date().toISOString() }))
       await this.writer.write(this.manifestPath(input.recoveryId), JSON.stringify(updated))
@@ -248,7 +248,7 @@ export class RecoveryStore {
         const payloadPath = this.payloadPath(manifest.payloadFile)
         const bytes = await readRegularFile(payloadPath, 512 * 1024 * 1024)
         if (sha256(bytes) !== manifest.payloadSha256) continue
-        loadProjectV3(bytes.toString('utf8'))
+        loadLedMapProject(bytes.toString('utf8'))
         let classification: RecoveryCandidate['classification'] = 'UNSAVED'
         if (manifest.sourcePath) {
           try {

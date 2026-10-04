@@ -2,8 +2,7 @@ import {
   createEmptyProjectV2,
   createProjectV2,
   loadLedMapProject,
-  loadProjectV3,
-  serializeProjectV3,
+  serializeProjectV4,
   validateProjectV2Structural,
   DomainError,
   type JsonObject,
@@ -20,7 +19,7 @@ export interface ProjectSession<TProject = LedMapProjectV2> {
   readonly savedStateId: number | null
   readonly documentId: string
   readonly currentFilePath: string | null
-  readonly sourceSchemaVersion: 1 | 2 | 3
+  readonly sourceSchemaVersion: 1 | 2 | 3 | 4
   readonly extensions: JsonObject
 }
 
@@ -37,7 +36,7 @@ export function createProjectSession(documentId: string): ProjectSession {
     savedStateId: 0,
     documentId,
     currentFilePath: null,
-    sourceSchemaVersion: 3,
+    sourceSchemaVersion: 4,
     extensions: Object.freeze({}),
   })
 }
@@ -60,11 +59,11 @@ export function loadProjectSession(text: string, currentFilePath: string, docume
 }
 
 export function recoverProjectSession(text: string, documentId: string): ProjectSession {
-  const loaded = loadProjectV3(text)
+  const loaded = loadLedMapProject(text)
   projectV2WorkspaceReadModel(loaded.project)
   return Object.freeze({ project: loaded.project, extensions: loaded.extensions, documentId,
     revision: 1, savedRevision: 0, stateId: 1, savedStateId: null,
-    currentFilePath: null, sourceSchemaVersion: 3 })
+    currentFilePath: null, sourceSchemaVersion: 4 })
 }
 
 export function sessionWorkspaceProject(session: ProjectSession): Project {
@@ -105,7 +104,7 @@ export function restoreProjectSessionState(session: ProjectSession, project: Led
 }
 
 export function serializeProjectSession(session: ProjectSession): string {
-  return serializeProjectV3({ project: session.project, extensions: session.extensions })
+  return serializeProjectV4({ project: session.project, extensions: session.extensions })
 }
 
 export function markProjectSessionSaved(
@@ -120,5 +119,5 @@ export function markProjectSessionSaved(
   if (!Number.isSafeInteger(savedStateId) || savedStateId < 0 || savedStateId > savedRevision) {
     throw new DomainError('PROJECT_STATE_ID_INVALID', 'Saved state identity is invalid')
   }
-  return Object.freeze({ ...session, savedRevision, savedStateId, currentFilePath, sourceSchemaVersion: 3 })
+  return Object.freeze({ ...session, savedRevision, savedStateId, currentFilePath, sourceSchemaVersion: 4 })
 }

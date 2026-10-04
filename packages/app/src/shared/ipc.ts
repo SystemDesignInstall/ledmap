@@ -61,7 +61,7 @@ export interface RecoverySnapshotRequest {
   readonly displayName: string
   readonly snapshotRevision: number
   readonly observedSavedRevision: number
-  readonly sourceSchemaVersion: 1 | 2 | 3
+  readonly sourceSchemaVersion: 1 | 2 | 3 | 4
   readonly baselineSourceSha256: string | null
 }
 

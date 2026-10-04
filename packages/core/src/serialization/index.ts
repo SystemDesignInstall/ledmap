@@ -4,6 +4,8 @@ export { migrateEditableProjectDocument, migrateProjectDocument } from './migrat
 export { SerializationError } from './errors.js'
 export { loadProjectV3, parseProjectV3Document, serializeProjectV3 } from './v3.js'
 export type { LedMapDocumentV3, ProjectV3Wire } from './v3-types.js'
+export { loadProjectV4, parseProjectV4Document, serializeProjectV4 } from './v4.js'
+export type { LedMapDocumentV4, ProjectV4Wire } from './v4-types.js'
 export { loadLedMapProject } from './dispatch.js'
 export type { LoadedLedMapProject } from './dispatch.js'
 export type { SerializationErrorCode, SerializationPath } from './errors.js'

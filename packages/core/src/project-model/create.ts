@@ -49,6 +49,7 @@ function clonePolygonMask(mask: PolygonMask): PolygonMask {
 function cloneOutputMapping(mapping: OutputMapping): OutputMapping {
   return Object.freeze({
     ...mapping,
+    ...(mapping.position === undefined ? {} : { position: Object.freeze({ ...mapping.position }) }),
     ...(mapping.mask === undefined ? {} : { mask: clonePolygonMask(mapping.mask) }),
   })
 }

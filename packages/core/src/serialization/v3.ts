@@ -27,14 +27,14 @@ function invalid(path: readonly (string | number)[], message: string): never {
   throw new SerializationError('SERIALIZATION_INVALID_SCHEMA', message, path)
 }
 
-function validateStructural(project: LedMapProjectV2): void {
+export function validateStructural(project: LedMapProjectV2): void {
   const diagnostic = validateProjectV2Structural(project)[0]
   if (diagnostic) {
     throw new SerializationError('SERIALIZATION_PROJECT_INVALID', `${diagnostic.code}: ${diagnostic.message}`, ['project', ...diagnostic.path])
   }
 }
 
-function fromWire(wire: ProjectV3Wire): LedMapProjectV2 {
+export function fromWire(wire: ProjectV3Wire): LedMapProjectV2 {
   return {
     metadata: { ...wire.metadata },
     design: {

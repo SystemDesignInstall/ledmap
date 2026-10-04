@@ -45,7 +45,7 @@ describe('AutosaveCoordinator', () => {
     expect(document.session).toBe(before)
     expect(sessionDirty(document.session)).toBe(true)
     expect(document.session.currentFilePath).toBeNull()
-    expect(document.session.sourceSchemaVersion).toBe(3)
+    expect(document.session.sourceSchemaVersion).toBe(4)
   })
 
   it('does not reschedule a no-op and writes during continuous edits at 30 seconds', async () => {

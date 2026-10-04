@@ -2,9 +2,10 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createProjectSession, serializeProjectSession } from '../src/renderer/project-session.js'
+import { createProjectSession, recoverProjectSession, serializeProjectSession } from '../src/renderer/project-session.js'
 import { RecoveryStore, parseRecoveryManifest, sha256, type RecoverySnapshotRequest } from '../src/main/recovery-store.js'
 import { StagedProjectWriter } from '../src/main/staged-project-write.js'
+import { createEmptyProjectV2, serializeProjectV3 } from '@ledmap/core'
 
 const directories: string[] = []
 const id = '11111111-1111-4111-8111-111111111111'
@@ -20,7 +21,7 @@ async function fixture(): Promise<{ root: string; source: string }> {
 
 function snapshot(overrides: Partial<RecoverySnapshotRequest> = {}): RecoverySnapshotRequest {
   return { recoveryId: id, sessionEpoch: epoch, text, sourcePath: null, displayName: 'Untitled',
-    snapshotRevision: 1, observedSavedRevision: 0, sourceSchemaVersion: 3,
+    snapshotRevision: 1, observedSavedRevision: 0, sourceSchemaVersion: 4,
     baselineSourceSha256: null, ...overrides }
 }
 
@@ -29,7 +30,7 @@ afterEach(async () => {
 })
 
 describe('RecoveryStore', () => {
-  it('commits one verified V3 payload behind a versioned manifest', async () => {
+  it('commits one verified V4 payload behind a versioned manifest', async () => {
     const { root } = await fixture()
     const store = new RecoveryStore(root)
     const manifest = await store.writeSnapshot(snapshot())
@@ -37,6 +38,17 @@ describe('RecoveryStore', () => {
       snapshotRevision: 1, observedSavedRevision: 0, payloadSha256: sha256(Buffer.from(text)) })
     expect(await readFile(join(root, 'payloads', manifest.payloadFile), 'utf8')).toBe(text)
     expect((await store.candidates())[0]).toMatchObject({ classification: 'UNSAVED' })
+  })
+
+  it('keeps old V3 recovery payloads discoverable and recoverable', async () => {
+    const { root } = await fixture()
+    const store = new RecoveryStore(root)
+    const legacyText = serializeProjectV3({ project: createEmptyProjectV2() })
+    await store.writeSnapshot(snapshot({ text: legacyText, sourceSchemaVersion: 3 }))
+    const candidate = (await store.candidates())[0]
+    expect(candidate?.text).toBe(legacyText)
+    expect(candidate?.manifest.sourceSchemaVersion).toBe(3)
+    expect(recoverProjectSession(candidate!.text, 'recovered').project).toEqual(createEmptyProjectV2())
   })
 
   it('keeps the old authoritative manifest and payload when a new manifest write fails', async () => {

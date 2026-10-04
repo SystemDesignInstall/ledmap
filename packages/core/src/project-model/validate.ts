@@ -188,6 +188,9 @@ export function assertProjectV2EditorStructure(project: LedMapProjectV2): void {
     if (!mediaOutputs.has(mapping.mediaOutputId)) {
       fail('PROJECT_UNKNOWN_MEDIA_OUTPUT', `OutputMapping ${mapping.id} references unknown MediaOutputCanvas ${mapping.mediaOutputId}`)
     }
+    if (mapping.position !== undefined && (!Number.isSafeInteger(mapping.position.x) || !Number.isSafeInteger(mapping.position.y))) {
+      fail('PROJECT_INVALID_GEOMETRY', `OutputMapping ${mapping.id} position must use signed safe integers`)
+    }
     for (const point of mapping.mask?.points ?? []) {
       if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) {
         fail('PROJECT_INVALID_GEOMETRY', `OutputMapping ${mapping.id} mask must use finite coordinates`)

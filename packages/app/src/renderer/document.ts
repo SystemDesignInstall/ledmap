@@ -137,7 +137,7 @@ export class ProjectDocumentController {
       this.endHistoryGroup()
       const snapshot = this.current
       let effectiveSaveAs = saveAs
-      if (!saveAs && snapshot.currentFilePath && snapshot.sourceSchemaVersion < 3) {
+      if (!saveAs && snapshot.currentFilePath && snapshot.sourceSchemaVersion < 4) {
         if (!confirmLegacyUpgrade) throw new Error('Legacy project upgrade requires explicit confirmation.')
         const choice = await confirmLegacyUpgrade()
         if (this.current.documentId !== snapshot.documentId || choice === 'cancel') return false
@@ -145,7 +145,7 @@ export class ProjectDocumentController {
       }
       const text = serializeProjectSession(snapshot)
       const result = await write({ currentFilePath: snapshot.currentFilePath, text, saveAs: effectiveSaveAs,
-        ...(effectiveSaveAs && snapshot.sourceSchemaVersion < 3 && snapshot.currentFilePath
+        ...(effectiveSaveAs && snapshot.sourceSchemaVersion < 4 && snapshot.currentFilePath
           ? { preserveOriginal: true } : {}) })
       if (result.canceled || !result.filePath || this.current.documentId !== snapshot.documentId) return false
       this.current = markProjectSessionSaved(this.current, snapshot.documentId, snapshot.revision,

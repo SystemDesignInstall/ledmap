@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { lstat, mkdtemp, open, readFile, rm, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createProjectV2, loadEditableProject, loadProjectV3, serializeEditableProject } from '@ledmap/core'
+import { createProjectV2, loadEditableProject, loadProjectV4, serializeEditableProject, serializeProjectV3 } from '@ledmap/core'
 import { StagedProjectWriter } from '../src/main/staged-project-write.js'
 import { addScreenV2, setScreenPositionV2 } from '../src/renderer/v2-commands.js'
 import { ProjectDocumentController } from '../src/renderer/document.js'
@@ -74,16 +74,16 @@ function legacyV2(): string {
 }
 
 describe('ProjectSession document lifecycle', () => {
-  it('starts with one clean V2 owner and saves native schema v3', async () => {
+  it('starts with one clean V2 owner and saves native schema v4', async () => {
     const document = controller()
     expect(document.session.project.design.screens).toEqual([])
     expect(sessionDirty(document.session)).toBe(false)
-    expect(document.session.sourceSchemaVersion).toBe(3)
+    expect(document.session.sourceSchemaVersion).toBe(4)
     document.transactV2(project => addScreenV2(project))
     expect(document.session.revision).toBe(1)
     expect(sessionDirty(document.session)).toBe(true)
     const saved = await document.save(false, async request => {
-      expect(JSON.parse(request.text)).toMatchObject({ format: 'ledmap', schemaVersion: 3 })
+      expect(JSON.parse(request.text)).toMatchObject({ format: 'ledmap', schemaVersion: 4 })
       return { canceled: false, filePath: 'project.ledmap' }
     })
     expect(saved).toBe(true)
@@ -92,23 +92,26 @@ describe('ProjectSession document lifecycle', () => {
     expect(sessionDirty(document.session)).toBe(false)
   })
 
-  it('opens v1, v2 and v3 through version dispatch without replacing the session on invalid input', async () => {
+  it('opens v1, v2, v3 and v4 through version dispatch without replacing the session on invalid input', async () => {
     const document = controller()
     expect(await document.open(async () => ({ canceled: false, filePath: 'legacy.ledmap', text: legacyV1() }))).toBe('opened')
     expect(document.session.sourceSchemaVersion).toBe(1)
     expect(document.session.project.design.screens[0]?.name).toBe('Legacy')
-    const v3 = serializeProjectSession(document.session)
-    expect(JSON.parse(v3)).toMatchObject({ format: 'ledmap', schemaVersion: 3 })
+    const v3 = serializeProjectV3({ project: document.session.project })
+    const v4 = serializeProjectSession(document.session)
+    expect(JSON.parse(v4)).toMatchObject({ format: 'ledmap', schemaVersion: 4 })
     expect(await document.open(async () => ({ canceled: false, filePath: 'next.ledmap', text: legacyV2() }))).toBe('opened')
     expect(document.session.sourceSchemaVersion).toBe(2)
     expect(await document.open(async () => ({ canceled: false, filePath: 'new.ledmap', text: v3 }))).toBe('opened')
     expect(document.session.sourceSchemaVersion).toBe(3)
+    expect(await document.open(async () => ({ canceled: false, filePath: 'current.ledmap', text: v4 }))).toBe('opened')
+    expect(document.session.sourceSchemaVersion).toBe(4)
     const before = document.session
     await expect(document.open(async () => ({ canceled: false, filePath: 'bad.ledmap', text: '{' }))).rejects.toThrow()
     expect(document.session).toBe(before)
   })
 
-  it('preserves existing four-by-four geometry when opening v1 or v2 and saving v3', async () => {
+  it('preserves existing four-by-four geometry when opening v1 or v2 and saving v4', async () => {
     const v1 = legacyV1(true)
     const v2 = serializeEditableProject({ project: loadEditableProject(v1).project })
     for (const [text, version] of [[v1, 1], [v2, 2]] as const) {
@@ -119,7 +122,7 @@ describe('ProjectSession document lifecycle', () => {
       expect(project.design.cabinets[0]).toMatchObject({ moduleColumns: 4, moduleRows: 4, pixelWidth: 128, pixelHeight: 128 })
       expect(project.design.modules).toHaveLength(16)
       const reopened = loadProjectSession(serializeProjectSession(document.session), 'upgraded.ledmap', 'reopened')
-      expect(reopened.sourceSchemaVersion).toBe(3)
+      expect(reopened.sourceSchemaVersion).toBe(4)
       expect(reopened.project).toEqual(project)
     }
   })
@@ -199,7 +202,7 @@ describe('ProjectSession document lifecycle', () => {
     let writerCalled = false
     expect(await document.save(false, async request => {
       writerCalled = true
-      expect(loadProjectV3(request.text).project.metadata).toEqual({ name: 'V2-only name' })
+      expect(loadProjectV4(request.text).project.metadata).toEqual({ name: 'V2-only name' })
       return { canceled: false, filePath: 'project.ledmap' }
     })).toBe(true)
     expect(writerCalled).toBe(true)
@@ -246,10 +249,10 @@ describe('ProjectSession document lifecycle', () => {
     expect(await document.save(false, async request => {
       expect(request.saveAs).toBe(false)
       expect(request.currentFilePath).toBe('legacy.ledmap')
-      expect(loadProjectV3(request.text).project).toEqual(document.session.project)
+      expect(loadProjectV4(request.text).project).toEqual(document.session.project)
       return { canceled: false, filePath: 'legacy.ledmap' }
     }, async () => { prompts += 1; return 'upgrade' })).toBe(true)
-    expect(document.session.sourceSchemaVersion).toBe(3)
+    expect(document.session.sourceSchemaVersion).toBe(4)
     expect(await document.save(false, async request => {
       expect(request.saveAs).toBe(false)
       return { canceled: false, filePath: 'legacy.ledmap' }
@@ -265,7 +268,7 @@ describe('ProjectSession document lifecycle', () => {
       return { canceled: false, filePath: 'upgraded.ledmap' }
     }, async () => 'save-as')).toBe(true)
     expect(document.session.currentFilePath).toBe('upgraded.ledmap')
-    expect(document.session.sourceSchemaVersion).toBe(3)
+    expect(document.session.sourceSchemaVersion).toBe(4)
 
     const direct = controller()
     await direct.open(async () => ({ canceled: false, filePath: 'legacy.ledmap', text: legacyV2() }))
@@ -320,8 +323,8 @@ describe('ProjectSession document lifecycle', () => {
           expect(await readFile(path, 'utf8')).toBe(request.text)
           return { canceled: false, filePath: path }
         }, async () => 'upgrade')).toBe(true)
-        expect(loadProjectV3(await readFile(path, 'utf8')).project).toEqual(document.session.project)
-        expect(document.session.sourceSchemaVersion).toBe(3)
+        expect(loadProjectV4(await readFile(path, 'utf8')).project).toEqual(document.session.project)
+        expect(document.session.sourceSchemaVersion).toBe(4)
         expect(document.session.savedRevision).toBe(document.session.revision)
       }
     } finally {
@@ -356,13 +359,13 @@ describe('ProjectSession document lifecycle', () => {
     await document.open(async () => ({ canceled: false, filePath: 'legacy.ledmap', text: legacyV1() }))
     const choice = deferred<'upgrade' | 'save-as' | 'cancel'>()
     const saving = document.save(false, async request => {
-      expect(loadProjectV3(request.text).project.design.composition.placements[0]?.x).toBe(0)
+      expect(loadProjectV4(request.text).project.design.composition.placements[0]?.x).toBe(0)
       return { canceled: false, filePath: 'legacy.ledmap' }
     }, () => choice.promise)
     document.transactV2(project => setScreenPositionV2(project, 'screen', 50, 60))
     choice.resolve('upgrade')
     expect(await saving).toBe(true)
-    expect(document.session.sourceSchemaVersion).toBe(3)
+    expect(document.session.sourceSchemaVersion).toBe(4)
     expect(document.session.savedRevision).toBe(0)
     expect(sessionDirty(document.session)).toBe(true)
 

@@ -96,12 +96,12 @@ describe('Signal Chain integration', () => {
     expect(controller.session.project).toEqual(moved)
   })
 
-  it('preserves route identity and order through V3 Save/Open and recovery', () => {
+  it('preserves route identity and order through V4 Save/Open and recovery', () => {
     const { project, ids } = readyProject()
     const reordered = reorderSignalRouteV2(project, 'receiver-1', [ids[2]!, ids[0]!, ids[1]!])
     const session = { ...createProjectSession('document-1'), project: reordered }
     const text = serializeProjectSession(session)
-    expect(JSON.parse(text).schemaVersion).toBe(3)
+    expect(JSON.parse(text).schemaVersion).toBe(4)
     expect(loadProjectSession(text, 'test.ledmap', 'document-2').project.operations.signalRoutes).toEqual(reordered.operations.signalRoutes)
     expect(recoverProjectSession(text, 'document-3').project.operations.signalRoutes).toEqual(reordered.operations.signalRoutes)
   })

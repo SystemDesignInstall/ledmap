@@ -3,7 +3,9 @@ import { createEmptyProjectV2 } from '@ledmap/core'
 import { ProjectDocumentController } from '../src/renderer/document.js'
 import { addScreenV2, deleteScreensV2 } from '../src/renderer/v2-commands.js'
 import {
-  addMediaOutputV2, addOutputMappingV2, deleteMediaOutputV2, deleteOutputMappingV2,
+  addMediaOutputV2, addOutputMappingV2, addOutputMaskPointV2, deleteMediaOutputV2, deleteOutputMappingV2,
+  moveOutputMaskPointV2, removeOutputMaskPointV2, reorderOutputMappingV2, setOutputMappingMaskV2,
+  splitOutputMappingIntoRowsV2,
   updateMediaOutputV2, updateOutputMappingV2,
 } from '../src/renderer/v2-output-commands.js'
 import { loadProjectSession, serializeProjectSession } from '../src/renderer/project-session.js'
@@ -78,5 +80,71 @@ describe('direct V2 Output Mapping commands', () => {
     expect(JSON.parse(text).schemaVersion).toBe(5)
     expect(loadProjectSession(text, 'output.ledmap', 'document-2').project.content.outputMappings[0]?.outputRect)
       .toMatchObject({ x: 8, y: 9 })
+  })
+
+  it('edits rects, rotations, flips and names atomically', () => {
+    const { output, screenId, mediaOutputId } = fixture()
+    const base = addOutputMappingV2(output, screenId, mediaOutputId, { x: 0, y: 0 })
+    const id = base.content.outputMappings[0]!.id
+    const screen = base.design.screens[0]!
+    const rotated = updateOutputMappingV2(base, id, { inputRotation: 90, outputRotation: 0, flipX: true, name: 'Slice A' })
+    expect(rotated.content.outputMappings[0]).toMatchObject({ inputRotation: 90, flipY: false, name: 'Slice A' })
+    expect(() => updateOutputMappingV2(base, id, { inputRotation: 45 as never })).toThrow(/PROJECT_INVALID_GEOMETRY/)
+    expect(() => updateOutputMappingV2(base, id,
+      { screenRect: { x: 0, y: 0, width: screen.resolution.width + 1, height: 1 } })).toThrow(/exceeds Screen/)
+    expect(() => updateOutputMappingV2(base, id, { name: '' })).toThrow(/PROJECT_INVALID_NAME/)
+  })
+
+  it('rejects a patch with one invalid field without partial application', () => {
+    const { output, screenId, mediaOutputId } = fixture()
+    const base = addOutputMappingV2(output, screenId, mediaOutputId, { x: 5, y: 5 })
+    const id = base.content.outputMappings[0]!.id
+    expect(() => updateOutputMappingV2(base, id, { position: { x: 1, y: 1 }, inputRotation: 45 as never }))
+      .toThrow(/PROJECT_INVALID_GEOMETRY/)
+    expect(base.content.outputMappings[0]?.outputRect).toMatchObject({ x: 5, y: 5 })
+  })
+
+  it('manages polygon masks with a 3-point minimum for enabled masks', () => {
+    const { output, screenId, mediaOutputId } = fixture()
+    const base = addOutputMappingV2(output, screenId, mediaOutputId, { x: 0, y: 0 })
+    const id = base.content.outputMappings[0]!.id
+    const triangle = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 0, y: 10 }]
+    const masked = setOutputMappingMaskV2(base, id, { enabled: true, points: triangle })
+    expect(masked.content.outputMappings[0]?.mask?.points).toHaveLength(3)
+    expect(() => setOutputMappingMaskV2(base, id, { enabled: true, points: [{ x: 0, y: 0 }] })).toThrow(/at least 3/)
+    const moved = moveOutputMaskPointV2(masked, id, 0, { x: 1, y: 1 })
+    expect(moved.content.outputMappings[0]?.mask?.points[0]).toEqual({ x: 1, y: 1 })
+    const added = addOutputMaskPointV2(moved, id, { x: 5, y: 5 })
+    expect(added.content.outputMappings[0]?.mask?.points).toHaveLength(4)
+    const removed = removeOutputMaskPointV2(added, id, 0)
+    expect(removed.content.outputMappings[0]?.mask?.points).toHaveLength(3)
+    expect(() => removeOutputMaskPointV2(removed, id, 0)).toThrow(/at least 3/)
+  })
+
+  it('reorders mappings explicitly inside one Media Output', () => {
+    const { output, screenId, mediaOutputId } = fixture()
+    const one = addOutputMappingV2(output, screenId, mediaOutputId, { x: 0, y: 0 })
+    const two = addOutputMappingV2(one, screenId, mediaOutputId, { x: 10, y: 0 })
+    const ids = two.content.outputMappings.map(value => value.id)
+    const reordered = reorderOutputMappingV2(two, mediaOutputId, ids[0]!, 1)
+    expect(reordered.content.mediaOutputs[0]?.mappingOrder).toEqual([ids[1], ids[0]])
+    expect(reorderOutputMappingV2(two, mediaOutputId, ids[0]!, 0)).toBe(two)
+    expect(() => reorderOutputMappingV2(two, mediaOutputId, ids[0]!, 5)).toThrow(/out of range/)
+  })
+
+  it('splits one mapping into rows with proportional screen parts stacked in output', () => {
+    const { output, screenId, mediaOutputId } = fixture()
+    const screen = output.design.screens[0]!
+    const base = addOutputMappingV2(output, screenId, mediaOutputId, { x: 0, y: 0 })
+    const id = base.content.outputMappings[0]!.id
+    const split = splitOutputMappingIntoRowsV2(base, id, 3)
+    expect(split.content.outputMappings).toHaveLength(3)
+    expect(split.content.mediaOutputs[0]?.mappingOrder).toHaveLength(3)
+    const widths = split.content.outputMappings.map(value => value.screenRect.width)
+    expect(widths.reduce((a, b) => a + b, 0)).toBe(screen.resolution.width)
+    expect(new Set(widths).size).toBeLessThanOrEqual(2)
+    const ys = split.content.outputMappings.map(value => value.outputRect.y)
+    expect(ys[1]).toBe(ys[0]! + split.content.outputMappings[0]!.outputRect.height)
+    expect(split.content.outputMappings.every(value => value.mask === undefined)).toBe(true)
   })
 })

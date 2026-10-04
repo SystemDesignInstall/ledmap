@@ -202,7 +202,7 @@ try {
   assert.equal(await page.locator('#empty h2').innerText(), 'No screens yet')
   assert.match(await page.locator('#empty').innerText(), /Add your first Screen/)
   assert.equal((await documentState()).dirty, false)
-  assert.match(await page.locator('.mode-switcher').innerText(), /Layout\s+Mapping\s+Output Mapping\s+Hardware\s+Test\s+Export/)
+  assert.match(await page.locator('.mode-switcher').innerText(), /Composition\s+Mapping\s+Output Mapping\s+Hardware\s+Test\s+Export/)
   assert.equal((await page.locator('.mode-switcher .mode:disabled').count()), 0)
   assert.doesNotMatch(await page.locator('body').innerText(), /ALPHA|In-memory session/)
   await page.locator('#test-mode').click()
@@ -226,8 +226,25 @@ try {
   await page.locator('#project-tree [data-type="screen"]').filter({ hasText: 'Screen 3' }).click()
   await page.locator('input[aria-label="Screen Columns"]').fill('5')
   await page.locator('input[aria-label="Screen Columns"]').blur()
-  await page.locator('select[aria-label="Screen Numbering"]').selectOption('column')
-  await page.locator('button[aria-label="Screen Snake"]').click()
+  const orderBefore = await page.evaluate(() => window.__ledmap.dump().map(screen => screen.order))
+  const idsBefore = await page.evaluate(() => window.__ledmap.dump().map(screen => screen.cabinets.map(cabinet => cabinet.id)))
+  assert.equal(await page.locator('select[aria-label="Screen Numbering"]').count(), 0)
+  assert.equal(await page.locator('select[aria-label="Screen Direction"]').count(), 0)
+  assert.equal(await page.locator('button[aria-label="Screen Snake"]').count(), 0)
+  assert.equal(await page.locator('[data-overlay="signal"]').count(), 0)
+  assert.ok(!/Numbering|Direction|Snake|Logical order|Signal/.test(await page.locator('#properties').innerText()))
+  for (const [modeId, modeText] of [
+    ['layout-mode', 'Composition'], ['mapping-mode', 'Mapping'], ['output-mapping-mode', 'Output Mapping'],
+    ['hardware-mode', 'Hardware'], ['test-mode', 'Test'], ['export-mode', 'Export'],
+  ]) {
+    assert.equal(await page.locator(`#${modeId}`).innerText(), modeText)
+  }
+  for (const actionId of ['new-project', 'open-project', 'undo-project', 'redo-project', 'save-project', 'save-project-as']) {
+    assert.equal(await page.locator(`#${actionId}`).count(), 1)
+  }
+  assert.match(await page.locator('#layout-workspace .canvas-heading .eyebrow').innerText(), /COMPOSITION WORKSPACE/)
+  assert.deepEqual(await page.evaluate(() => window.__ledmap.dump().map(screen => screen.order)), orderBefore)
+  assert.deepEqual(await page.evaluate(() => window.__ledmap.dump().map(screen => screen.cabinets.map(cabinet => cabinet.id))), idsBefore)
 
   const screenNode = name => page.locator('#project-tree [data-type="screen"]').filter({ hasText: name })
   await screenNode('Screen 1').click()
@@ -253,8 +270,10 @@ try {
   await setScreenPosition(page, 'Screen 1', -600, 0)
   await setScreenPosition(page, 'Screen 2', 100, 0)
   await screenNode('Screen 1').click()
-  await page.locator('#grid-snap').click()
-  assert.deepEqual(await page.evaluate(() => window.__ledmap.snap()), { grid: true, smart: true, step: 10 })
+  await page.locator('#snap-grid').click()
+  assert.deepEqual(await page.evaluate(() => window.__ledmap.snap()), {
+    enabled: true, sources: { grid: true, edges: true, centers: true, guides: true }, step: 10,
+  })
   await page.locator('#fit-project').click()
   const canvasBox = await page.locator('#project-canvas').boundingBox()
   assert.ok(canvasBox)
@@ -306,9 +325,27 @@ try {
   assert.equal((await dump()).length, 5)
 
   await page.locator('[data-overlay="modules"]').click()
-  await page.locator('[data-overlay="signal"]').click()
   assert.equal(await page.locator('[data-overlay="modules"]').getAttribute('aria-pressed'), 'true')
-  assert.equal(await page.locator('[data-overlay="signal"]').getAttribute('aria-pressed'), 'true')
+  assert.equal(await page.locator('[data-overlay="signal"]').count(), 0)
+  await page.evaluate(() => {
+    const proto = CanvasRenderingContext2D.prototype
+    if (!proto.fillText.__ledmapWrapped) {
+      const original = proto.fillText
+      const wrapped = function (...args) {
+        window.__drawnText = window.__drawnText ?? []
+        window.__drawnText.push(args[0])
+        return original.apply(this, args)
+      }
+      wrapped.__ledmapWrapped = true
+      proto.fillText = wrapped
+    }
+    window.__drawnText = []
+  })
+  await page.locator('#fit-project').click()
+  await page.locator('#actual-size').click()
+  const drawnText = await page.evaluate(() => [...new Set(window.__drawnText ?? [])].filter(text => typeof text === 'string'))
+  assert.ok(drawnText.some(text => /C\d{2}/.test(text)), 'cabinet identities render without signal order')
+  assert.equal(drawnText.filter(text => text.startsWith('#')).length, 0)
   await page.locator('#fit-project').click()
   await page.locator('#actual-size').click()
   assert.equal((await page.evaluate(() => window.__ledmap.camera())).zoom, 1)
@@ -321,8 +358,8 @@ try {
   const expected = await dump()
   assert.equal(expected.length, 5)
   assert.equal(expected[2].columns, 5)
-  assert.equal(expected[2].numbering, 'column')
-  assert.equal(expected[2].snake, false)
+  assert.equal(expected[2].numbering, 'row')
+  assert.equal(expected[2].snake, true)
   assert.equal((await documentState()).dirty, true)
   assert.match(await windowTitle(), /Untitled\.ledmap \*/)
 

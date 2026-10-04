@@ -129,6 +129,7 @@ function drawScreen(
   view: HardwareCanvasView,
   camera: Camera,
   linked: ReadonlySet<string>,
+  sequence: ReadonlyMap<string, { readonly number: number; readonly first: boolean; readonly last: boolean }>,
 ): void {
   const origin = screenPoint(camera, { x: screen.x, y: screen.y })
   const width = screen.screen.resolution.width * camera.zoom
@@ -178,6 +179,23 @@ function drawScreen(
     const lineHeight = Math.max(9, Math.min(12, ch / (lines.length + 1)))
     lines.forEach((line, index) => ctx.fillText(line, topLeft.x + cw / 2, topLeft.y + ch / 2 + (index - (lines.length - 1) / 2) * lineHeight))
     ctx.restore()
+    const position = sequence.get(cabinet.sourceId)
+    if (position && cw >= 24 && ch >= 24) {
+      ctx.fillStyle = '#0b1118'
+      ctx.fillRect(topLeft.x + cw - 23, topLeft.y + 2, 21, 17)
+      ctx.fillStyle = '#fff3a6'
+      ctx.font = '700 10px "Segoe UI", sans-serif'
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText(String(position.number), topLeft.x + cw - 12.5, topLeft.y + 10)
+      if (position.first || position.last) {
+        ctx.fillStyle = '#0b1118'
+        ctx.fillRect(topLeft.x + cw - 23, topLeft.y + ch - 17, 21, 15)
+        ctx.fillStyle = '#7fdac0'
+        ctx.font = '700 9px "Segoe UI", sans-serif'
+        ctx.fillText(position.first && position.last ? 'F/L' : position.first ? 'F' : 'L', topLeft.x + cw - 12.5, topLeft.y + ch - 9)
+      }
+    }
   }
 }
 
@@ -189,7 +207,11 @@ export function drawHardwareCanvas(canvas: HTMLCanvasElement, project: Project, 
   ctx.clearRect(0, 0, width, height)
   drawGrid(ctx, width, height, camera)
   const linked = linkedCabinets(project, view.selection)
-  for (const screen of project.screens) drawScreen(ctx, project, screen, view, camera, linked)
+  const selectedRoute = view.selection?.type === 'receiver' ? receiverCabinetIds(project.model, view.selection.id) : []
+  const sequence = new Map(selectedRoute.map((id, index) => [id, {
+    number: index + 1, first: index === 0, last: index === selectedRoute.length - 1,
+  }] as const))
+  for (const screen of project.screens) drawScreen(ctx, project, screen, view, camera, linked, sequence)
   if (view.overlays.dataFlow) drawDataFlow(ctx, project, camera)
 }
 

@@ -21,6 +21,7 @@ import {
   findPort,
   findProcessor,
   findReceiver,
+  receiversInHardwareOrder,
   receiverPixelUsage,
   unassignedCabinetIds,
   receiverCabinetIds,
@@ -28,9 +29,9 @@ import {
 import {
   addPortV2, addProcessorV2, addReceiverV2, applyHardwareAllocationV2,
   assignCabinetsV2, deletePortV2, deleteProcessorV2, deleteReceiverV2,
-  moveProcessorV2, moveReceiverV2, orderedSelectedCabinetsV2,
+  moveCabinetToReceiverV2, moveProcessorV2, moveReceiverV2, orderedSelectedCabinetsV2,
   previewHardwareAllocationV2, renameProcessorV2, requireCurrentHardwarePreview, setProcessorPortCountV2,
-  unassignCabinetsV2, updatePortV2, updateReceiverV2,
+  reorderSignalRouteV2, unassignCabinetsV2, updatePortV2, updateReceiverV2,
 } from './v2-hardware-commands.js'
 import type { Project } from './v2-view-model.js'
 
@@ -504,7 +505,134 @@ export function createHardwareWorkspace(options: HardwareWorkspaceOptions): Hard
       action('Assign selected', () => mutate(source => assignCabinetsV2(source, receiver.id, orderedSelectedCabinetsV2(source, selectedCabinetIds)), 'Unable to assign Cabinets.'), selectedCabinetIds.length === 0),
       action('Unassign selected', () => mutate(source => unassignCabinetsV2(source, receiver.id, selectedCabinetIds), 'Unable to unassign Cabinets.'), selectedCabinetIds.length === 0),
     )
-    properties.append(group('Generic Receiver', fields), buttons, renderPixelInspector())
+    properties.append(group('Generic Receiver', fields), buttons, renderSignalChain(receiver.id), renderPixelInspector())
+  }
+
+  function focusChainCabinet(cabinetId: string): void {
+    requestAnimationFrame(() => {
+      const row = Array.from(properties.querySelectorAll<HTMLButtonElement>('[data-signal-cabinet-id]'))
+        .find(value => value.dataset['signalCabinetId'] === cabinetId)
+      row?.focus()
+    })
+  }
+
+  function renderSignalChain(receiverId: string): HTMLElement {
+    const source = model()
+    const ids = receiverCabinetIds(source, receiverId)
+    const usage = receiverPixelUsage(source, receiverId)
+    const chosen = selectedCabinetIds.length === 1 && ids.includes(selectedCabinetIds[0]!) ? selectedCabinetIds[0]! : null
+    const index = chosen === null ? -1 : ids.indexOf(chosen)
+    const summary = document.createElement('p')
+    summary.className = 'signal-chain-summary'
+    summary.textContent = `${ids.length} Cabinets · ${format(usage.used)}${usage.capacity === null ? '' : ` / ${format(usage.capacity)}`} pixels · FIRST → LAST`
+    const list = document.createElement('div')
+    list.className = 'signal-chain-list'
+    list.setAttribute('role', 'list')
+    if (ids.length === 0) {
+      const empty = document.createElement('p')
+      empty.className = 'hint'
+      empty.textContent = 'No Cabinets in this Receiver signal chain.'
+      list.append(empty)
+    }
+    ids.forEach((id, position) => {
+      const cabinet = source.design.cabinets.find(value => value.id === id)!
+      const grid = source.design.cabinetGrids.find(value => value.id === cabinet.gridId)
+      const screen = source.design.screens.find(value => value.id === grid?.screenId)
+      const item = document.createElement('div')
+      item.setAttribute('role', 'listitem')
+      const select = document.createElement('button')
+      select.type = 'button'
+      select.className = 'signal-chain-item'
+      select.dataset['signalCabinetId'] = id
+      select.setAttribute('aria-pressed', String(chosen === id))
+      const title = document.createElement('strong')
+      title.textContent = `${position + 1}. ${cabinet.label || id}`
+      const edge = document.createElement('span')
+      edge.className = 'signal-chain-edge'
+      edge.textContent = [position === 0 ? 'FIRST' : '', position === ids.length - 1 ? 'LAST' : ''].filter(Boolean).join(' · ')
+      const detail = document.createElement('small')
+      detail.textContent = `${id} · ${screen?.name ?? grid?.screenId ?? 'Screen'} · ${grid?.name ?? cabinet.gridId} (${cabinet.column + 1}, ${cabinet.row + 1}) · ${format(cabinet.pixelWidth * cabinet.pixelHeight)} px`
+      select.append(title, edge, detail)
+      select.addEventListener('click', () => {
+        selectedCabinetIds = [id]
+        inspectedCabinet = { id, coordinate: { x: 0, y: 0 } }
+        render()
+        focusChainCabinet(id)
+      })
+      item.append(select)
+      list.append(item)
+    })
+    list.addEventListener('keydown', event => {
+      if (!event.altKey || event.repeat || event.isComposing ||
+          !(event.target instanceof HTMLButtonElement) || !event.target.matches('[data-signal-cabinet-id]')) return
+      const delta = event.key === 'ArrowUp' ? -1 : event.key === 'ArrowDown' ? 1 : null
+      if (delta === null) return
+      event.preventDefault()
+      const cabinetId = event.target.dataset['signalCabinetId']!
+      selectedCabinetIds = [cabinetId]
+      reorderChain(receiverId, cabinetId, delta)
+    })
+    const actions = document.createElement('div')
+    actions.className = 'signal-chain-actions'
+    const up = action('Move Up', () => { if (chosen) reorderChain(receiverId, chosen, -1) }, index <= 0)
+    up.dataset['signalAction'] = 'move-up'
+    const down = action('Move Down', () => { if (chosen) reorderChain(receiverId, chosen, 1) }, index < 0 || index === ids.length - 1)
+    down.dataset['signalAction'] = 'move-down'
+    const unassign = action('Unassign', () => {
+      if (!chosen) return
+      mutate(source => unassignCabinetsV2(source, receiverId, [chosen]), 'Unable to unassign Cabinet.', () => {
+        selectedCabinetIds = []
+        inspectedCabinet = null
+      })
+    }, chosen === null)
+    unassign.dataset['signalAction'] = 'unassign'
+    actions.append(up, down, unassign)
+    const transfer = document.createElement('div')
+    transfer.className = 'signal-chain-transfer'
+    const target = document.createElement('select')
+    target.setAttribute('aria-label', 'Target Receiver in hardware order')
+    target.dataset['signalTarget'] = ''
+    const placeholder = document.createElement('option')
+    placeholder.value = ''
+    placeholder.textContent = 'Choose target Receiver'
+    target.append(placeholder)
+    for (const receiver of receiversInHardwareOrder(source)) {
+      if (receiver.id === receiverId) continue
+      const port = findPort(source, receiver.portId)!
+      const processor = findProcessor(source, receiver.processorId)!
+      const load = receiverPixelUsage(source, receiver.id)
+      const option = document.createElement('option')
+      option.value = receiver.id
+      option.textContent = `${processor.name} → Port ${port.index + 1} → ${receiver.id} · ${format(load.used)}${load.capacity === null ? '' : `/${format(load.capacity)}`} px`
+      target.append(option)
+    }
+    const move = action('Move to Receiver…', () => {
+      if (!chosen || !target.value) return
+      const targetReceiverId = target.value
+      mutate(source => moveCabinetToReceiverV2(source, chosen, targetReceiverId), 'Unable to move Cabinet.', () => {
+        selection = { type: 'receiver', id: targetReceiverId }
+        selectedCabinetIds = [chosen]
+      })
+      focusChainCabinet(chosen)
+    }, chosen === null || target.options.length < 2)
+    move.dataset['signalAction'] = 'transfer'
+    target.addEventListener('change', () => { move.disabled = chosen === null || !target.value })
+    move.disabled = true
+    const hint = document.createElement('p')
+    hint.className = 'signal-chain-hint'
+    hint.textContent = 'Cabinet will be added to end of target chain.'
+    transfer.append(target, move, hint)
+    return group('Signal Chain', summary, list, actions, transfer)
+  }
+
+  function reorderChain(receiverId: string, cabinetId: string, delta: -1 | 1): void {
+    const ids = [...receiverCabinetIds(model(), receiverId)]
+    const index = ids.indexOf(cabinetId)
+    const target = index + delta
+    if (index < 0 || target < 0 || target >= ids.length) return
+    ;[ids[index], ids[target]] = [ids[target]!, ids[index]!]
+    mutate(source => reorderSignalRouteV2(source, receiverId, ids), 'Unable to reorder Signal Chain.')
+    focusChainCabinet(cabinetId)
   }
 
   function renderStatus(): void {

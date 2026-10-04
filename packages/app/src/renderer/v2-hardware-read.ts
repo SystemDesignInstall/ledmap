@@ -13,6 +13,21 @@ export function findReceiver(project: LedMapProjectV2, id: string): ProjectRecei
   return project.hardware.receivers.find(value => value.id === id)
 }
 
+export function receiversInHardwareOrder(project: LedMapProjectV2): readonly ProjectReceiver[] {
+  const ordered: ProjectReceiver[] = []
+  for (const processorId of project.hardware.processorOrder) {
+    const ports = project.hardware.ports.filter(value => value.processorId === processorId).sort((left, right) => left.index - right.index)
+    for (const port of ports) {
+      const receiverIds = project.hardware.receiverOrder.find(value => value.portId === port.id)?.receiverIds ?? []
+      for (const receiverId of receiverIds) {
+        const receiver = findReceiver(project, receiverId)
+        if (receiver) ordered.push(receiver)
+      }
+    }
+  }
+  return ordered
+}
+
 export function receiverCabinetIds(project: LedMapProjectV2, receiverId: string): readonly string[] {
   return project.operations.signalRoutes.find(route => route.receiverId === receiverId)?.orderedCabinetIds ?? []
 }

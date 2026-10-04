@@ -164,6 +164,18 @@ dialog::backdrop { background: #06090dc7; backdrop-filter: blur(2px); }
 .hardware-tree-cabinet[aria-pressed="true"] { border-color: #9f8c4f; background: #393421; color: #fff2b2; }
 .hardware-unassigned-heading { margin: 15px 0 5px; padding-top: 10px; border-top: 1px solid var(--line); color: #d1a96b; font-size: 10px; font-weight: 650; text-transform: uppercase; letter-spacing: .05em; }
 .hardware-inspector .property-group { padding-bottom: 12px; }
+.signal-chain-summary { margin: 0 0 8px; color: #9fbed0; font-size: 10px; line-height: 1.5; }
+.signal-chain-list { display: flex; flex-direction: column; gap: 4px; max-height: 260px; overflow-y: auto; }
+.signal-chain-item { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 3px 5px; padding: 7px; text-align: left; }
+.signal-chain-item[aria-pressed="true"] { border-color: #9f8c4f; background: #393421; }
+.signal-chain-item strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+.signal-chain-item small { grid-column: 1 / -1; color: var(--muted); font-size: 9px; line-height: 1.4; overflow-wrap: anywhere; }
+.signal-chain-edge { color: #7fdac0; font-size: 9px; font-weight: 650; }
+.signal-chain-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; margin-top: 8px; }
+.signal-chain-actions button { padding: 6px 3px; font-size: 10px; }
+.signal-chain-transfer { display: flex; flex-direction: column; gap: 6px; margin-top: 9px; }
+.signal-chain-transfer select { min-width: 0; width: 100%; padding: 6px 7px; border: 1px solid var(--line); border-radius: 4px; background: #0e151e; color: var(--text); font-size: 10px; }
+.signal-chain-hint { margin: 0; color: var(--muted); font-size: 9px; line-height: 1.4; }
 .error-hint { color: #e9a0a7; }
 .allocation-dialog { width: min(580px, calc(100vw - 40px)); }
 .allocation-dialog-body { padding: 20px; }

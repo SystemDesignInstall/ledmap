@@ -8,6 +8,7 @@ export * from './serialization/index.js'
 export * from './hardware-profile/index.js'
 export * from './editor-project/index.js'
 export * from './project-model/index.js'
+export * from './output-mapping/resolve.js'
 
 export const packageName = '@ledmap/core'
 export const packageVersion = '0.1.0'

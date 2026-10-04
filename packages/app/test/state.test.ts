@@ -5,14 +5,15 @@ import { applyDraft, changeNumbering, initialDraft, type Draft } from '../src/re
 afterEach(() => vi.restoreAllMocks())
 
 describe('Alpha state adapter', () => {
-  it('creates a consistent Screen/Grid and the REF-001 preview', () => {
+  it('creates a consistent Screen/Grid from the default draft', () => {
     const { snapshot, errors } = applyDraft(null, initialDraft)
     expect(errors).toEqual({})
     expect(snapshot?.screen.cabinetGrids).toEqual([snapshot?.grid.id])
     expect(snapshot?.grid.screen).toBe(snapshot?.screen.id)
     expect(snapshot?.screen.mappingRegions).toEqual([])
-    expect(snapshot?.screen.resolution).toEqual({ width: 512, height: 384 })
-    expect(snapshot?.pixelCount).toBe(196608)
+    expect(snapshot?.modulesPerCabinet).toBe(1)
+    expect(snapshot?.screen.resolution).toEqual({ width: 128, height: 96 })
+    expect(snapshot?.pixelCount).toBe(12288)
     expect(snapshot?.cabinets.map(c => c.index + 1)).toEqual([1, 2, 3, 4, 8, 7, 6, 5, 9, 10, 11, 12])
   })
 

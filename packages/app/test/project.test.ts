@@ -18,7 +18,7 @@ describe('Project canvas state', () => {
     expect(project.screens.map(s => s.screen.name)).toEqual(['Screen 1', 'Screen 2', 'Screen 3'])
     expect(project.screens.map(s => [s.x, s.y])).toEqual([[0, 0], [700, 120], [320, 620]])
     expect(project.screens.map(s => [s.screen.resolution.width, s.screen.resolution.height]))
-      .toEqual([[512, 384], [384, 256], [512, 256]])
+      .toEqual([[128, 96], [96, 64], [128, 64]])
     expect(project.screens.map(s => s.cabinets.length)).toEqual([12, 6, 8])
   })
 
@@ -71,14 +71,14 @@ describe('Project canvas state', () => {
 
   it('computes project bounds for the demo and after moving a screen into negative space', () => {
     const project = createTestProject()
-    expect(projectBounds(project)).toEqual({ left: 0, top: 0, right: 1084, bottom: 876, width: 1084, height: 876 })
+    expect(projectBounds(project)).toEqual({ left: 0, top: 0, right: 796, bottom: 684, width: 796, height: 684 })
     const moved = setScreenPosition(project, 'screen-1', -100, -50)
-    expect(projectBounds(moved)).toEqual({ left: -100, top: -50, right: 1084, bottom: 876, width: 1184, height: 926 })
+    expect(projectBounds(moved)).toEqual({ left: -100, top: -50, right: 796, bottom: 684, width: 896, height: 734 })
   })
 
   it('offers per-screen bounds from the derived resolution', () => {
     const project = createTestProject()
-    expect(screenBounds(project.screens[1]!)).toEqual({ left: 700, top: 120, right: 1084, bottom: 376, width: 384, height: 256 })
+    expect(screenBounds(project.screens[1]!)).toEqual({ left: 700, top: 120, right: 796, bottom: 184, width: 96, height: 64 })
   })
 
   it('hit-tests the topmost screen and resolves cabinets inside the grid', () => {
@@ -87,7 +87,7 @@ describe('Project canvas state', () => {
     expect(first.screen.screen.name).toBe('Screen 1')
     expect(first.cabinet?.id).toBe('C01')
 
-    const last = hitTest(project, { x: 511, y: 383 })!
+    const last = hitTest(project, { x: 127, y: 95 })!
     expect(last.screen.screen.name).toBe('Screen 1')
     expect(last.cabinet?.id).toBe('C12')
 
@@ -105,7 +105,7 @@ describe('Project canvas state', () => {
     expect(fresh.screen.name).toBe('Screen 4')
     expect([fresh.x, fresh.y]).toEqual([420, 720])
     expect(fresh.cabinets).toHaveLength(12)
-    expect(fresh.screen.resolution).toEqual({ width: 512, height: 384 })
+    expect(fresh.screen.resolution).toEqual({ width: 128, height: 96 })
     expect([fresh.screen.id, fresh.grid.screen]).toEqual(['screen-4', 'screen-4'])
   })
 

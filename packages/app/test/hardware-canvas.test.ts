@@ -15,8 +15,8 @@ describe('Hardware canvas geometry', () => {
 
   it('exposes stable cabinet centers for flow overlays and automation', () => {
     const project = createTestProject()
-    expect(hardwareCabinetCenter(project, 'screen-1/C01')).toEqual({ x: 64, y: 64 })
-    expect(hardwareCabinetCenter(project, 'screen-2/C01')).toEqual({ x: 764, y: 184 })
+    expect(hardwareCabinetCenter(project, 'screen-1/C01')).toEqual({ x: 16, y: 16 })
+    expect(hardwareCabinetCenter(project, 'screen-2/C01')).toEqual({ x: 716, y: 136 })
     expect(hardwareCabinetCenter(project, 'missing')).toBeNull()
   })
 })

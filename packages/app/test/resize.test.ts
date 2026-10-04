@@ -27,12 +27,12 @@ function idsByCell(snapshot: ReturnType<typeof demo>): string[] {
 describe('Screen size is derived from the cabinet grid', () => {
   it('derives the pixel size from the grid and keeps the stored resolution in sync', () => {
     const snapshot = demo()
-    expect(gridPixelSize(snapshot.grid)).toEqual({ width: 512, height: 384 })
+    expect(gridPixelSize(snapshot.grid)).toEqual({ width: 128, height: 96 })
     expect(snapshot.screen.resolution).toEqual(gridPixelSize(snapshot.grid))
     const wider = resized('5', '3', snapshot)
-    expect(gridPixelSize(wider.grid)).toEqual({ width: 640, height: 384 })
+    expect(gridPixelSize(wider.grid)).toEqual({ width: 160, height: 96 })
     expect(wider.screen.resolution).toEqual(gridPixelSize(wider.grid))
-    expect(wider.pixelCount).toBe(640 * 384)
+    expect(wider.pixelCount).toBe(160 * 96)
   })
 
   it('keeps the core invariant Screen.resolution == grid pixel size for every supported grid', () => {
@@ -48,7 +48,10 @@ describe('Screen size is derived from the cabinet grid', () => {
     expect(maxPreviewRows(4, 16)).toBe(256)
     expect(maxPreviewColumns(1, 65536)).toBe(1)
     expect(maxPreviewRows(1, 65536)).toBe(1)
+    expect(maxPreviewColumns(4, 1)).toBe(256)
+    expect(maxPreviewRows(4, 1)).toBe(256)
     expect(applyDraft(null, { ...initialDraft, columns: '1025', rows: '1' }).errors.form).toContain('1024')
+    expect(applyDraft(null, { ...initialDraft, moduleColumns: '300', moduleRows: '300' }).errors.form).toContain('65536')
   })
 })
 
@@ -129,7 +132,7 @@ describe('resizeScreenGrid is the only structural mutation', () => {
     const next = resizeScreenGrid(project, 'screen-1', 5, 4)
     const resizedScreen = next.screens[0]!
     expect([resizedScreen.grid.columns, resizedScreen.grid.rows]).toEqual([5, 4])
-    expect(resizedScreen.screen.resolution).toEqual({ width: 640, height: 512 })
+    expect(resizedScreen.screen.resolution).toEqual({ width: 160, height: 128 })
     expect(resizedScreen.screen.resolution).toEqual(gridPixelSize(resizedScreen.grid))
     expect(resizedScreen.cabinets).toHaveLength(20)
     expect(resizedScreen.path).toEqual(cabinetOrder(resizedScreen.config))
@@ -159,20 +162,20 @@ describe('resizeScreenGrid is the only structural mutation', () => {
     const project = createTestProject()
     const next = resizeScreenGrid(project, 'screen-1', 9, 3)
     const screen = next.screens[0]!
-    expect(screenWidth(screen)).toBe(1152)
-    expect(screenHeight(screen)).toBe(384)
-    expect(screenBounds(screen)).toEqual({ left: 0, top: 0, right: 1152, bottom: 384, width: 1152, height: 384 })
-    expect(projectBounds(next)).toEqual({ left: 0, top: 0, right: 1152, bottom: 876, width: 1152, height: 876 })
-    const grown = hitTest(next, { x: 600, y: 300 })?.cabinet
-    expect([grown?.column, grown?.row]).toEqual([4, 2])
-    expect(grown?.id).toBe('C23')
-    expect(grown?.index).toBe(22)
-    const snakeCabinet = hitTest(next, { x: 448, y: 192 })?.cabinet
+    expect(screenWidth(screen)).toBe(288)
+    expect(screenHeight(screen)).toBe(96)
+    expect(screenBounds(screen)).toEqual({ left: 0, top: 0, right: 288, bottom: 96, width: 288, height: 96 })
+    expect(projectBounds(next)).toEqual({ left: 0, top: 0, right: 796, bottom: 684, width: 796, height: 684 })
+    const grown = hitTest(next, { x: 160, y: 70 })?.cabinet
+    expect([grown?.column, grown?.row]).toEqual([5, 2])
+    expect(grown?.id).toBe('C24')
+    expect(grown?.index).toBe(23)
+    const snakeCabinet = hitTest(next, { x: 112, y: 40 })?.cabinet
     expect([snakeCabinet?.column, snakeCabinet?.row]).toEqual([3, 1])
     expect(snakeCabinet?.id).toBe('C08')
     expect(snakeCabinet?.index).toBe(14)
-    expect(hitTest(next, { x: 1000, y: 300 })?.screen.screen.id).toBe('screen-2')
-    expect(hitTest(next, { x: 1200, y: 300 })).toBeNull()
+    expect(hitTest(next, { x: 700, y: 130 })?.screen.screen.id).toBe('screen-2')
+    expect(hitTest(next, { x: 900, y: 130 })).toBeNull()
   })
 
   it('rejects non-integer and out-of-range dimensions without mutating the project', () => {
@@ -192,7 +195,7 @@ describe('resizeScreenGrid is the only structural mutation', () => {
     const project = resizeScreenGrid(createTestProject(), 'screen-1', 1, 1)
     const screen = findScreen(project, 'screen-1')!
     expect(screen.cabinets).toHaveLength(1)
-    expect(screen.screen.resolution).toEqual({ width: 128, height: 128 })
+    expect(screen.screen.resolution).toEqual({ width: 32, height: 32 })
     expect(screen.cabinets[0]!.id).toBe('C01')
     expect(screen.cabinets[0]!.index).toBe(0)
   })

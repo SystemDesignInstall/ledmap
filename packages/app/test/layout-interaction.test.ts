@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
-  alignScreens, distributeScreens, integerCoordinate, marqueeSelection, normalizeSelectionBox,
-  nudgePositions, replaceOrToggleSelection, selectionBounds, snapCoordinateToGrid, snapTranslation,
+  addGuide, alignScreens, distributeScreens, guideHitTest, guidePositions, integerCoordinate, marqueeSelection,
+  moveGuide, normalizeSelectionBox, nudgePositions, removeGuide, replaceOrToggleSelection, selectionBounds,
+  setGuideLocked, snapCoordinateToGrid, snapTranslation,
   type LayoutRect,
 } from '../src/renderer/layout-interaction.js'
 
@@ -100,5 +101,64 @@ describe('Layout interaction math', () => {
     expect(distributeScreens(screens.slice(0, 2), 'horizontal')).toEqual({
       a: { x: -120, y: 40 }, b: { x: 40, y: 100 },
     })
+  })
+
+  it('snaps edges and centers independently through snap sources', () => {
+    const moving = { id: 'moving', x: 0, y: 0, width: 100, height: 100 }
+    const targets = [{ id: 'target', x: 200, y: 200, width: 200, height: 200 }]
+    const edgesOnly = snapTranslation({
+      moving, targets, dx: 103, dy: 103, snapEdges: true, snapCenters: false, tolerance: 10,
+    })
+    expect(edgesOnly.dx).toBe(100)
+    expect(edgesOnly.dy).toBe(100)
+    expect(edgesOnly.guides).toEqual([{ axis: 'x', value: 200 }, { axis: 'y', value: 200 }])
+    const centersOnly = snapTranslation({
+      moving, targets, dx: 249, dy: 251, snapEdges: false, snapCenters: true, tolerance: 2,
+    })
+    expect(centersOnly).toEqual({ dx: 250, dy: 250, guides: [{ axis: 'x', value: 300 }, { axis: 'y', value: 300 }] })
+    const neither = snapTranslation({
+      moving, targets, dx: 103, dy: 103, snapEdges: false, snapCenters: false, tolerance: 10,
+    })
+    expect(neither).toEqual({ dx: 103, dy: 103, guides: [] })
+  })
+
+  it('snaps Screen bounds to persistent guides', () => {
+    const guided = snapTranslation({
+      moving: { id: 'moving', x: 0, y: 0, width: 100, height: 80 },
+      targets: [],
+      dx: 96,
+      dy: 47,
+      snapEdges: false,
+      snapCenters: false,
+      guideTargets: { vertical: [100], horizontal: [50] },
+      tolerance: 10,
+    })
+    expect(guided).toEqual({ dx: 100, dy: 50, guides: [{ axis: 'x', value: 100 }, { axis: 'y', value: 50 }] })
+  })
+
+  it('manages persistent guides without touching Screens', () => {
+    const vertical = addGuide([], 'vertical', 120.4)
+    expect(vertical).toHaveLength(1)
+    expect(vertical[0]).toMatchObject({ orientation: 'vertical', position: 120, locked: false })
+    const horizontal = addGuide(vertical, 'horizontal', -40.6)
+    expect(horizontal).toHaveLength(2)
+    expect(horizontal[1]).toMatchObject({ orientation: 'horizontal', position: -41 })
+    expect(horizontal[0]?.id).not.toBe(horizontal[1]?.id)
+    const moved = moveGuide(horizontal, horizontal[0]!.id, 200.2)
+    expect(moved[0]?.position).toBe(200)
+    expect(moved[1]).toEqual(horizontal[1])
+    const locked = setGuideLocked(moved, moved[0]!.id, true)
+    expect(moveGuide(locked, locked[0]!.id, 300).map(guide => guide.position)).toEqual([200, -41])
+    expect(removeGuide(locked, locked[0]!.id).map(guide => guide.id)).toEqual([locked[1]!.id])
+  })
+
+  it('hit-tests the topmost unlocked guide within tolerance', () => {
+    const guides = addGuide(addGuide([], 'vertical', 100), 'horizontal', 50)
+    expect(guideHitTest(guides, { x: 104, y: 200 }, 8)?.orientation).toBe('vertical')
+    expect(guideHitTest(guides, { x: 500, y: 55 }, 8)?.orientation).toBe('horizontal')
+    expect(guideHitTest(guides, { x: 500, y: 500 }, 8)).toBeNull()
+    const locked = setGuideLocked(guides, guides[0]!.id, true)
+    expect(guideHitTest(locked, { x: 104, y: 200 }, 8)).toBeNull()
+    expect(guidePositions(guides)).toEqual({ vertical: [100], horizontal: [50] })
   })
 })

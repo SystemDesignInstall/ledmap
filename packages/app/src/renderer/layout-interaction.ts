@@ -111,6 +111,81 @@ function bestAxisCandidate(
   return best
 }
 
+export interface SnapSources {
+  readonly grid: boolean
+  readonly edges: boolean
+  readonly centers: boolean
+  readonly guides: boolean
+}
+
+export interface ProjectGuide {
+  readonly id: string
+  readonly orientation: 'vertical' | 'horizontal'
+  readonly position: number
+  readonly locked: boolean
+}
+
+let guideSerial = 1
+
+export function addGuide(
+  guides: readonly ProjectGuide[],
+  orientation: ProjectGuide['orientation'],
+  position: number,
+): readonly ProjectGuide[] {
+  const guide: ProjectGuide = {
+    id: `guide-${guideSerial++}`,
+    orientation,
+    position: integerCoordinate(position),
+    locked: false,
+  }
+  return [...guides, guide]
+}
+
+export function moveGuide(
+  guides: readonly ProjectGuide[],
+  id: string,
+  position: number,
+): readonly ProjectGuide[] {
+  return guides.map(guide => guide.id === id && !guide.locked
+    ? { ...guide, position: integerCoordinate(position) }
+    : guide)
+}
+
+export function removeGuide(guides: readonly ProjectGuide[], id: string): readonly ProjectGuide[] {
+  return guides.filter(guide => guide.id !== id)
+}
+
+export function setGuideLocked(
+  guides: readonly ProjectGuide[],
+  id: string,
+  locked: boolean,
+): readonly ProjectGuide[] {
+  return guides.map(guide => guide.id === id ? { ...guide, locked } : guide)
+}
+
+export function guideHitTest(
+  guides: readonly ProjectGuide[],
+  point: LayoutPoint,
+  tolerance: number,
+): ProjectGuide | null {
+  for (let index = guides.length - 1; index >= 0; index -= 1) {
+    const guide = guides[index]!
+    if (guide.locked) continue
+    const distance = guide.orientation === 'vertical'
+      ? Math.abs(point.x - guide.position)
+      : Math.abs(point.y - guide.position)
+    if (distance <= tolerance) return guide
+  }
+  return null
+}
+
+export function guidePositions(guides: readonly ProjectGuide[]): { readonly vertical: readonly number[]; readonly horizontal: readonly number[] } {
+  return {
+    vertical: guides.filter(guide => guide.orientation === 'vertical').map(guide => guide.position),
+    horizontal: guides.filter(guide => guide.orientation === 'horizontal').map(guide => guide.position),
+  }
+}
+
 export function snapTranslation(input: {
   readonly moving: LayoutRect
   readonly targets: readonly LayoutRect[]
@@ -118,6 +193,9 @@ export function snapTranslation(input: {
   readonly dy: number
   readonly gridStep?: number
   readonly smartSnap?: boolean
+  readonly snapEdges?: boolean
+  readonly snapCenters?: boolean
+  readonly guideTargets?: { readonly vertical: readonly number[]; readonly horizontal: readonly number[] }
   readonly tolerance?: number
 }): SnapResult {
   let dx = integerCoordinate(input.dx)
@@ -127,12 +205,26 @@ export function snapTranslation(input: {
     dy = snapCoordinateToGrid(input.moving.y + dy, input.gridStep) - input.moving.y
   }
   const guides: AlignmentGuide[] = []
-  if (input.smartSnap !== false && input.targets.length > 0) {
+  const snapEdges = input.snapEdges ?? input.smartSnap !== false
+  const snapCenters = input.snapCenters ?? input.smartSnap !== false
+  if ((input.smartSnap !== false || input.snapEdges !== undefined || input.snapCenters !== undefined) && (snapEdges || snapCenters) && input.targets.length > 0) {
     const tolerance = input.tolerance ?? 8
-    const movingX = [input.moving.x, input.moving.x + input.moving.width / 2, input.moving.x + input.moving.width]
-    const movingY = [input.moving.y, input.moving.y + input.moving.height / 2, input.moving.y + input.moving.height]
-    const targetX = input.targets.flatMap(target => [target.x, target.x + target.width / 2, target.x + target.width])
-    const targetY = input.targets.flatMap(target => [target.y, target.y + target.height / 2, target.y + target.height])
+    const movingX = [
+      ...(snapEdges ? [input.moving.x, input.moving.x + input.moving.width] : []),
+      ...(snapCenters ? [input.moving.x + input.moving.width / 2] : []),
+    ]
+    const movingY = [
+      ...(snapEdges ? [input.moving.y, input.moving.y + input.moving.height] : []),
+      ...(snapCenters ? [input.moving.y + input.moving.height / 2] : []),
+    ]
+    const targetX = input.targets.flatMap(target => [
+      ...(snapEdges ? [target.x, target.x + target.width] : []),
+      ...(snapCenters ? [target.x + target.width / 2] : []),
+    ])
+    const targetY = input.targets.flatMap(target => [
+      ...(snapEdges ? [target.y, target.y + target.height] : []),
+      ...(snapCenters ? [target.y + target.height / 2] : []),
+    ])
     const xCandidate = bestAxisCandidate(movingX, targetX, dx, tolerance)
     const yCandidate = bestAxisCandidate(movingY, targetY, dy, tolerance)
     if (xCandidate) {
@@ -142,6 +234,21 @@ export function snapTranslation(input: {
     if (yCandidate) {
       dy += yCandidate.correction
       guides.push({ axis: 'y', value: yCandidate.guide })
+    }
+  }
+  if (input.guideTargets !== undefined) {
+    const tolerance = input.tolerance ?? 8
+    const movingX = [input.moving.x + dx, input.moving.x + dx + input.moving.width / 2, input.moving.x + dx + input.moving.width]
+    const movingY = [input.moving.y + dy, input.moving.y + dy + input.moving.height / 2, input.moving.y + dy + input.moving.height]
+    const vertical = bestAxisCandidate(movingX, input.guideTargets.vertical, 0, tolerance)
+    const horizontal = bestAxisCandidate(movingY, input.guideTargets.horizontal, 0, tolerance)
+    if (vertical) {
+      dx += vertical.correction
+      guides.push({ axis: 'x', value: vertical.guide })
+    }
+    if (horizontal) {
+      dy += horizontal.correction
+      guides.push({ axis: 'y', value: horizontal.guide })
     }
   }
   return { dx: integerCoordinate(dx), dy: integerCoordinate(dy), guides }

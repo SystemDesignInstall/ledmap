@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' ws://localhost:* ws://127.0.0.1:*" />
-    <title>LedMAP — Project Canvas</title>
+    <title>LedMAP — Composition</title>
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
@@ -14,18 +14,39 @@
         <button id="toggle-mode" type="button">Active Screen</button>
         <button id="fit-project" type="button">Fit to Project</button>
         <button id="add-screen" type="button">+ Screen</button>
+        <button id="snap-toggle" type="button" aria-pressed="true" title="Toggle snapping (Alt disables while dragging)">Snap ✓</button>
+        <button id="snap-grid" type="button" aria-pressed="true" title="Snap to grid">Grid</button>
+        <button id="snap-edges" type="button" aria-pressed="true" title="Snap to Screen edges">Edges</button>
+        <button id="snap-centers" type="button" aria-pressed="true" title="Snap to Screen centers">Centers</button>
+        <button id="snap-guides" type="button" aria-pressed="true" title="Snap to guides">Guides</button>
+        <button id="guide-add-v" type="button" title="Add vertical guide at viewport center">+ V-Guide</button>
+        <button id="guide-add-h" type="button" title="Add horizontal guide at viewport center">+ H-Guide</button>
+        <select id="align-select" aria-label="Align Screens">
+          <option value="">Align ▾</option>
+          <option value="left">Left</option>
+          <option value="centerX">Horizontal Center</option>
+          <option value="right">Right</option>
+          <option value="top">Top</option>
+          <option value="middle">Vertical Center</option>
+          <option value="bottom">Bottom</option>
+        </select>
+        <select id="distribute-select" aria-label="Distribute Screens">
+          <option value="">Distribute ▾</option>
+          <option value="horizontal">Horizontal</option>
+          <option value="vertical">Vertical</option>
+        </select>
       </div>
       <span class="session-note">In-memory session</span>
     </header>
     <main>
       <aside class="tree-panel">
-        <div class="panel-heading"><span class="eyebrow">PROJECT</span><h1>Layout</h1><p>One canvas, many screens.</p></div>
+        <div class="panel-heading"><span class="eyebrow">PROJECT</span><h1>Composition</h1><p>One canvas, many screens.</p></div>
         <div id="project-tree" role="tree" aria-label="Project screens"></div>
       </aside>
       <article>
         <div class="preview-heading">
           <div>
-            <span class="eyebrow">CANVAS — PROJECT LAYOUT</span>
+            <span class="eyebrow">COMPOSITION WORKSPACE</span>
             <h2 id="canvas-title">All Screens</h2>
           </div>
           <span id="selection-chip" role="status">No selection</span>
@@ -45,6 +66,7 @@
     <footer class="statusbar">
       <span id="bounds" class="status-item">Project bounds · px</span>
       <span id="zoom-indicator" class="status-item">—</span>
+      <span id="snap-state" class="status-item">Snap on</span>
       <span id="canvas-note" class="status-note"></span>
       <span class="status-hints">Scroll: pan · Ctrl+Wheel: zoom · Middle / Space+drag: pan · Fit: all screens</span>
     </footer>

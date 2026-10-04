@@ -25,22 +25,22 @@
 - **Следствия:** нужен Node.js 24 LTS (>= 24) + npm. Python/.NET/C++ не используются, несмотря на наличие в окружении.
 
 ## ADR-002: Монорепо с двумя пакетами
-- **Статус:** Proposed
+- **Статус:** Accepted
 - **Решение:** `packages/core` (чистый домен, нулевые runtime-зависимости) + `packages/app` (Electron main/preload/renderer). `core` никогда не импортирует `electron`/`node:*`/DOM; enforce-ся eslint import-restriction.
 - **Почему:** единый `src/core` не гарантирует границу на уровне пакета/импортов. Раздельные пакеты делают «UI — клиент core» проверяемым, а не декларацией.
 
 ## ADR-003: Immutable-модель, pure functions
-- **Статус:** Proposed
+- **Статус:** Accepted
 - **Решение:** доменные данные — обычные замороженные объекты/типы (TS `const`, никаких классов с методами). Движки — `(model) → derived`, детерминированы и идемпотентны.
 - **Следствия:** детерминированные ассерты попиксельной раскладки; возможность headless-потребителя core (CLI/экспорт).
 
 ## ADR-004: Координатная система и логический порядок
-- **Статус:** Proposed
+- **Статус:** Accepted
 - **Решение:** origin — верхний левый угол; ось Y растёт вниз (в духе Canvas2D). `Direction` применяется к оси нумерации: Numbering=Row → горизонтальное чтение (Left→Right / Right→Left); Numbering=Column → вертикальное. **Уточнение Phase 2A:** ReferenceAddressingProfile-001 задаёт логический row-major L→R/T→B порядок модулей, затем пикселей внутри каждого модуля (start top-left, оба snake OFF). Это не physical panel scan и не обход всего кабинета по строкам; универсальный default для остальных профилей не устанавливается.
 - **Почему:** без фиксации пиксельные ассерты Test 001 неоднозначны; snake-семантика зависит от направления Y.
 
 ## ADR-005: Mapping Region vs Cabinet Grid
-- **Статус:** Proposed
+- **Статус:** Working
 - **Решение:** `CabinetGrid` владеет физическим размещением **и** конфигурацией упорядочивания (Numbering/Direction/Snake) — это физико-логический этап. `MappingRegion` — логическая оболочка: ссылка на rect `InputCanvas` + целевой Grid + корреляция (Input→Output). Модель проектируется сразу с учётом поворота/смещения/непрямоугольности регионов на будущее.
 - **Почему:** фиксирует, кто кем компонуется, и не требует переписывания типов под общий случай.
 
@@ -52,33 +52,36 @@
 - **Основание:** это нормативный порядок flattening LedMAP для reference model, не утверждение о едином протоколе всех LED vendors. Детали multi-processor ordering остаются OPEN в спецификации.
 
 ## ADR-007: Явные назначения + авторазметка
-- **Статус:** Proposed
+- **Статус:** Accepted
 - **Решение:** модель хранит **явные** назначения (cabinet → receiver); движок даёт `allocate()` (автозаполнение по ёмкости) и `resolve()` (доводка пропусков с диагностикой). Фикстура 001 содержит явные назначения, согласованные с авторасчётом.
 - **Почему:** авто vs явные назначения из файла не должны расходиться незаметно.
 
 ## ADR-008: Ёмкости и частичная заполненность
-- **Статус:** Proposed
+- **Статус:** Accepted
 - **Решение:** Receiver = максимум пикселей (число), Port = максимум Receiver'ов, Processor = максимум Port'ов — простые целые, без потолков сложности. Частичная заполненность допустима; незанятые слоты → информативная диагностика «unused slot». Overflow → ошибка валидации.
 
 ## ADR-009: Границы Mapping vs Remap Engine
-- **Статус:** Proposed
+- **Статус:** Accepted
 - **Решение:** Mapping Engine — корреляция источника на этапе проектирования (строит PixelMap). Remap Engine — пост-коррекция **готового** PixelMap (swap/rotate/invert субрегионов, dead-LED). Remap никогда не мутирует исходную модель.
+- **Почему:** четкое разделение ответственности между этапами проектирования и пост-процессинга.
 
 ## ADR-010: Сериализация
-- **Статус:** Proposed
+- **Статус:** Accepted
 - **Решение:** версионированный JSON; `schemaVersion` целое + pure-миграции; строгая схема (`additionalProperties: false`); `extensions` passthrough; канонический порядок ключей и отступов; производные данные **не сериализуются**. Сериализация живёт в `core` (pure); fs-файловые операции — в `app`.
+- **Следствия:** `ADR-023` принимает только canonical tokens, aliases отклоняются без silent normalization.
 
 ## ADR-011: Канонические токены enums
-- **Статус:** Proposed
-- **Решение:** в `core` — enum-строки: `numbering: "row" | "column"`, `direction: "left-to-right" | "right-to-left"`, `snake: boolean`. Отображение в презентационные лейблы («Row», «Left → Right», «ON») — в `app` (ui-adapters), нормализация алиасов — на слое сериализации, не в движках.
+- **Статус:** Accepted
+- **Решение:** в `core` — enum-строки: `numbering: "row" | "column"`, `direction: "left-to-right" | "right-to-left"`, `snake: boolean`. Отображение в презентационные лейблы («Row», «Left → Right», «ON») — в `app` (ui-adapters). **ADR-023 amendment**: `.ledmap` schema v1 принимает только canonical tokens, aliases отклоняются без silent normalization. Остальные положения ADR-011 сохраняются (презентационные метки в app, нормализация на serialization layer).
 - **Amended by ADR-023:** историческое положение о нормализации алиасов на serialization layer заменено: `.ledmap` schema v1 принимает только canonical tokens, aliases отклоняются без silent normalization. `ADR-011 alias-normalization clause — superseded by ADR-023`. Остальные положения ADR-011 сохраняются.
 
 ## ADR-012: Reference Test 001 как приёмочный тест
-- **Статус:** Proposed
-- **Решение:** методология — fixture-driven (`project.json` + `expected.json`), независимые ручные пиксельные якоря (см. [LEDMAP-REF-001](reference/LEDMAP-REF-001.md) и ARCHITECTURE §6), полное равенство золотого файла, границы SignalPath, round-trip, вызов движков дважды для проверки детерминизма. Phase 2A задаёт только документационный контракт, executable REF-тесты ещё впереди.
+- **Статус:** Accepted
+- **Решение:** методология — fixture-driven (`project.json` + `expected.json`), независимые ручные пиксельные якоря (см. [LEDMAP-REF-001](reference/LEDMAP-REF-001.md) и ARCHITECTURE §6), полное равенство золотого файла, границы SignalPath, round-trip, вызов движков дважды для проверки детерминизма. Фаза 2A задаёт только документальный контракт, executable REF-тесты реализованы для REF-001 и служат приемоковым тестом ядра.
+- **Примечание:** REF-001 полность валидирует математику ядра, последующие тесты (002-004) покрывают независимость трансформаций.
 
 ## ADR-013: Reference Tests 002–004 (спецификации к фиксации)
-- **Статус:** Proposed
+- **Статус:** Accepted
 - **Решение:** 002 — Row + Right→Left + Snake; 003 — Column + Snake; 004 — Column + варианты Direction. Каждый фиксирует Numbering/Direction/Snake по отдельности и в комбинациях; полные spec-файлы пишутся до реализации, по образцу 001.
 - **Следствия:** 001 — полный приёмочный; 002–004 — регрессия независимости трансформаций.
 
@@ -453,6 +456,57 @@ Final Hardware Remap answers:
 - **Отложено:** редактирование разрешения кабинета (`Cabinet Resolution Width/Height` остаются read-only) — размер кабинета выводится как `moduleColumns * modulePixelWidth`, поэтому отдельное редактируемое поле разрешения неоднозначно; вынесено в итерацию 4 (`LEDMAP-ALPHA-UI-004`, ADR-027, Draft), где редактируются `moduleColumns`/`moduleRows`/`modulePixelWidth`/`modulePixelHeight`, а `Cabinet Width/Height` и `Screen Width/Height` остаются вычисляемыми. Handles `left`/`top` с компенсацией `Screen.position`; undo/redo — механизма истории нет, он запрещён на текущем этапе; авто-пересчёт camera при resize.
 - **Приёмка:** таблица [LEDMAP-ALPHA-UI-003 §6](specs/LEDMAP-ALPHA-UI-003.md) — unit-тесты project-состояния (включая непрерывность и неповторяемость ID, изоляцию экранов, валидацию), обновлённый Electron smoke в реальном окне, `npm test`/`typecheck`/`lint`/`build` — локальный PASS, без CI-подтверждения.
 - **Production closure:** реализация принята в `79948c642d35c2231a920e8e8704947597191e7a` (docs-gate `35d0266c395b759d232ce49ad014ff9947cf7971`), scope строго `packages/app`: `resizeScreenGrid()` как единственная структурная мутация, кабинеты как состояние представления с `nextCabinetSerial`, единый `gridPixelSize(grid)`, Properties-коммит, три canvas-handle с transient preview, `packages/app/test/resize.test.ts` (14 unit-тестов) и Electron smoke. `packages/core`, публичный API core, математика Cabinet Engine и схема `.ledmap` v1 не изменены, новых runtime-зависимостей нет. Follow-up `29173ac` — редактируемые `Columns`/`Rows` в панели `Cabinet Grid` (тот же `resizeScreenGrid()`) и корректировка проверки лимита; `02e8483` — регрессия на реальный предел лимита. `test:smoke` перепрогнан на финальном кандидате `02e8483` — PASS. Следующий gate — отдельная итерация 4 Early Alpha UI; этим ADR не авторизован.
+
+## ADR-027: Cabinet Geometry + Ordering Editor (ALPHA-UI-004)
+
+- **Статус:** Accepted — executable spec gate, docs-only. Production требует отдельного approval.
+- **Контракт:** [LEDMAP-ALPHA-UI-004](specs/LEDMAP-ALPHA-UI-004.md). Baseline `e75567b` поверх `02e8483` (итерация 3 CLOSED). Scope сужен до пяти полей (`Rows/Columns/Numbering/Direction/Snake`); модульная геометрия (`moduleColumns/Rows/PixelW/H`) остаётся readonly и переносится в будущую итерацию.
+- **Ответы на обязательные вопросы:**
+  1. Canonical geometry/order state живёт в domain: `CabinetEngineConfig` (`columns/rows/ordering` + frozen модульная геометрия) → `CabinetGrid`/`Screen`; identity — в view-state `ScreenView.cabinets + nextCabinetSerial` со стабильностью по ключу ячейки.
+  2. UI изменяет его ровно одной app-операцией (кандидат `updateScreenCabinetConfig(project, screenId, patch)`) через существующий `buildSnapshot`-путь с seed; canvas handles и Properties — один mutation path, двух путей нет.
+  3. Существующего core mutation API достаточно — отдельного prerequisite core gate НЕ требуется: конструкторы `createCabinetGrid/createScreen` и производные `cabinetIndex/cabinetOrder` покрывают все пять полей; «мутация» — новое immutable-значение, новых core-экспортов не нужно. Обход invariants невозможен по построению (§2 спеки).
+  4. Transient: DOM-draft в input, `resizePreview {columns, rows}`, pointer-gesture; committed: `Project` после ровно одного §7-commit (или ноль при отмене/совпадении/невалиде).
+  5. Identity сохраняется переиспользованием по `(column,row)` с монотонным `nextCabinetSerial` без переиспользования; ordering-патч identity не трогает.
+  6. Logical traversal определяет только core (`cabinetIndex/cabinetOrder`); truth table 8 комбинаций заземлена в REF-001…004 тестах (§6 спеки).
+  7. Snake — пост-трансформация offset на нечётных линиях (`snake.ts`), физика не затрагивается: physical ID назначены по строкам и неподвижны.
+  8. Non-goals: модульная геометрия, UI-04/05, Mapping/Hardware/Signal/Undo, persistence, project-model v2 migration.
+  9. Production блокируют: матрица §14 спеки (G/O/I/V/P unit + S1–S3 smoke) и REF-001 §13.
+- **Границы:** только spec + этот ADR + TODO; `packages/core`, `packages/app`, `.ledmap v1`, математика и reference-тесты не меняются. Следующий шаг — отдельный production approval.
+
+## ADR-028: UI Architecture Vision
+
+- **Статус:** Accepted — vision, docs-only gate. Не является разрешением на production-код вне авторизованных gates.
+- **Контракты:** [LEDMAP-UI-ARCHITECTURE-001](specs/LEDMAP-UI-ARCHITECTURE-001.md), [LEDMAP-UI-WIREFRAMES-001](specs/LEDMAP-UI-WIREFRAMES-001.md), [LEDMAP-UI-DESIGN-SYSTEM-001](specs/LEDMAP-UI-DESIGN-SYSTEM-001.md). Baseline `02e8483` (итерация 3 CLOSED).
+- **Решение:** UI Architecture v1 фиксируется как target vision (`One Project → Multiple Views → One Source of Truth`), явно отделённая от текущего executable scope. Executable scope остаётся Layout (Early Alpha `001/002/003`; итерация 4 `LEDMAP-ALPHA-UI-004` / ADR-027 — Draft, не авторизована). Порядок NOW: `0 vision docs-gate → 1 ALPHA-UI-004 Geometry+Ordering → 2 UI-04 Selection → 3 UI-05 Snap/Guides/Align/Distribute → 4 Layout acceptance`. `UI-01/UI-02 Shell/Project` — после закрытия Layout. `Outputs` в executable scope — секция внутри Mapping, отдельный workspace — LATER.
+- **WorkspaceStatus — UI-агрегатор, не расширение 7C:** `WorkspaceStatus ← Core Validation (7C errors-only) + Hardware Diagnostics (6A/6B) + App-level Checks + Dirty/Recalculation State`; презентация `✓/⚠/✕/—/●`. `WARNING`/`INFO` в `validateProject()` не вводятся. Агрегатор живёт в `app`, не в `core`.
+- **Открытый блокер ALPHA-UI-004:** `Does existing core API safely support mutation of rows / columns / Numbering / Direction / Snake?` Если нет — перед production UI нужен отдельный pure immutable core-contract gate (кандидат `updateScreenCabinetConfig(screen, patch)`); UI запрещено пересобирать domain objects в обход core и нарушать invariants.
+- **Blocked без кода до core-gates:** multi-screen persisted Project (7D — один Screen/Region); `MediaOutputCanvas`/`OutputMapping`; editable `SignalRoute.targets[]` (`SignalPath` — derived); HardwareAssignment locks; validation warnings; Undo/Redo history (механизма нет, запрещён); `LiveOutputTarget`; vendor export formats; full Open/Save IPC + privileged preload; AddressEncoder / Final Remap / ReverseIndex.
+- **Обязательные patterns:** единый `Configure → Calculate → Preview → Validate → Apply` (проект неизменён до Apply); `Show Problem: workspace → selection → zoom → property → highlight`; states `Empty/Ready/Selection/Editing/Preview/Error/Live/Read-only`; `EDIT ONCE → MODEL UPDATES → ALL VIEWS UPDATE`; user terminology ≠ internal terminology; классификация `stored (7D) / derived (engines) / view-state (app)`; позиция Screen — app-state, не домен, не сериализация.
+- **Границы gate:** коммит ограничен тремя спеками, этим ADR и `TODO.md` (UI Vision / Backlog). `packages/core`, `packages/app`, public API, математика, reference-тесты, `.ledmap v1`, запреты Phase 8 не меняются.
+- **Docs-only gate:** production, тесты, IPC, persistence, migrations в коммит не входят. Следующий этап — дооформление Draft `ALPHA-UI-004` в executable spec; production — только по отдельному approval.
+
+## ADR-029: Selection Tools (UI-04 spec gate)
+
+- **Статус:** Accepted — executable spec gate, docs-only. Production требует отдельного approval.
+- **Контракт:** [LEDMAP-UI-04-001](specs/LEDMAP-UI-04-001.md). Baseline — ALPHA-UI-004 CLOSED.
+- **Решение:** единый `SelectionState { items, primary }` вместо `SelectedObject | null` (инварианты: без дубликатов, детерминированный порядок, primary — последний выбранный, замена при удалении — последний оставшийся). Гомогенные наборы v1: Screens на top-level, кабинеты одного Screen в nested-режиме; гетерогенный клик нормализует к single. Box-правило: intersection selects, plain заменяет, Ctrl+box additive, Escape восстанавливает предыдущий набор. Group move/nudge — одна logical operation (`moveScreens`), offsets сохранены, набор с locked не двигается целиком. Duplicate создаёт новые Screen/Grid ID через max-suffix+1 и свежую кабинетную аллокацию (per-screen namespace зафиксирован, проектного cabinet namespace не вводится); placement +32/+32 детерминированно; selection переходит на дубликаты. Delete — `removeScreens` с repair selection/active; locked удалять запрещено. Lock — app-state (`lockedScreenIds` рядом с Project, не core, не serialized): selectable/inspectable YES, move/resize/nudge/delete NO, duplicate YES→unlocked. Multi-Properties — summary/read-only, bulk editing вне scope. Escape: blur-first в editable control (selection не чистится), иначе priority gesture > preview > clear. Production блокирует матрица SEL/BOX/MOV/NUD/DUP/DEL/LCK + smoke S1–S6.
+- **Границы:** только spec + этот ADR + TODO; `packages/core`, `packages/app`, `.ledmap v1`, IPC, persistence, project-model v2 не меняются.
+- **Production closure (ACCEPTED / CLOSED):** единая реализация в `packages/app` (чистый `selection.ts`, операции `project.ts`, отрисовка `canvas.ts`, жесты/действия `index.ts`); group move/delete атомарны с lock; duplicate — новые Screen/Grid ID (max-suffix+1 как current-project uniqueness, без historic non-reuse) и свежий cabinet namespace; lock — app-state вне `ScreenView/core/persistence`; box — intersection с детерминированным primary. Уточнение Escape (без поведения-изменений, зафиксировано в спеке §14): blur-first только для `INPUT/SELECT/TEXTAREA`; `BUTTON` guarded для nudge/Space/Delete, но не блокирует глобальный Escape-clear.
+- **Final invariants:** `Selection = view-state; Lock = app-state; Multi-select = top-level Screens only; Cabinet inspect = single only. Group move/delete + locked member → atomic block. Duplicate locked → allowed → duplicate unlocked. Duplicate identity → new Screen ID + new Grid ID + fresh cabinet namespace. Box → intersection + deterministic project order + last selected = primary.`
+
+## ADR-030: Layout Productivity (UI-05 spec gate)
+
+- **Статус:** Accepted — executable spec gate, docs-only. Production требует отдельного approval.
+- **Контракт:** [LEDMAP-UI-05-001](specs/LEDMAP-UI-05-001.md). Baseline — UI-04 CLOSED.
+- **Решение:** grid snap только для drag (`GRID_STEP = 8` project px, origin `(0,0)`, `Math.round` с `-0 → 0`); nudge/resize/duplicate/add snap игнорируют; `Alt` отключает на время drag. Tolerance `8` screen px, scoring nearest, tie-приоритет `Guides > Edges > Centers > Grid`; движущиеся линии — только primary box; члены набора и свои цели исключены; locked чужие — цели. Guides без rulers (создание кнопками, drag, lock, удаление; выбор гайда очищает Screen-набор); хранение app-state, не serialized. Align (6) / Distribute (2) — anchor всегда bbox набора, **primary ≠ anchor** в v1 (explicit anchor mode — отдельно); одна logical operation; `<2`/`<3` — no-op; locked в наборе — atomic block. Toolbar: Snap+категории, Guides, Align/Distribute с disabled-причинами.
+- **Границы:** только spec + этот ADR + TODO; `packages/core`, `packages/app`, `.ledmap v1`, IPC, persistence, project-model v2 не меняются.
+
+## ADR-031: Layout Acceptance / Polish (spec gate)
+
+- **Статус:** Accepted — executable spec gate, docs-only. Production polish требует отдельного approval.
+- **Контракт:** [LEDMAP-LAYOUT-ACCEPTANCE-001](specs/LEDMAP-LAYOUT-ACCEPTANCE-001.md). Baseline — UI-05 CLOSED. Новых capabilities не добавляется.
+- **Находки инспекции:** один blocker A-01 (Screen-selection пути не сбрасывают `selectedGuideId` → рассинхрон Properties/canvas; чинится централизованным `setScreenSelection`, restore-пути box-cancel не трогать); polish A-02 (chip для гайда) и A-03 (smoke-покрытие `activeScreenId`-repair); future A-04 (drag `pointercancel` без undo не восстанавливается — не чинить); accepted A-05 (grid/cabinet-delete no-op) и A-06 (Escape при guide-drag восстанавливает позицию и единообразно снимает выбор — uniform cancel, текст спеки исправлен под фактическое поведение). Остальные границы (gestures/keyboard/lock/snap/geometry/guides/visual) проверены и чисты. Закрытие переводит Layout v1 в CLOSED как workflow и открывает NEXT — Shell / Project foundation.
+- **Границы:** только spec + этот ADR + TODO; production-файлы (ожидаемо `index.ts` + smoke) — только по отдельному approval; `packages/core`, сериализация, IPC, persistence не меняются.
 
 ## Открытые вопросы для окончательной фиксации
 

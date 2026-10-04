@@ -1,4 +1,4 @@
-import type { CabinetEngineConfig, CabinetGrid, GridPosition, Screen } from '@ledmap/core'
+import type { CabinetEngineConfig, CabinetGrid, GridOrdering, GridPosition, Screen } from '@ledmap/core'
 import {
   buildSnapshot, gridPixelSize, initialDraft, maxPreviewColumns, maxPreviewRows,
   type Draft, type PreviewCabinet, type SnapshotIds,
@@ -73,11 +73,67 @@ export function findScreen(project: Project, screenId: string): ScreenView | und
 }
 
 export function moveScreen(project: Project, screenId: string, dx: number, dy: number): Project {
+  return moveScreens(project, [screenId], dx, dy)
+}
+
+export function moveScreens(project: Project, screenIds: readonly string[], dx: number, dy: number): Project {
+  const targets = new Set(screenIds)
   return {
-    screens: project.screens.map(screen => screen.screen.id === screenId
+    screens: project.screens.map(screen => targets.has(screen.screen.id)
       ? { ...screen, x: screen.x + dx, y: screen.y + dy }
       : screen),
   }
+}
+
+export function removeScreens(project: Project, screenIds: readonly string[]): Project {
+  const targets = new Set(screenIds)
+  return { screens: project.screens.filter(screen => !targets.has(screen.screen.id)) }
+}
+
+export interface DuplicateScreensResult {
+  readonly project: Project
+  readonly newIds: readonly string[]
+}
+
+export function nextScreenIndex(project: Project): number {
+  let max = 0
+  for (const screen of project.screens) {
+    for (const id of [screen.screen.id, screen.grid.id]) {
+      const match = /-(\d+)$/.exec(id)
+      if (match) max = Math.max(max, Number(match[1]))
+    }
+  }
+  return max + 1
+}
+
+export function duplicateScreens(project: Project, screenIds: readonly string[]): DuplicateScreensResult {
+  let next = nextScreenIndex(project)
+  const fresh: ScreenView[] = []
+  const newIds: string[] = []
+  for (const screenId of screenIds) {
+    const source = findScreen(project, screenId)
+    if (!source) continue
+    const index = next
+    next += 1
+    const draft = draftFromPatch(source.config, {})
+    const view = buildScreenView(draft, {
+      screenId: `screen-${index}`,
+      gridId: `grid-${index}`,
+      screenName: `${source.screen.name} copy`,
+      gridName: source.grid.name,
+    }, source.x + 32, source.y + 32, null)
+    fresh.push(view)
+    newIds.push(view.screen.id)
+  }
+  return { project: { screens: [...project.screens, ...fresh] }, newIds }
+}
+
+export function rectsIntersect(a: Bounds, b: Bounds): boolean {
+  return a.left <= b.right && a.right >= b.left && a.top <= b.bottom && a.bottom >= b.top
+}
+
+export function screensInRect(project: Project, rect: Bounds): ScreenView[] {
+  return project.screens.filter(screen => rectsIntersect(screenBounds(screen), rect))
 }
 
 export function setScreenPosition(project: Project, screenId: string, x: number, y: number): Project {
@@ -88,15 +144,21 @@ export function setScreenPosition(project: Project, screenId: string, x: number,
   }
 }
 
-function draftFromConfig(config: CabinetEngineConfig, columns: number, rows: number): Draft {
+export interface CabinetConfigPatch {
+  readonly columns?: number
+  readonly rows?: number
+  readonly ordering?: GridOrdering
+}
+
+function draftFromPatch(config: CabinetEngineConfig, patch: CabinetConfigPatch): Draft {
   return {
-    columns: String(columns),
-    rows: String(rows),
+    columns: String(patch.columns ?? config.columns),
+    rows: String(patch.rows ?? config.rows),
     moduleColumns: String(config.moduleColumns),
     moduleRows: String(config.moduleRows),
     modulePixelWidth: String(config.modulePixelWidth),
     modulePixelHeight: String(config.modulePixelHeight),
-    ordering: { ...config.ordering },
+    ordering: { ...(patch.ordering ?? config.ordering) },
   }
 }
 
@@ -104,12 +166,12 @@ function assertGridDimension(label: string, value: number): void {
   if (!Number.isSafeInteger(value) || value < 1) throw new Error(`${label} must be a whole number of at least 1.`)
 }
 
-export function resizeScreenGrid(project: Project, screenId: string, columns: number, rows: number): Project {
+export function updateScreenCabinetConfig(project: Project, screenId: string, patch: CabinetConfigPatch): Project {
   const screen = findScreen(project, screenId)
   if (!screen) throw new Error(`Unknown screen: ${screenId}`)
-  assertGridDimension('Columns', columns)
-  assertGridDimension('Rows', rows)
-  const draft = draftFromConfig(screen.config, columns, rows)
+  if (patch.columns !== undefined) assertGridDimension('Columns', patch.columns)
+  if (patch.rows !== undefined) assertGridDimension('Rows', patch.rows)
+  const draft = draftFromPatch(screen.config, patch)
   const ids: SnapshotIds = {
     screenId: screen.screen.id,
     gridId: screen.grid.id,
@@ -123,6 +185,10 @@ export function resizeScreenGrid(project: Project, screenId: string, columns: nu
   }
 }
 
+export function resizeScreenGrid(project: Project, screenId: string, columns: number, rows: number): Project {
+  return updateScreenCabinetConfig(project, screenId, { columns, rows })
+}
+
 export function maxColumnsForRows(screen: ScreenView, rows: number): number {
   return maxPreviewColumns(rows, screen.moduleCount)
 }
@@ -132,7 +198,7 @@ export function maxRowsForColumns(screen: ScreenView, columns: number): number {
 }
 
 export function addScreen(project: Project, draft: Draft = initialDraft): Project {
-  const next = project.screens.length + 1
+  const next = nextScreenIndex(project)
   const previous = project.screens[project.screens.length - 1]
   const x = previous ? previous.x + 100 : 0
   const y = previous ? previous.y + 100 : 0

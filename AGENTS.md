@@ -54,6 +54,28 @@
 - Физическая сетка: `C01 C02 C03 C04 / C05 C06 C07 C08 / C09 C10 C11 C12`
 - Логический порядок сигнала: `C01 C02 C03 C04 / C08 C07 C06 C05 / C09 C10 C11 C12`
 
+## Каноническая линия разработки
+
+- Canonical branch: `master`. Вся новая разработка начинается только от актуального `origin/master`.
+- Canonical UI: `Composition`, `Mapping`, `Output Mapping`, `Hardware`, `Test`, `Export`.
+- Никаких долгоживущих product-линий: короткие feature-ветки от `origin/master` → PR → `master`.
+- Один coding agent = одна ветка = один выделенный worktree. Двум агентам запрещено одновременно редактировать один worktree.
+- Параллельная разработка вне одобренной интеграционной задачи запрещена для файлов: `index.html`, `index.ts`, `style.css`, `canvas.ts`, project model, workspace navigation, mapping, hardware, signal, тесты.
+- Подробности: `docs/DEVELOPMENT-WORKFLOW.md`.
+
+## Обязательный preflight перед изменением production-кода
+
+```bash
+git rev-parse --show-toplevel
+git branch --show-current
+git rev-parse HEAD
+git status --porcelain=v1
+git fetch origin
+git merge-base --is-ancestor origin/master HEAD
+```
+
+Если ветка behind `origin/master` или diverged от `origin/master` — остановиться и запросить указание, а не писать код. Продолжение от stale base запрещено. Новая feature-ветка создаётся только от актуального `origin/master` (исключение — явно назначенная integration-ветка в рамках одобренной интеграционной задачи).
+
 ## Конвенции кода
 
 - Не добавлять комментарии в код, если они не запрошены.

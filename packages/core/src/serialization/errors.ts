@@ -1,4 +1,5 @@
 import { DomainError } from '../model/errors.js'
+import type { EditableProjectDiagnostic } from '../editor-project/index.js'
 import type { ProjectValidationReport } from '../validation/index.js'
 
 export type SerializationErrorCode =
@@ -14,11 +15,19 @@ export type SerializationPath = readonly (string | number)[]
 export class SerializationError extends DomainError {
   readonly path: SerializationPath
   readonly validation?: ProjectValidationReport
+  readonly integrityDiagnostics?: readonly EditableProjectDiagnostic[]
 
-  constructor(code: SerializationErrorCode, message: string, path: SerializationPath, validation?: ProjectValidationReport) {
+  constructor(
+    code: SerializationErrorCode,
+    message: string,
+    path: SerializationPath,
+    validation?: ProjectValidationReport,
+    integrityDiagnostics?: readonly EditableProjectDiagnostic[],
+  ) {
     super(code, message)
     this.name = 'SerializationError'
     this.path = Object.freeze([...path])
     if (validation !== undefined) this.validation = validation
+    if (integrityDiagnostics !== undefined) this.integrityDiagnostics = Object.freeze([...integrityDiagnostics])
   }
 }

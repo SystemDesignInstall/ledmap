@@ -4,50 +4,434 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' ws://localhost:* ws://127.0.0.1:*" />
-    <title>LedMAP — Project Canvas</title>
+    <title>LedMAP</title>
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
-    <header class="topbar">
-      <div class="brand"><span class="brand-mark">▦</span> LedMAP <span class="badge">ALPHA</span></div>
-      <div class="toolbar">
-        <button id="toggle-mode" type="button">Active Screen</button>
-        <button id="fit-project" type="button">Fit to Project</button>
-        <button id="add-screen" type="button">+ Screen</button>
+    <header class="app-chrome">
+      <div class="titlebar">
+        <div class="brand"><span class="brand-mark">▦</span><span>LedMAP</span></div>
+        <nav class="mode-switcher" aria-label="Workflow mode">
+          <button id="layout-mode" type="button" class="mode active" aria-current="page">Composition</button>
+          <button id="mapping-mode" type="button" class="mode">Mapping</button>
+          <button id="output-mapping-mode" type="button" class="mode">Output Mapping</button>
+          <button id="hardware-mode" type="button" class="mode">Hardware</button>
+          <button id="test-mode" type="button" class="mode">Test</button>
+          <button id="export-mode" type="button" class="mode">Export</button>
+        </nav>
+        <div class="document-actions" aria-label="Project document">
+          <button id="new-project" type="button">New</button>
+          <button id="open-project" type="button">Open</button>
+          <button id="undo-project" type="button" disabled>Undo</button>
+          <button id="redo-project" type="button" disabled>Redo</button>
+          <button id="save-project" type="button">Save</button>
+          <button id="save-project-as" type="button">Save As</button>
+        </div>
       </div>
-      <span class="session-note">In-memory session</span>
+      <div id="layout-toolbar" class="layout-toolbar" aria-label="Layout tools">
+        <div class="tool-group primary-tools">
+          <button id="add-screen" class="primary" type="button">+ Screen</button>
+          <button id="fit-project" type="button">Fit All</button>
+          <button id="fit-selection" type="button">Fit Selection</button>
+          <button id="actual-size" type="button">100%</button>
+          <button id="zoom-out" type="button" aria-label="Zoom out">−</button>
+          <button id="zoom-in" type="button" aria-label="Zoom in">+</button>
+        </div>
+        <div class="tool-group snap-tools" aria-label="Snap controls">
+          <button id="snap-toggle" type="button" aria-pressed="true" title="Toggle snapping">Snap ✓</button>
+          <button id="snap-grid" type="button" aria-pressed="false" title="Snap to grid">Grid</button>
+          <button id="snap-edges" type="button" aria-pressed="true" title="Snap to Screen edges">Edges</button>
+          <button id="snap-centers" type="button" aria-pressed="true" title="Snap to Screen centers">Centers</button>
+          <button id="snap-guides" type="button" aria-pressed="true" title="Snap to guides">Guides</button>
+          <label class="toolbar-field"><input id="grid-step" type="number" min="1" step="1" value="10" aria-label="Grid snap step" /><span>px</span></label>
+          <button id="guide-add-v" type="button" title="Add vertical guide at viewport center">+ V-Guide</button>
+          <button id="guide-add-h" type="button" title="Add horizontal guide at viewport center">+ H-Guide</button>
+        </div>
+        <div class="tool-group alignment-tools" aria-label="Align and distribute">
+          <button type="button" data-align="left" title="Align left">L</button>
+          <button type="button" data-align="horizontal-center" title="Align horizontal centers">Cˣ</button>
+          <button type="button" data-align="right" title="Align right">R</button>
+          <button type="button" data-align="top" title="Align top">T</button>
+          <button type="button" data-align="vertical-center" title="Align vertical centers">Cʸ</button>
+          <button type="button" data-align="bottom" title="Align bottom">B</button>
+          <button type="button" data-distribute="horizontal" title="Distribute horizontally">Dˣ</button>
+          <button type="button" data-distribute="vertical" title="Distribute vertically">Dʸ</button>
+        </div>
+        <div class="tool-group overlay-tools" aria-label="Canvas overlays">
+          <span class="tool-label">Overlays</span>
+          <button type="button" data-overlay="cabinets" aria-pressed="true">Cabinets</button>
+          <button type="button" data-overlay="modules" aria-pressed="false">Modules</button>
+          <button type="button" data-overlay="coordinates" aria-pressed="true">Coordinates</button>
+        </div>
+        <button id="toggle-mode" class="focus-toggle" type="button">Focus Screen</button>
+      </div>
+      <div id="mapping-toolbar" class="layout-toolbar mapping-toolbar" aria-label="Mapping tools" hidden>
+        <div class="tool-group input-tools">
+          <span class="tool-label">Input Canvas</span>
+          <label class="toolbar-field"><input id="mapping-input-width" type="number" min="1" step="1" value="1920" aria-label="Input Canvas width" /><span>×</span><input id="mapping-input-height" type="number" min="1" step="1" value="1080" aria-label="Input Canvas height" /><span>px</span></label>
+          <button id="mapping-apply-input" type="button">Apply</button>
+        </div>
+        <div class="tool-group">
+          <button id="mapping-create-region" class="primary" type="button">+ Mapping Region</button>
+          <button id="mapping-from-layout" type="button">Map from Composition Position</button>
+          <button id="mapping-delete-region" type="button">Delete</button>
+        </div>
+        <div class="tool-group mapping-view-tools">
+          <button id="mapping-fit" type="button">Fit Input</button>
+          <button id="mapping-actual-size" type="button">100%</button>
+          <button id="mapping-zoom-out" type="button" aria-label="Mapping zoom out">−</button>
+          <button id="mapping-zoom-in" type="button" aria-label="Mapping zoom in">+</button>
+        </div>
+      </div>
+      <div id="output-mapping-toolbar" class="layout-toolbar output-mapping-toolbar" aria-label="Output Mapping tools" hidden>
+        <div class="tool-group">
+          <button id="output-add-media" class="primary" type="button">+ Media Output</button>
+          <button id="output-add-mapping" type="button">+ Output Mapping</button>
+          <button id="output-delete-selection" type="button">Delete</button>
+        </div>
+        <span class="tool-label">Screen pixels → Media Output pixels · translation only</span>
+      </div>
+      <div id="hardware-toolbar" class="layout-toolbar hardware-toolbar" aria-label="Hardware tools" hidden>
+        <div class="tool-group">
+          <button id="hardware-add-processor" class="primary" type="button">+ Processor</button>
+          <button id="hardware-add-port" type="button">+ Port</button>
+          <button id="hardware-add-receiver" type="button">+ Receiver</button>
+          <button id="hardware-delete" type="button">Delete</button>
+        </div>
+        <div class="tool-group">
+          <button id="hardware-order-up" type="button" title="Move earlier in signal order">Order ↑</button>
+          <button id="hardware-order-down" type="button" title="Move later in signal order">Order ↓</button>
+          <button id="hardware-assign" type="button">Assign</button>
+          <button id="hardware-unassign" type="button">Unassign</button>
+          <button id="hardware-auto-allocate" type="button">Auto Allocate</button>
+        </div>
+        <div class="tool-group hardware-overlay-tools" aria-label="Hardware canvas overlays">
+          <span class="tool-label">Overlays</span>
+          <button type="button" data-hardware-overlay="receiver" aria-pressed="true">Receiver</button>
+          <button type="button" data-hardware-overlay="port" aria-pressed="false">Port</button>
+          <button type="button" data-hardware-overlay="processor" aria-pressed="false">Processor</button>
+          <button type="button" data-hardware-overlay="dataFlow" aria-pressed="true">Data Flow</button>
+        </div>
+        <div class="tool-group hardware-view-tools">
+          <button id="hardware-fit" type="button">Fit All</button>
+          <button id="hardware-actual-size" type="button">100%</button>
+          <button id="hardware-zoom-out" type="button" aria-label="Hardware zoom out">−</button>
+          <button id="hardware-zoom-in" type="button" aria-label="Hardware zoom in">+</button>
+        </div>
+      </div>
+      <div id="test-toolbar" class="layout-toolbar test-toolbar" aria-label="Test tools" hidden>
+        <div class="tool-group test-scope-tools">
+          <span class="tool-label">Scope</span>
+          <select id="test-scope" aria-label="Test scope">
+            <option value="composition">Entire Composition</option>
+            <option value="screen">Screen</option>
+            <option value="cabinet">Cabinet</option>
+            <option value="module">Module</option>
+            <option value="receiver">Receiver</option>
+            <option value="port">Port</option>
+          </select>
+          <select id="test-target" aria-label="Test scope target" disabled><option>Entire Composition</option></select>
+        </div>
+        <div id="test-address-controls" class="tool-group test-address-tools" hidden>
+          <button id="test-address-previous" type="button">Previous</button>
+          <button id="test-address-next" type="button">Next</button>
+          <label class="toolbar-field">Direct index <input id="test-address-index" type="number" min="0" step="1" value="0"></label>
+          <button id="test-address-go" type="button">Go</button>
+        </div>
+        <div class="tool-group">
+          <button id="live-output-open" class="primary" type="button">Live Output <span id="live-output-count">0/4</span></button>
+        </div>
+        <div class="tool-group test-view-tools">
+          <button id="test-fit" type="button">Fit All</button>
+          <button id="test-actual-size" type="button">100%</button>
+          <button id="test-zoom-out" type="button" aria-label="Test zoom out">−</button>
+          <button id="test-zoom-in" type="button" aria-label="Test zoom in">+</button>
+        </div>
+      </div>
+      <div id="export-toolbar" class="layout-toolbar export-toolbar" aria-label="Export tools" hidden>
+        <div class="tool-group"><span class="tool-label">Deterministic output</span><strong id="export-pixel-count">Blocked</strong></div>
+        <div class="tool-group"><span>Generic Mapping v1</span><span>Identity Remap</span></div>
+      </div>
     </header>
-    <main>
+
+    <main id="layout-workspace" class="workspace">
       <aside class="tree-panel">
-        <div class="panel-heading"><span class="eyebrow">PROJECT</span><h1>Layout</h1><p>One canvas, many screens.</p></div>
-        <div id="project-tree" role="tree" aria-label="Project screens"></div>
+        <div class="panel-title-row">
+          <div><span class="eyebrow">PROJECT</span><h1>Screens</h1></div>
+          <span class="panel-count" id="tree-screen-count">0</span>
+        </div>
+        <div class="tree-actions" aria-label="Screen actions">
+          <button id="rename-screen" type="button" disabled>Rename</button>
+          <button id="duplicate-screen" type="button" disabled>Duplicate</button>
+          <button id="delete-screen" type="button" disabled>Delete</button>
+        </div>
+        <div id="project-tree" role="tree" aria-label="Project Screens"></div>
       </aside>
-      <article>
-        <div class="preview-heading">
-          <div>
-            <span class="eyebrow">CANVAS — PROJECT LAYOUT</span>
-            <h2 id="canvas-title">All Screens</h2>
-          </div>
+
+      <article class="canvas-workspace">
+        <div class="canvas-heading">
+          <div><span class="eyebrow">COMPOSITION WORKSPACE</span><h2 id="canvas-title">All Screens</h2></div>
           <span id="selection-chip" role="status">No selection</span>
         </div>
         <div id="viewport">
-          <div id="empty" hidden><span class="empty-icon">▦</span><h2>No screens</h2><p>Add a screen to start laying out your LED project.</p></div>
-          <canvas id="project-canvas" role="img" aria-label="Project canvas. No screens."></canvas>
+          <div id="empty" hidden>
+            <span class="empty-icon">▦</span>
+            <h2>No screens yet</h2>
+            <p>Add your first Screen to start the composition.</p>
+            <button id="empty-add-screen" class="primary" type="button">Add your first Screen</button>
+          </div>
+          <canvas id="project-canvas" role="img" aria-label="Project canvas. No Screens."></canvas>
+          <span id="canvas-note" class="canvas-note"></span>
         </div>
       </article>
+
       <aside class="properties-panel">
-        <div class="panel-heading"><span class="eyebrow">PROPERTIES</span><h2 id="properties-title">Nothing selected</h2></div>
+        <div class="panel-heading"><span class="eyebrow">INSPECTOR</span><h2 id="properties-title">Nothing selected</h2></div>
         <div id="properties" class="properties-body">
-          <p class="hint">Select a Screen, a Cabinet Grid or a Cabinet on the canvas or in the project tree.</p>
+          <p class="hint">Select a Screen on the canvas or in the Project panel.</p>
         </div>
       </aside>
     </main>
+
+    <main id="mapping-workspace" class="workspace mapping-workspace" hidden>
+      <aside class="tree-panel mapping-project-panel">
+        <div class="panel-title-row">
+          <div><span class="eyebrow">MAPPING</span><h1>Screens &amp; Regions</h1></div>
+        </div>
+        <div id="mapping-tree" class="mapping-tree" role="tree" aria-label="Mapping Screens and Regions"></div>
+        <div class="mapping-diagnostics-heading"><span class="eyebrow">DIAGNOSTICS</span></div>
+        <div id="mapping-diagnostics" class="mapping-diagnostics"></div>
+      </aside>
+
+      <article class="canvas-workspace">
+        <div class="canvas-heading">
+          <div><span class="eyebrow">MAPPING WORKSPACE</span><h2>Input Canvas</h2></div>
+          <span id="mapping-selection-chip" role="status">No selection</span>
+        </div>
+        <div id="mapping-viewport">
+          <div id="mapping-empty">
+            <span class="empty-icon">▧</span>
+            <h2>Configure Input Canvas</h2>
+            <p>Set the source resolution in the toolbar to begin mapping.</p>
+          </div>
+          <canvas id="mapping-canvas" role="img" aria-label="Input Canvas and Mapping Regions"></canvas>
+        </div>
+      </article>
+
+      <aside class="properties-panel mapping-inspector">
+        <div class="panel-heading"><span class="eyebrow">INSPECTOR</span><h2 id="mapping-inspector-title">Mapping</h2></div>
+        <div id="mapping-properties" class="properties-body">
+          <p class="hint">Select a Screen or Mapping Region.</p>
+        </div>
+      </aside>
+    </main>
+
+    <main id="output-mapping-workspace" class="workspace output-mapping-workspace" hidden>
+      <aside class="tree-panel output-project-panel">
+        <div class="panel-title-row"><div><span class="eyebrow">MEDIA OUTPUT</span><h1>Outputs &amp; Mappings</h1></div></div>
+        <div id="output-mapping-tree" class="output-mapping-tree" role="tree" aria-label="Media Outputs and Output Mappings"></div>
+        <div class="mapping-diagnostics-heading"><span class="eyebrow">DIAGNOSTICS</span></div>
+        <div id="output-mapping-diagnostics" class="mapping-diagnostics"></div>
+      </aside>
+      <article class="canvas-workspace">
+        <div class="canvas-heading">
+          <div><span class="eyebrow">OUTPUT MAPPING WORKSPACE</span><h2 id="output-mapping-title">Media Output</h2></div>
+          <span id="output-mapping-preview-status" role="status">Synthetic preview</span>
+        </div>
+        <div id="output-mapping-viewport">
+          <canvas id="output-mapping-canvas" role="img" aria-label="Media Output mapping preview"></canvas>
+          <div id="output-mapping-empty" class="canvas-empty"><h2>No Media Output</h2><p>Add an output to place Screens in its independent pixel space.</p></div>
+        </div>
+      </article>
+      <aside class="properties-panel output-mapping-inspector">
+        <div class="panel-heading"><span class="eyebrow">INSPECTOR</span><h2 id="output-mapping-inspector-title">Output Mapping</h2></div>
+        <div id="output-mapping-properties" class="properties-body"><p class="hint">Select a Media Output or mapping.</p></div>
+      </aside>
+    </main>
+
+    <main id="hardware-workspace" class="workspace hardware-workspace" hidden>
+      <aside class="tree-panel hardware-project-panel">
+        <div class="panel-title-row">
+          <div><span class="eyebrow">GENERIC HARDWARE</span><h1>Topology</h1></div>
+        </div>
+        <div id="hardware-tree" class="hardware-tree" role="tree" aria-label="Hardware topology"></div>
+        <div class="mapping-diagnostics-heading"><span class="eyebrow">CAPACITY &amp; DIAGNOSTICS</span></div>
+        <div id="hardware-diagnostics" class="mapping-diagnostics"></div>
+      </aside>
+
+      <article class="canvas-workspace">
+        <div class="canvas-heading">
+          <div><span class="eyebrow">HARDWARE WORKSPACE</span><h2>Cabinet Assignment</h2></div>
+          <span id="hardware-selection-chip" role="status">0 Cabinets selected</span>
+        </div>
+        <div id="hardware-viewport">
+          <canvas id="hardware-canvas" role="img" aria-label="Hardware topology Cabinet assignment canvas"></canvas>
+        </div>
+      </article>
+
+      <aside class="properties-panel hardware-inspector">
+        <div class="panel-heading"><span class="eyebrow">INSPECTOR</span><h2 id="hardware-inspector-title">Hardware</h2></div>
+        <div id="hardware-properties" class="properties-body">
+          <p class="hint">Select a Processor, Port or Receiver.</p>
+        </div>
+      </aside>
+    </main>
+
+    <main id="test-workspace" class="workspace test-workspace" hidden>
+      <aside class="tree-panel test-pattern-panel">
+        <div class="panel-title-row">
+          <div><span class="eyebrow">DIAGNOSTIC OUTPUT</span><h1>Test Patterns</h1></div>
+        </div>
+        <div id="test-pattern-list" class="test-pattern-list"></div>
+        <div id="test-pattern-reason" class="test-pattern-reason" role="status"></div>
+      </aside>
+
+      <article class="canvas-workspace">
+        <div class="canvas-heading">
+          <div><span class="eyebrow">TEST WORKSPACE</span><h2 id="test-canvas-title">White · Entire Composition</h2></div>
+          <span id="test-session-chip" role="status">Session only</span>
+        </div>
+        <div id="test-viewport">
+          <canvas id="test-canvas" role="img" aria-label="Deterministic Test pattern preview"></canvas>
+          <div id="test-empty" class="canvas-empty" hidden><h2>No screens to test</h2><p>Build the Composition first.</p></div>
+        </div>
+      </article>
+
+      <aside class="properties-panel test-inspector">
+        <div class="panel-heading"><span class="eyebrow">INSPECTOR</span><h2 id="test-inspector-title">Test Output</h2></div>
+        <div id="test-properties" class="properties-body"></div>
+      </aside>
+    </main>
+
+    <main id="export-workspace" class="workspace export-workspace" hidden>
+      <aside class="tree-panel export-types-panel">
+        <div class="panel-title-row">
+          <div><span class="eyebrow">DELIVERABLES</span><h1>Export Center</h1></div>
+        </div>
+        <div class="export-type active"><strong>PNG Test Pattern</strong><span>Pixel-exact TestFrame output</span></div>
+        <div class="export-type"><strong>Generic Mapping JSON</strong><span>Versioned full pixel trace</span></div>
+        <div class="export-type"><strong>Generic Mapping CSV</strong><span>Fixed semantic columns</span></div>
+        <div class="export-type disabled" aria-disabled="true"><strong>Vendor Hardware File</strong><span>No vendor Address Encoder is configured/supported.</span></div>
+      </aside>
+
+      <article class="export-center">
+        <div class="canvas-heading">
+          <div><span class="eyebrow">EXPORT WORKSPACE</span><h2>Deterministic deliverables</h2></div>
+          <span>Session output · project unchanged</span>
+        </div>
+        <div class="export-scroll">
+          <div id="export-result" class="export-result" role="status">No export has run in this session.</div>
+          <section class="export-card">
+            <div class="export-card-heading"><div><span class="eyebrow">TEST OUTPUT</span><h3>PNG Test Pattern</h3></div><span class="format-badge">PNG</span></div>
+            <p>Renders the deterministic TestFrame directly at actual pixel resolution. Editor chrome is never captured.</p>
+            <div class="export-form-grid">
+              <label>Pattern<select id="export-png-pattern" aria-label="Export PNG pattern"></select></label>
+              <label>Scope<select id="export-png-scope" aria-label="Export PNG scope">
+                <option value="composition">Entire Composition</option>
+                <option value="current-scope">Current Test scope</option>
+                <option value="screen">Selected Screen</option>
+                <option value="batch-screens">Batch per-Screen</option>
+              </select></label>
+              <label id="export-png-screen-field" class="wide">Screen<select id="export-png-screen" aria-label="Export PNG Screen"></select></label>
+            </div>
+            <div id="export-png-diagnostics" class="export-inline-status"></div>
+            <div class="export-actions"><button id="export-png-run" class="primary" type="button">Export PNG</button></div>
+          </section>
+
+          <section class="export-card">
+            <div class="export-card-heading"><div><span class="eyebrow">ADDRESS TRACE</span><h3>Generic Mapping</h3></div><span class="format-badge">v1</span></div>
+            <p>Every row preserves Input, Screen, Cabinet, Module and real Processor/Port/Receiver addressing.</p>
+            <div class="export-form-grid">
+              <label>Scope<select id="export-generic-scope" aria-label="Generic Mapping scope">
+                <option value="composition">Entire Project</option>
+                <option value="screen">Selected Screen</option>
+              </select></label>
+              <label id="export-generic-screen-field">Screen<select id="export-generic-screen" aria-label="Generic Mapping Screen"></select></label>
+            </div>
+            <div id="export-mapping-summary" class="export-inline-status"></div>
+            <div class="export-actions">
+              <button id="export-json-run" class="primary" type="button">Export JSON</button>
+              <button id="export-csv-run" type="button">Export CSV</button>
+            </div>
+          </section>
+        </div>
+      </article>
+
+      <aside class="properties-panel export-preflight-panel">
+        <div class="panel-heading"><span class="eyebrow">PREFLIGHT</span><h2>Export readiness</h2></div>
+        <div id="export-preflight" class="export-preflight"></div>
+        <div class="export-contract">
+          <strong>Fixed CSV columns</strong>
+          <p>inputCanvas, inputX, inputY, screen, screenX, screenY, cabinet, cabinetX, cabinetY, module, moduleX, moduleY, processor, port, receiver, dataIndex</p>
+        </div>
+      </aside>
+    </main>
+
     <footer class="statusbar">
-      <span id="bounds" class="status-item">Project bounds · px</span>
-      <span id="zoom-indicator" class="status-item">—</span>
-      <span id="canvas-note" class="status-note"></span>
-      <span class="status-hints">Scroll: pan · Ctrl+Wheel: zoom · Middle / Space+drag: pan · Fit: all screens</span>
+      <span id="cursor-status" class="status-item layout-status">X 0 · Y 0</span>
+      <span id="zoom-indicator" class="status-item layout-status">100%</span>
+      <span id="selected-count" class="status-item layout-status">0 selected</span>
+      <span id="snap-status" class="status-item layout-status">Grid off · Smart on</span>
+      <span id="mapping-cursor-status" class="status-item mapping-status" hidden>Input X 0 · Y 0</span>
+      <span id="mapping-zoom-indicator" class="status-item mapping-status" hidden>100%</span>
+      <span id="mapping-health-status" class="status-item mapping-status" hidden>Input Canvas not configured</span>
+      <span id="hardware-cursor-status" class="status-item hardware-status" hidden>Layout X 0 · Y 0</span>
+      <span id="hardware-zoom-indicator" class="status-item hardware-status" hidden>100%</span>
+      <span id="hardware-health-status" class="status-item hardware-status" hidden>Hardware not configured</span>
+      <span id="test-cursor-status" class="status-item test-status" hidden>Composition X 0 · Y 0</span>
+      <span id="test-zoom-indicator" class="status-item test-status" hidden>100%</span>
+      <span id="test-health-status" class="status-item test-status" hidden>Test preview ready</span>
+      <span class="status-item export-status" hidden>Export does not change the project document or dirty state</span>
     </footer>
+
+    <div id="document-error" role="alert" hidden></div>
+
+    <dialog id="screen-dialog">
+      <form id="screen-form" method="dialog">
+        <div class="dialog-heading"><span class="eyebrow">NEW SCREEN</span><h2>Add Screen</h2><p>Create source-backed Screen and Cabinet Grid geometry.</p></div>
+        <div class="dialog-grid">
+          <label class="wide">Name<input id="new-screen-name" name="name" type="text" value="Screen" required /></label>
+          <label>X<input id="new-screen-x" name="x" type="number" step="1" value="0" required /></label>
+          <label>Y<input id="new-screen-y" name="y" type="number" step="1" value="0" required /></label>
+          <label>Grid columns<input id="new-screen-columns" name="columns" type="number" min="1" step="1" value="4" required /></label>
+          <label>Grid rows<input id="new-screen-rows" name="rows" type="number" min="1" step="1" value="3" required /></label>
+          <label>Module columns<input id="new-screen-module-columns" name="moduleColumns" type="number" min="1" step="1" value="1" required /></label>
+          <label>Module rows<input id="new-screen-module-rows" name="moduleRows" type="number" min="1" step="1" value="1" required /></label>
+          <label>Module width, px<input id="new-screen-module-width" name="modulePixelWidth" type="number" min="1" step="1" value="32" required /></label>
+          <label>Module height, px<input id="new-screen-module-height" name="modulePixelHeight" type="number" min="1" step="1" value="32" required /></label>
+        </div>
+        <p id="screen-form-error" class="form-error" role="alert" hidden></p>
+        <div class="dialog-actions">
+          <button id="screen-cancel" type="button">Cancel</button>
+          <button class="primary" type="submit">Add Screen</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="allocation-preview-dialog" class="allocation-dialog">
+      <div class="allocation-dialog-body">
+        <div class="dialog-heading"><span class="eyebrow">AUTO ALLOCATE</span><h2>Allocation Preview</h2><p>Existing Cabinet assignments stay fixed. Apply adds only unassigned Cabinets.</p></div>
+        <div id="allocation-preview-body" class="allocation-preview-body"></div>
+        <div class="dialog-actions">
+          <button id="allocation-cancel" type="button">Cancel</button>
+          <button id="allocation-apply" class="primary" type="button">Apply Allocation</button>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog id="live-output-dialog" class="live-output-dialog">
+      <div class="live-output-dialog-body">
+        <div class="dialog-heading live-output-heading">
+          <div><span class="eyebrow">EXTERNAL DISPLAYS</span><h2>Live Output Routing</h2><p>Session-only Windows display routes. Hardware Processor/Port topology is unrelated.</p></div>
+          <button id="live-output-refresh" type="button">Refresh displays</button>
+        </div>
+        <div id="live-output-list" class="live-output-list"></div>
+        <div class="dialog-actions">
+          <button id="live-output-close" type="button">Close</button>
+        </div>
+      </div>
+    </dialog>
+
     <script type="module" src="./index.ts"></script>
   </body>
 </html>

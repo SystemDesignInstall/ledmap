@@ -1,8 +1,16 @@
-import type { CabinetEngineConfig, CabinetGrid, Direction, GridPosition, Numbering, Screen } from '@ledmap/core'
+import {
+  asCabinetId, asModuleId, cabinetOrder, createCabinet, createEditableProject, createModule,
+  type Cabinet, type CabinetEngineConfig, type CabinetGrid, type Direction, type EditableProject,
+  type GridPosition, type Module, type Numbering, type Screen,
+} from '@ledmap/core'
 import {
   buildSnapshot, gridPixelSize, initialDraft, maxPreviewColumns, maxPreviewRows,
   type Draft, type PreviewCabinet, type SnapshotIds,
 } from './state.js'
+
+export interface SourceCabinet extends PreviewCabinet {
+  readonly sourceId: Cabinet['id']
+}
 
 export interface ScreenView {
   readonly screen: Screen
@@ -10,7 +18,7 @@ export interface ScreenView {
   readonly config: CabinetEngineConfig
   readonly x: number
   readonly y: number
-  readonly cabinets: readonly PreviewCabinet[]
+  readonly cabinets: readonly SourceCabinet[]
   readonly nextCabinetSerial: number
   readonly path: readonly GridPosition[]
   readonly modulesPerCabinet: number
@@ -19,6 +27,7 @@ export interface ScreenView {
 }
 
 export interface Project {
+  readonly source: EditableProject
   readonly screens: readonly ScreenView[]
 }
 
@@ -30,6 +39,11 @@ export interface ScreenCabinetConfigPatch {
   readonly numbering?: Numbering
   readonly direction?: Direction
   readonly snake?: boolean
+}
+
+export interface AddScreenOptions {
+  readonly name?: string
+  readonly position?: { readonly x: number; readonly y: number }
 }
 
 export type SelectedObject =
@@ -49,7 +63,91 @@ export interface Bounds {
 export interface Hit {
   readonly screenIndex: number
   readonly screen: ScreenView
-  readonly cabinet: PreviewCabinet | null
+  readonly cabinet: SourceCabinet | null
+}
+
+function safeProduct(label: string, ...values: number[]): number {
+  const result = values.reduce((product, value) => product * value, 1)
+  if (!Number.isSafeInteger(result) || result <= 0) throw new Error(`${label} exceeds the safe integer range.`)
+  return result
+}
+
+function cabinetLabel(screenId: string, sourceId: string): string {
+  const prefix = `${screenId}/`
+  return sourceId.startsWith(prefix) ? sourceId.slice(prefix.length) : sourceId
+}
+
+function numericCabinetSerial(label: string): number {
+  const match = /^C(\d+)$/.exec(label)
+  return match ? Number(match[1]) : 0
+}
+
+function moduleGeometry(source: EditableProject, cabinets: readonly Cabinet[], grid: CabinetGrid): Pick<
+  CabinetEngineConfig,
+  'moduleColumns' | 'moduleRows' | 'modulePixelWidth' | 'modulePixelHeight'
+> {
+  const cabinet = cabinets[0]
+  if (!cabinet) {
+    return { moduleColumns: 1, moduleRows: 1, modulePixelWidth: grid.cabinetWidth, modulePixelHeight: grid.cabinetHeight }
+  }
+  const module = source.hardwareTopology.modules.find(entry => entry.cabinet === cabinet.id)
+  const modulePixelWidth = module?.pixelWidth ?? cabinet.pixelWidth / cabinet.moduleColumns
+  const modulePixelHeight = module?.pixelHeight ?? cabinet.pixelHeight / cabinet.moduleRows
+  if (!Number.isSafeInteger(modulePixelWidth) || modulePixelWidth < 1 || !Number.isSafeInteger(modulePixelHeight) || modulePixelHeight < 1) {
+    throw new Error(`Cabinet ${cabinet.id} has unsupported module pixel geometry.`)
+  }
+  return {
+    moduleColumns: cabinet.moduleColumns,
+    moduleRows: cabinet.moduleRows,
+    modulePixelWidth,
+    modulePixelHeight,
+  }
+}
+
+function screenView(source: EditableProject, screen: Screen): ScreenView | null {
+  const gridId = screen.cabinetGrids[0]
+  if (!gridId) return null
+  const grid = source.cabinetGrids.find(entry => entry.id === gridId)
+  const placement = source.editorLayout.screenPositions.find(entry => entry.screen === screen.id)
+  if (!grid || !placement) return null
+  const sourceCabinets = source.hardwareTopology.cabinets
+    .filter(cabinet => cabinet.grid === grid.id)
+    .sort((a, b) => a.row - b.row || a.column - b.column)
+  const geometry = moduleGeometry(source, sourceCabinets, grid)
+  const config: CabinetEngineConfig = {
+    columns: grid.columns,
+    rows: grid.rows,
+    ...geometry,
+    ordering: { ...grid.ordering },
+  }
+  const path = cabinetOrder(config)
+  const cabinets = sourceCabinets.map(cabinet => ({
+    sourceId: cabinet.id,
+    id: cabinetLabel(screen.id, cabinet.id),
+    column: cabinet.column,
+    row: cabinet.row,
+    index: path.findIndex(cell => cell.column === cabinet.column && cell.row === cabinet.row),
+  }))
+  const modulesPerCabinet = safeProduct('Modules per cabinet', config.moduleColumns, config.moduleRows)
+  const pixelCount = safeProduct('Pixel count', screen.resolution.width, screen.resolution.height)
+  const nextCabinetSerial = cabinets.reduce((maximum, cabinet) => Math.max(maximum, numericCabinetSerial(cabinet.id)), 0) + 1
+  return {
+    screen,
+    grid,
+    config,
+    x: placement.position.x,
+    y: placement.position.y,
+    cabinets,
+    nextCabinetSerial,
+    path,
+    modulesPerCabinet,
+    totalModules: cabinets.length === 0 ? 0 : safeProduct('Total modules', cabinets.length, modulesPerCabinet),
+    pixelCount,
+  }
+}
+
+export function createProject(source: EditableProject = createEditableProject()): Project {
+  return { source, screens: source.screens.map(screen => screenView(source, screen)).filter(view => view !== null) }
 }
 
 export function screenWidth(screen: ScreenView): number {
@@ -60,45 +158,48 @@ export function screenHeight(screen: ScreenView): number {
   return gridPixelSize(screen.grid).height
 }
 
-function buildScreenView(draft: Draft, ids: SnapshotIds, x: number, y: number, seed: ScreenView | null = null): ScreenView {
-  const result = buildSnapshot(seed, draft, ids)
-  const problem = result.errors.form ?? Object.values(result.errors).find(value => typeof value === 'string')
-  if (problem) throw new Error(problem)
-  const snapshot = result.snapshot
-  if (!snapshot) throw new Error('Unable to build screen view.')
-  return {
-    screen: snapshot.screen,
-    grid: snapshot.grid,
-    config: snapshot.config,
-    x,
-    y,
-    cabinets: snapshot.cabinets,
-    nextCabinetSerial: snapshot.nextCabinetSerial,
-    path: snapshot.path,
-    modulesPerCabinet: snapshot.modulesPerCabinet,
-    totalModules: snapshot.totalModules,
-    pixelCount: snapshot.pixelCount,
-  }
-}
-
 export function findScreen(project: Project, screenId: string): ScreenView | undefined {
   return project.screens.find(screen => screen.screen.id === screenId)
 }
 
+function replaceSource(project: Project, source: EditableProject): Project {
+  return createProject(source)
+}
+
 export function moveScreen(project: Project, screenId: string, dx: number, dy: number): Project {
-  return {
-    screens: project.screens.map(screen => screen.screen.id === screenId
-      ? { ...screen, x: screen.x + dx, y: screen.y + dy }
-      : screen),
-  }
+  const screen = findScreen(project, screenId)
+  if (!screen) throw new Error(`Unknown screen: ${screenId}`)
+  return setScreenPosition(project, screenId, Math.round(screen.x + dx), Math.round(screen.y + dy))
 }
 
 export function setScreenPosition(project: Project, screenId: string, x: number, y: number): Project {
-  return {
-    screens: project.screens.map(screen => screen.screen.id === screenId
-      ? { ...screen, x, y }
-      : screen),
+  return setScreenPositions(project, { [screenId]: { x, y } })
+}
+
+export function setScreenPositions(
+  project: Project,
+  positions: Readonly<Record<string, { readonly x: number; readonly y: number }>>,
+): Project {
+  const entries = Object.entries(positions)
+  for (const [screenId, position] of entries) {
+    if (!Number.isSafeInteger(position.x) || !Number.isSafeInteger(position.y)) {
+      throw new Error('Screen position must use signed whole numbers.')
+    }
+    if (!findScreen(project, screenId)) throw new Error(`Unknown screen: ${screenId}`)
   }
+  if (entries.every(([screenId, position]) => {
+    const screen = findScreen(project, screenId)!
+    return screen.x === position.x && screen.y === position.y
+  })) return project
+  return replaceSource(project, {
+    ...project.source,
+    editorLayout: {
+      screenPositions: project.source.editorLayout.screenPositions.map(placement => {
+        const position = positions[placement.screen]
+        return position ? { ...placement, position: { ...position } } : placement
+      }),
+    },
+  })
 }
 
 function draftFromConfig(config: CabinetEngineConfig, columns: number, rows: number): Draft {
@@ -117,23 +218,117 @@ function assertGridDimension(label: string, value: number): void {
   if (!Number.isSafeInteger(value) || value < 1) throw new Error(`${label} must be a whole number of at least 1.`)
 }
 
-export function resizeScreenGrid(project: Project, screenId: string, columns: number, rows: number): Project {
-  const screen = findScreen(project, screenId)
-  if (!screen) throw new Error(`Unknown screen: ${screenId}`)
-  assertGridDimension('Columns', columns)
-  assertGridDimension('Rows', rows)
-  const draft = draftFromConfig(screen.config, columns, rows)
-  const ids: SnapshotIds = {
+function sourceIds(screen: ScreenView): SnapshotIds {
+  return {
     screenId: screen.screen.id,
     gridId: screen.grid.id,
     screenName: screen.screen.name,
     gridName: screen.grid.name,
   }
-  return {
-    screens: project.screens.map(entry => entry.screen.id === screenId
-      ? buildScreenView(draft, ids, entry.x, entry.y, entry)
-      : entry),
+}
+
+function moduleId(cabinet: Cabinet, column: number, row: number): Module['id'] {
+  return asModuleId(`${cabinet.id}/M${column + 1}x${row + 1}`)
+}
+
+function buildModules(cabinet: Cabinet, config: CabinetEngineConfig, existing: readonly Module[]): Module[] {
+  const byCell = new Map(existing.map(module => [`${module.column},${module.row}`, module] as const))
+  const modules: Module[] = []
+  for (let row = 0; row < config.moduleRows; row += 1) {
+    for (let column = 0; column < config.moduleColumns; column += 1) {
+      const previous = byCell.get(`${column},${row}`)
+      modules.push(createModule({
+        id: previous?.id ?? moduleId(cabinet, column, row),
+        cabinet,
+        column,
+        row,
+        width: config.modulePixelWidth,
+        height: config.modulePixelHeight,
+        pixelWidth: config.modulePixelWidth,
+        pixelHeight: config.modulePixelHeight,
+      }))
+    }
   }
+  return modules
+}
+
+function rebuildScreenSource(project: Project, current: ScreenView, draft: Draft): Project {
+  const result = buildSnapshot(current, draft, sourceIds(current))
+  const problem = result.errors.form ?? Object.values(result.errors).find(value => typeof value === 'string')
+  if (problem) throw new Error(problem)
+  const snapshot = result.snapshot
+  if (!snapshot) throw new Error('Unable to build screen source.')
+
+  const existingCabinets = project.source.hardwareTopology.cabinets.filter(cabinet => cabinet.grid === current.grid.id)
+  const existingByCell = new Map(existingCabinets.map(cabinet => [`${cabinet.column},${cabinet.row}`, cabinet] as const))
+  const existingModules = project.source.hardwareTopology.modules.filter(module => existingCabinets.some(cabinet => cabinet.id === module.cabinet))
+  const existingModulesByCabinet = new Map<string, Module[]>()
+  for (const module of existingModules) {
+    const modules = existingModulesByCabinet.get(module.cabinet) ?? []
+    modules.push(module)
+    existingModulesByCabinet.set(module.cabinet, modules)
+  }
+
+  const cabinets: Cabinet[] = []
+  const modules: Module[] = []
+  for (const preview of snapshot.cabinets) {
+    const previous = existingByCell.get(`${preview.column},${preview.row}`)
+    const cabinet = createCabinet({
+      id: previous?.id ?? asCabinetId(`${current.screen.id}/${preview.id}`),
+      grid: current.grid.id,
+      column: preview.column,
+      row: preview.row,
+      x: preview.column * snapshot.grid.cabinetWidth,
+      y: preview.row * snapshot.grid.cabinetHeight,
+      width: snapshot.grid.cabinetWidth,
+      height: snapshot.grid.cabinetHeight,
+      pixelWidth: snapshot.grid.cabinetWidth,
+      pixelHeight: snapshot.grid.cabinetHeight,
+      moduleColumns: snapshot.config.moduleColumns,
+      moduleRows: snapshot.config.moduleRows,
+      rotation: previous?.rotation ?? 0,
+      flipH: previous?.flipH ?? false,
+      flipV: previous?.flipV ?? false,
+    })
+    cabinets.push(cabinet)
+    modules.push(...buildModules(cabinet, snapshot.config, existingModulesByCabinet.get(cabinet.id) ?? []))
+  }
+
+  const retainedCabinetIds = new Set(cabinets.map(cabinet => cabinet.id))
+  const affectedCabinetIds = new Set(existingCabinets.map(cabinet => cabinet.id))
+  const source: EditableProject = {
+    ...project.source,
+    screens: project.source.screens.map(screen => screen.id === current.screen.id
+      ? { ...screen, resolution: { ...snapshot.screen.resolution } }
+      : screen),
+    cabinetGrids: project.source.cabinetGrids.map(grid => grid.id === current.grid.id
+      ? { ...grid, ...snapshot.grid, screen: current.screen.id }
+      : grid),
+    hardwareTopology: {
+      ...project.source.hardwareTopology,
+      cabinets: [
+        ...project.source.hardwareTopology.cabinets.filter(cabinet => cabinet.grid !== current.grid.id),
+        ...cabinets,
+      ],
+      modules: [
+        ...project.source.hardwareTopology.modules.filter(module => !affectedCabinetIds.has(module.cabinet)),
+        ...modules,
+      ],
+      receivers: project.source.hardwareTopology.receivers.map(receiver => ({
+        ...receiver,
+        cabinets: receiver.cabinets.filter(id => !affectedCabinetIds.has(id) || retainedCabinetIds.has(id)),
+      })),
+    },
+  }
+  return replaceSource(project, source)
+}
+
+export function resizeScreenGrid(project: Project, screenId: string, columns: number, rows: number): Project {
+  const screen = findScreen(project, screenId)
+  if (!screen) throw new Error(`Unknown screen: ${screenId}`)
+  assertGridDimension('Columns', columns)
+  assertGridDimension('Rows', rows)
+  return rebuildScreenSource(project, screen, draftFromConfig(screen.config, columns, rows))
 }
 
 export function updateScreenCabinetConfig(
@@ -156,17 +351,7 @@ export function updateScreenCabinetConfig(
       snake: patch.snake ?? screen.config.ordering.snake,
     },
   }
-  const draft = draftFromConfig(config, screen.grid.columns, screen.grid.rows)
-  const ids: SnapshotIds = {
-    screenId: screen.screen.id,
-    gridId: screen.grid.id,
-    screenName: screen.screen.name,
-    gridName: screen.grid.name,
-  }
-  const replacement = buildScreenView(draft, ids, screen.x, screen.y, screen)
-  return {
-    screens: project.screens.map(entry => entry.screen.id === screenId ? replacement : entry),
-  }
+  return rebuildScreenSource(project, screen, draftFromConfig(config, screen.grid.columns, screen.grid.rows))
 }
 
 export function maxColumnsForRows(screen: ScreenView, rows: number): number {
@@ -177,18 +362,96 @@ export function maxRowsForColumns(screen: ScreenView, columns: number): number {
   return maxPreviewRows(columns, screen.modulesPerCabinet)
 }
 
-export function addScreen(project: Project, draft: Draft = initialDraft): Project {
-  const next = project.screens.length + 1
+function nextSerial(project: Project, prefix: string): number {
+  const used = new Set<string>(project.source.screens.map(screen => screen.id))
+  let serial = project.source.screens.length + 1
+  while (used.has(`${prefix}${serial}`)) serial += 1
+  return serial
+}
+
+export function addScreen(project: Project, draft: Draft = initialDraft, options: AddScreenOptions = {}): Project {
+  const serial = nextSerial(project, 'screen-')
   const previous = project.screens[project.screens.length - 1]
-  const x = previous ? previous.x + 100 : 0
-  const y = previous ? previous.y + 100 : 0
+  const x = options.position?.x ?? (previous ? previous.x + 100 : 0)
+  const y = options.position?.y ?? (previous ? previous.y + 100 : 0)
+  if (!Number.isSafeInteger(x) || !Number.isSafeInteger(y)) throw new Error('Screen position must use signed whole numbers.')
+  const name = options.name?.trim() || `Screen ${serial}`
   const ids: SnapshotIds = {
-    screenId: `screen-${next}`,
-    gridId: `grid-${next}`,
-    screenName: `Screen ${next}`,
+    screenId: `screen-${serial}`,
+    gridId: `grid-${serial}`,
+    screenName: name,
     gridName: 'Cabinet Grid',
   }
-  return { screens: [...project.screens, buildScreenView(draft, ids, x, y)] }
+  const built = buildSnapshot(null, draft, ids)
+  const problem = built.errors.form ?? Object.values(built.errors).find(value => typeof value === 'string')
+  if (problem) throw new Error(problem)
+  const snapshot = built.snapshot
+  if (!snapshot) throw new Error('Unable to add Screen.')
+  const source: EditableProject = {
+    ...project.source,
+    screens: [...project.source.screens, snapshot.screen],
+    cabinetGrids: [...project.source.cabinetGrids, snapshot.grid],
+    editorLayout: {
+      screenPositions: [...project.source.editorLayout.screenPositions, { screen: snapshot.screen.id, position: { x, y } }],
+    },
+  }
+  const withScreen = replaceSource(project, source)
+  const view = findScreen(withScreen, snapshot.screen.id)
+  if (!view) throw new Error('Unable to project the new Screen.')
+  return rebuildScreenSource(withScreen, view, draft)
+}
+
+export function renameScreen(project: Project, screenId: string, name: string): Project {
+  const normalized = name.trim()
+  if (!normalized) throw new Error('Screen name cannot be empty.')
+  const screen = findScreen(project, screenId)
+  if (!screen) throw new Error(`Unknown screen: ${screenId}`)
+  if (screen.screen.name === normalized) return project
+  return replaceSource(project, {
+    ...project.source,
+    screens: project.source.screens.map(source => source.id === screenId ? { ...source, name: normalized } : source),
+  })
+}
+
+export function duplicateScreen(project: Project, screenId: string): Project {
+  const screen = findScreen(project, screenId)
+  if (!screen) throw new Error(`Unknown screen: ${screenId}`)
+  return addScreen(
+    project,
+    draftFromConfig(screen.config, screen.grid.columns, screen.grid.rows),
+    { name: `${screen.screen.name} Copy`, position: { x: screen.x + 32, y: screen.y + 32 } },
+  )
+}
+
+export function deleteScreens(project: Project, screenIds: readonly string[]): Project {
+  const selected = new Set(screenIds)
+  if (selected.size === 0) return project
+  for (const screenId of selected) {
+    if (!findScreen(project, screenId)) throw new Error(`Unknown screen: ${screenId}`)
+  }
+  const gridIds = new Set(project.source.cabinetGrids.filter(grid => selected.has(grid.screen)).map(grid => grid.id))
+  const regionIds = new Set(project.source.mappingRegions.filter(region => selected.has(region.screen)).map(region => region.id))
+  const cabinetIds = new Set(project.source.hardwareTopology.cabinets.filter(cabinet => gridIds.has(cabinet.grid)).map(cabinet => cabinet.id))
+  return replaceSource(project, {
+    ...project.source,
+    screens: project.source.screens
+      .filter(screen => !selected.has(screen.id))
+      .map(screen => ({ ...screen, mappingRegions: screen.mappingRegions.filter(id => !regionIds.has(id)) })),
+    cabinetGrids: project.source.cabinetGrids.filter(grid => !gridIds.has(grid.id)),
+    mappingRegions: project.source.mappingRegions.filter(region => !regionIds.has(region.id)),
+    hardwareTopology: {
+      ...project.source.hardwareTopology,
+      cabinets: project.source.hardwareTopology.cabinets.filter(cabinet => !cabinetIds.has(cabinet.id)),
+      modules: project.source.hardwareTopology.modules.filter(module => !cabinetIds.has(module.cabinet)),
+      receivers: project.source.hardwareTopology.receivers.map(receiver => ({
+        ...receiver,
+        cabinets: receiver.cabinets.filter(cabinet => !cabinetIds.has(cabinet)),
+      })),
+    },
+    editorLayout: {
+      screenPositions: project.source.editorLayout.screenPositions.filter(placement => !selected.has(placement.screen)),
+    },
+  })
 }
 
 export function projectBounds(project: Project): Bounds {
@@ -220,30 +483,12 @@ export function hitTest(project: Project, point: { x: number; y: number }): Hit 
     const screen = project.screens[i]!
     const w = screenWidth(screen)
     const h = screenHeight(screen)
-    if (point.x < screen.x || point.y < screen.y || point.x >= screen.x + w || point.y >= screen.y + h) {
-      continue
-    }
+    if (point.x < screen.x || point.y < screen.y || point.x >= screen.x + w || point.y >= screen.y + h) continue
     const local = { x: point.x - screen.x, y: point.y - screen.y }
     const column = Math.floor(local.x / screen.grid.cabinetWidth)
     const row = Math.floor(local.y / screen.grid.cabinetHeight)
-    if (column >= 0 && column < screen.grid.columns && row >= 0 && row < screen.grid.rows) {
-      const cabinet = screen.cabinets.find(c => c.column === column && c.row === row) ?? null
-      return { screenIndex: i, screen, cabinet }
-    }
-    return { screenIndex: i, screen, cabinet: null }
+    const cabinet = screen.cabinets.find(entry => entry.column === column && entry.row === row) ?? null
+    return { screenIndex: i, screen, cabinet }
   }
   return null
-}
-
-export function createDemoProject(): Project {
-  const defaults: Draft = initialDraft
-  const screen2: Draft = { ...initialDraft, columns: '3', rows: '2' }
-  const screen3: Draft = { ...initialDraft, columns: '4', rows: '2' }
-  return {
-    screens: [
-      buildScreenView(defaults, { screenId: 'screen-1', gridId: 'grid-1', screenName: 'Screen 1', gridName: 'Cabinet Grid' }, 0, 0),
-      buildScreenView(screen2, { screenId: 'screen-2', gridId: 'grid-2', screenName: 'Screen 2', gridName: 'Cabinet Grid' }, 700, 120),
-      buildScreenView(screen3, { screenId: 'screen-3', gridId: 'grid-3', screenName: 'Screen 3', gridName: 'Cabinet Grid' }, 320, 620),
-    ],
-  }
 }

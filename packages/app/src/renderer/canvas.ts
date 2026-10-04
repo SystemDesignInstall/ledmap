@@ -1,6 +1,7 @@
-import { cabinetIndex, cabinetOrder, type CabinetEngineConfig, type GridPosition } from '@ledmap/core'
+import { type CabinetEngineConfig, type GridPosition } from '@ledmap/core'
 import { gridPixelSize } from './state.js'
-import type { Bounds, Project, ScreenView, SelectedObject } from './project.js'
+import type { Bounds, Project, ScreenView, SelectedObject } from './v2-view-model.js'
+import type { AlignmentGuide, ProjectGuide, SelectionBox } from './layout-interaction.js'
 
 export interface Camera {
   readonly zoom: number
@@ -24,8 +25,20 @@ export interface ResizePreview {
 export interface View {
   readonly mode: 'all' | 'active'
   readonly selection: SelectedObject | null
+  readonly selectedScreenIds: readonly string[]
   readonly activeScreenId: string | null
   readonly resizePreview: ResizePreview | null
+  readonly alignmentGuides: readonly AlignmentGuide[]
+  readonly projectGuides: readonly ProjectGuide[]
+  readonly selectedGuideId: string | null
+  readonly marquee: SelectionBox | null
+  readonly overlays: OverlayVisibility
+}
+
+export interface OverlayVisibility {
+  readonly cabinets: boolean
+  readonly modules: boolean
+  readonly coordinates: boolean
 }
 
 const MIN_ZOOM = 0.02
@@ -113,7 +126,6 @@ export function resizeHandleCursor(handle: ResizeHandle): string {
 }
 
 const ACCENT = '#74e0c2'
-const CABINET_FIRST = '#173b39'
 const CABINET_FILL = '#172331'
 const PENDING_FILL = '#121a26'
 const PENDING_EDGE = '#3d5b70'
@@ -190,7 +202,13 @@ function previewConfig(screen: ScreenView, shape: GridShape): CabinetEngineConfi
   return { ...screen.config, columns: shape.columns, rows: shape.rows }
 }
 
-function drawCabinetGrid(ctx: CanvasRenderingContext2D, camera: Camera, screen: ScreenView, shape: GridShape): boolean {
+function drawCabinetGrid(
+  ctx: CanvasRenderingContext2D,
+  camera: Camera,
+  screen: ScreenView,
+  shape: GridShape,
+  overlays: OverlayVisibility,
+): boolean {
   const rect = screenRectPx(camera, screen, shape)
   const cw = screen.grid.cabinetWidth * camera.zoom
   const ch = screen.grid.cabinetHeight * camera.zoom
@@ -199,15 +217,18 @@ function drawCabinetGrid(ctx: CanvasRenderingContext2D, camera: Camera, screen: 
   const labelsVisible = cabinetLabelVisible(camera, screen)
   const existing = new Map<string, string>()
   for (const cabinet of screen.cabinets) existing.set(`${cabinet.column},${cabinet.row}`, cabinet.id)
+  ctx.fillStyle = '#111b27'
+  ctx.fillRect(rect.left, rect.top, rect.width, rect.height)
   for (let row = 0; row < shape.rows; row += 1) {
     for (let column = 0; column < shape.columns; column += 1) {
       const x = rect.left + column * cw
       const y = rect.top + row * ch
       const id = existing.get(`${column},${row}`)
-      const index = cabinetIndex(config, { column, row })
-      ctx.fillStyle = id === undefined ? PENDING_FILL : index === 0 ? CABINET_FIRST : CABINET_FILL
-      ctx.fillRect(x, y, cw, ch)
-      if (id !== undefined && modulesVisible) {
+      if (overlays.cabinets) {
+        ctx.fillStyle = id === undefined ? PENDING_FILL : CABINET_FILL
+        ctx.fillRect(x, y, cw, ch)
+      }
+      if (id !== undefined && overlays.modules && modulesVisible) {
         ctx.strokeStyle = MODULE_LINE
         ctx.beginPath()
         for (let c = 1; c < config.moduleColumns; c += 1) {
@@ -220,60 +241,36 @@ function drawCabinetGrid(ctx: CanvasRenderingContext2D, camera: Camera, screen: 
         }
         ctx.stroke()
       }
-      ctx.strokeStyle = id === undefined ? PENDING_EDGE : CABINET_EDGE
-      ctx.setLineDash(id === undefined ? [4, 3] : [])
-      ctx.strokeRect(x, y, cw, ch)
-      ctx.setLineDash([])
+      if (overlays.cabinets) {
+        ctx.strokeStyle = id === undefined ? PENDING_EDGE : CABINET_EDGE
+        ctx.setLineDash(id === undefined ? [4, 3] : [])
+        ctx.strokeRect(x, y, cw, ch)
+        ctx.setLineDash([])
+      }
     }
   }
-  drawSignalPath(ctx, camera, screen, shape, config)
-  if (labelsVisible) drawCabinetLabels(ctx, camera, screen, shape, config)
-  return !labelsVisible || !modulesVisible
-}
-
-function drawSignalPath(ctx: CanvasRenderingContext2D, camera: Camera, screen: ScreenView, shape: GridShape, config: CabinetEngineConfig): void {
-  const path = cabinetOrder(config)
-  const cw = screen.grid.cabinetWidth * camera.zoom
-  const ch = screen.grid.cabinetHeight * camera.zoom
-  ctx.strokeStyle = ACCENT
-  ctx.fillStyle = ACCENT
-  ctx.lineWidth = 1.5
-  for (let i = 1; i < path.length; i += 1) {
-    const before = path[i - 1]!
-    const after = path[i]!
-    const a = cellCenterPx(camera, screen, before)
-    const b = cellCenterPx(camera, screen, after)
-    ctx.beginPath()
-    ctx.moveTo(a.x, a.y)
-    ctx.lineTo(b.x, b.y)
-    ctx.stroke()
-    const angle = Math.atan2(b.y - a.y, b.x - a.x)
-    const tip = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
-    const size = Math.min(6, cw * .15, ch * .15)
-    ctx.beginPath()
-    ctx.moveTo(tip.x, tip.y)
-    ctx.lineTo(tip.x - size * Math.cos(angle - .5), tip.y - size * Math.sin(angle - .5))
-    ctx.lineTo(tip.x - size * Math.cos(angle + .5), tip.y - size * Math.sin(angle + .5))
-    ctx.closePath()
-    ctx.fill()
+  if (labelsVisible && overlays.cabinets) {
+    drawCabinetLabels(ctx, camera, screen, shape)
   }
+  return overlays.cabinets && !labelsVisible || overlays.modules && !modulesVisible
 }
 
-function drawCabinetLabels(ctx: CanvasRenderingContext2D, camera: Camera, screen: ScreenView, shape: GridShape, config: CabinetEngineConfig): void {
+function drawCabinetLabels(
+  ctx: CanvasRenderingContext2D,
+  camera: Camera,
+  screen: ScreenView,
+  shape: GridShape,
+): void {
   for (const cabinet of screen.cabinets) {
     if (cabinet.column >= shape.columns || cabinet.row >= shape.rows) continue
     const p = cellCenterPx(camera, screen, cabinet)
-    const index = cabinetIndex(config, cabinet)
     ctx.fillStyle = '#101c28'
-    ctx.fillRect(p.x - 28, p.y - 24, 56, 48)
+    ctx.fillRect(p.x - 28, p.y - 14, 56, 28)
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
     ctx.font = '12px "Segoe UI", sans-serif'
     ctx.fillStyle = TEXT
-    ctx.fillText(cabinet.id, p.x, p.y - 10)
-    ctx.font = '600 18px "Segoe UI", sans-serif'
-    ctx.fillStyle = ACCENT
-    ctx.fillText(`#${index + 1}`, p.x, p.y + 10)
+    ctx.fillText(cabinet.id, p.x, p.y)
   }
 }
 
@@ -291,30 +288,45 @@ function drawScreenOutline(ctx: CanvasRenderingContext2D, camera: Camera, screen
   }
 }
 
-function drawScreenLabel(ctx: CanvasRenderingContext2D, camera: Camera, screen: ScreenView, shape: GridShape, selected: boolean, previewing: boolean): void {
+function drawScreenLabel(
+  ctx: CanvasRenderingContext2D,
+  camera: Camera,
+  screen: ScreenView,
+  shape: GridShape,
+  selected: boolean,
+  previewing: boolean,
+  coordinates: boolean,
+): void {
   const rect = screenRectPx(camera, screen, shape)
   const format = new Intl.NumberFormat('en-US')
-  const columns = format.format(shape.columns)
-  const rows = format.format(shape.rows)
   const rw = format.format(shape.width)
   const rh = format.format(shape.height)
-  const suffix = selected ? ` · (${screen.x}, ${screen.y})` : ''
-  const pending = previewing ? ' · preview' : ''
-  const text = `${screen.screen.name} · ${columns} × ${rows} cabinets · ${rw} × ${rh} px${suffix}${pending}`
+  const suffix = coordinates ? `  ${screen.x}, ${screen.y}` : ''
+  const pending = previewing ? '  Preview' : ''
+  const title = `${screen.screen.name}${suffix}${pending}`
+  const resolution = `${rw} × ${rh} px`
   ctx.font = '600 12px "Segoe UI", sans-serif'
-  const width = ctx.measureText(text).width + 22
-  let y = rect.top - 34
-  if (y < 6) y = rect.top + 6
+  const titleWidth = ctx.measureText(title).width
+  ctx.font = '12px "Segoe UI", sans-serif'
+  const resolutionWidth = ctx.measureText(resolution).width
+  const width = Math.max(rect.width, titleWidth + resolutionWidth + 42)
+  let y = rect.top - 32
+  if (y < 4) y = rect.top + 4
   const x = Math.max(6, rect.left)
-  ctx.fillStyle = selected ? '#1a3a35' : '#1a2434'
-  ctx.fillRect(x, y, width, 24)
+  ctx.fillStyle = selected ? '#163a35' : '#182331'
+  ctx.fillRect(x, y, width, 28)
   ctx.strokeStyle = selected ? ACCENT : '#354256'
   ctx.lineWidth = 1
-  ctx.strokeRect(x, y, width, 24)
+  ctx.strokeRect(x, y, width, 28)
   ctx.fillStyle = selected ? ACCENT : '#dae3ee'
   ctx.textAlign = 'left'
   ctx.textBaseline = 'middle'
-  ctx.fillText(text, x + 11, y + 13)
+  ctx.font = '600 12px "Segoe UI", sans-serif'
+  ctx.fillText(title, x + 11, y + 15)
+  ctx.fillStyle = '#8ea1b7'
+  ctx.textAlign = 'right'
+  ctx.font = '12px "Segoe UI", sans-serif'
+  ctx.fillText(resolution, x + width - 11, y + 15)
 }
 
 function drawCabinetSelection(ctx: CanvasRenderingContext2D, camera: Camera, screen: ScreenView, selection: Extract<SelectedObject, { type: 'cabinet' }>): void {
@@ -327,6 +339,62 @@ function drawCabinetSelection(ctx: CanvasRenderingContext2D, camera: Camera, scr
   ctx.strokeStyle = ACCENT
   ctx.lineWidth = 2
   ctx.strokeRect(rect.left + cabinet.column * cw, rect.top + cabinet.row * ch, cw, ch)
+}
+
+function drawInteractionOverlay(
+  ctx: CanvasRenderingContext2D,
+  camera: Camera,
+  width: number,
+  height: number,
+  guides: readonly AlignmentGuide[],
+  projectGuides: readonly ProjectGuide[],
+  selectedGuideId: string | null,
+  marquee: SelectionBox | null,
+): void {
+  ctx.save()
+  ctx.strokeStyle = '#f3b55f'
+  ctx.lineWidth = 1
+  ctx.setLineDash([5, 4])
+  for (const guide of guides) {
+    ctx.beginPath()
+    if (guide.axis === 'x') {
+      const x = toScreen(camera, { x: guide.value, y: 0 }).x
+      ctx.moveTo(x, 0)
+      ctx.lineTo(x, height)
+    } else {
+      const y = toScreen(camera, { x: 0, y: guide.value }).y
+      ctx.moveTo(0, y)
+      ctx.lineTo(width, y)
+    }
+    ctx.stroke()
+  }
+  ctx.setLineDash([])
+  for (const guide of projectGuides) {
+    const selected = guide.id === selectedGuideId
+    ctx.strokeStyle = selected ? ACCENT : guide.locked ? '#5a6b80' : '#3d8b70'
+    ctx.lineWidth = selected ? 2 : 1
+    ctx.beginPath()
+    if (guide.orientation === 'vertical') {
+      const x = toScreen(camera, { x: guide.position, y: 0 }).x
+      ctx.moveTo(x, 0)
+      ctx.lineTo(x, height)
+    } else {
+      const y = toScreen(camera, { x: 0, y: guide.position }).y
+      ctx.moveTo(0, y)
+      ctx.lineTo(width, y)
+    }
+    ctx.stroke()
+  }
+  if (marquee) {
+    const start = toScreen(camera, { x: marquee.left, y: marquee.top })
+    const end = toScreen(camera, { x: marquee.right, y: marquee.bottom })
+    ctx.fillStyle = '#74e0c21a'
+    ctx.strokeStyle = '#74e0c2'
+    ctx.setLineDash([4, 3])
+    ctx.fillRect(start.x, start.y, end.x - start.x, end.y - start.y)
+    ctx.strokeRect(start.x, start.y, end.x - start.x, end.y - start.y)
+  }
+  ctx.restore()
 }
 
 const note = 'Cabinet labels and module marks are hidden at this scale. Zoom in to inspect.'
@@ -349,15 +417,16 @@ export function drawProject(canvas: HTMLCanvasElement, project: Project, view: V
     const shape = preview
       ? screenShape(screen, preview.columns, preview.rows)
       : screenShape(screen, screen.grid.columns, screen.grid.rows)
-    if (drawCabinetGrid(ctx, camera, screen, shape)) hints += 1
-    const selectedScreen = view.selection?.type === 'screen' && view.selection.id === screen.screen.id
+    if (drawCabinetGrid(ctx, camera, screen, shape, view.overlays)) hints += 1
+    const selectedScreen = view.selectedScreenIds.includes(screen.screen.id)
     const selectedGrid = view.selection?.type === 'cabinetGrid' && view.selection.id === screen.grid.id
     const highlighted = selectedScreen || selectedGrid
     drawScreenOutline(ctx, camera, screen, shape, highlighted)
-    drawScreenLabel(ctx, camera, screen, shape, highlighted, preview !== null)
+    drawScreenLabel(ctx, camera, screen, shape, highlighted, preview !== null, view.overlays.coordinates)
     if (view.selection?.type === 'cabinet' && view.selection.screenId === screen.screen.id) {
       drawCabinetSelection(ctx, camera, screen, view.selection)
     }
   }
+  drawInteractionOverlay(ctx, camera, width, height, view.alignmentGuides, view.projectGuides, view.selectedGuideId, view.marquee)
   return hints > 0 ? note : ''
 }

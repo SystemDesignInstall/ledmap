@@ -1,19 +1,35 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as core from '@ledmap/core'
 import { applyDraft, changeNumbering, initialDraft, type Draft } from '../src/renderer/state.js'
+import { ref001Draft } from './project-fixtures.js'
 
 afterEach(() => vi.restoreAllMocks())
 
 describe('Alpha state adapter', () => {
-  it('creates a consistent Screen/Grid and the REF-001 preview', () => {
+  it('creates a consistent Screen/Grid from the default draft', () => {
+    expect([initialDraft.moduleColumns, initialDraft.moduleRows]).toEqual(['1', '1'])
     const { snapshot, errors } = applyDraft(null, initialDraft)
     expect(errors).toEqual({})
     expect(snapshot?.screen.cabinetGrids).toEqual([snapshot?.grid.id])
     expect(snapshot?.grid.screen).toBe(snapshot?.screen.id)
     expect(snapshot?.screen.mappingRegions).toEqual([])
+    expect(snapshot?.modulesPerCabinet).toBe(1)
+    expect(snapshot?.screen.resolution).toEqual({ width: 128, height: 96 })
+    expect(snapshot?.pixelCount).toBe(12288)
+    expect(snapshot?.cabinets.map(c => c.index + 1)).toEqual([1, 2, 3, 4, 8, 7, 6, 5, 9, 10, 11, 12])
+  })
+
+  it('keeps REF-001 geometry explicit and independent of the UI draft', () => {
+    expect(ref001Draft).toEqual({
+      columns: '4', rows: '3', moduleColumns: '4', moduleRows: '4',
+      modulePixelWidth: '32', modulePixelHeight: '32',
+      ordering: { numbering: 'row', direction: 'left-to-right', snake: true, startCorner: 'top-left' },
+    })
+    const { snapshot, errors } = applyDraft(null, ref001Draft)
+    expect(errors).toEqual({})
+    expect(snapshot?.modulesPerCabinet).toBe(16)
     expect(snapshot?.screen.resolution).toEqual({ width: 512, height: 384 })
     expect(snapshot?.pixelCount).toBe(196608)
-    expect(snapshot?.cabinets.map(c => c.index + 1)).toEqual([1, 2, 3, 4, 8, 7, 6, 5, 9, 10, 11, 12])
   })
 
   it.each([

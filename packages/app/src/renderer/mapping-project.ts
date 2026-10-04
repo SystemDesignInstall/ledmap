@@ -103,7 +103,7 @@ export function mapFromLayoutPosition(project: Project, screenId: string, region
   const screen = findScreen(project, screenId)
   if (!screen) throw new Error(`Unknown Screen: ${screenId}`)
   if (screen.x < 0 || screen.y < 0) {
-    throw new Error('Layout position is outside Input Canvas coordinates. Mapping X/Y must be non-negative.')
+    throw new Error('Composition position is outside Input Canvas coordinates. Mapping X/Y must be non-negative.')
   }
   const target = regionId === undefined
     ? project.source.mappingRegions.find(region => region.screen === screen.screen.id)

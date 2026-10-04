@@ -313,7 +313,7 @@ export function createMappingWorkspace(options: MappingWorkspaceOptions): Mappin
   function mapFromLayout(): void {
     const screen = selectedScreen()
     if (!screen) return
-    if (!mutate(source => mapFromLayoutPositionV2(source, screen.screen.id, selectedRegionId ?? undefined), 'Unable to map from Layout position.')) return
+    if (!mutate(source => mapFromLayoutPositionV2(source, screen.screen.id, selectedRegionId ?? undefined), 'Unable to map from Composition position.')) return
     const target = selectedRegionId
       ? findMappingRegion(model(), selectedRegionId)
       : mappingRegions(model()).find(region => region.screen === screen.screen.id)
@@ -371,7 +371,7 @@ export function createMappingWorkspace(options: MappingWorkspaceOptions): Mappin
     diagnostics.replaceChildren()
     const items: Array<{ label: string; status: MappingDiagnosticStatus; screenId?: string; regionId?: string }> = []
     if (!inputCanvas(model())) items.push({ label: 'Input Canvas is not configured', status: 'incomplete' })
-    if (project().screens.length === 0) items.push({ label: 'No Screens available from Layout', status: 'incomplete' })
+    if (project().screens.length === 0) items.push({ label: 'No Screens available from Composition', status: 'incomplete' })
     for (const screen of project().screens) {
       if (!mappingRegions(model()).some(region => region.screen === screen.screen.id)) {
         items.push({ label: `${screen.screen.name}: no Mapping Region`, status: 'incomplete', screenId: screen.screen.id })
@@ -526,7 +526,7 @@ export function createMappingWorkspace(options: MappingWorkspaceOptions): Mappin
         const hint = document.createElement('p')
         hint.className = 'hint'
         hint.textContent = project().screens.length === 0
-          ? 'Create Screens in Layout before mapping.'
+          ? 'Create Screens in Composition before mapping.'
           : 'Select a Screen or Mapping Region.'
         properties.append(hint)
         return
@@ -539,7 +539,7 @@ export function createMappingWorkspace(options: MappingWorkspaceOptions): Mappin
       )
       const buttons = document.createElement('div')
       buttons.className = 'inspector-actions'
-      buttons.append(action('Create Region', createRegion, !inputCanvas(model())), action('Map from Layout', mapFromLayout, !inputCanvas(model())))
+      buttons.append(action('Create Region', createRegion, !inputCanvas(model())), action('Map from Composition', mapFromLayout, !inputCanvas(model())))
       properties.append(group('Target', target), buttons)
       return
     }
@@ -555,7 +555,7 @@ export function createMappingWorkspace(options: MappingWorkspaceOptions): Mappin
     )
     const actions = document.createElement('div')
     actions.className = 'inspector-actions'
-    actions.append(action('Map from Layout', mapFromLayout), action('Delete Region', removeRegion))
+    actions.append(action('Map from Composition', mapFromLayout), action('Delete Region', removeRegion))
     properties.append(group('Region', identity), group('Source rectangle', geometryFields(region)), actions)
     if (result.status !== 'ready') {
       const error = document.createElement('button')

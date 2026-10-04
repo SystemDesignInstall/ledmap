@@ -12,7 +12,7 @@
       <div class="titlebar">
         <div class="brand"><span class="brand-mark">▦</span><span>LedMAP</span></div>
         <nav class="mode-switcher" aria-label="Workflow mode">
-          <button id="layout-mode" type="button" class="mode active" aria-current="page">Layout</button>
+          <button id="layout-mode" type="button" class="mode active" aria-current="page">Composition</button>
           <button id="mapping-mode" type="button" class="mode">Mapping</button>
           <button id="output-mapping-mode" type="button" class="mode">Output Mapping</button>
           <button id="hardware-mode" type="button" class="mode">Hardware</button>
@@ -37,10 +37,15 @@
           <button id="zoom-out" type="button" aria-label="Zoom out">−</button>
           <button id="zoom-in" type="button" aria-label="Zoom in">+</button>
         </div>
-        <div class="tool-group snap-tools">
-          <button id="grid-snap" type="button" aria-pressed="false">Grid</button>
+        <div class="tool-group snap-tools" aria-label="Snap controls">
+          <button id="snap-toggle" type="button" aria-pressed="true" title="Toggle snapping">Snap ✓</button>
+          <button id="snap-grid" type="button" aria-pressed="false" title="Snap to grid">Grid</button>
+          <button id="snap-edges" type="button" aria-pressed="true" title="Snap to Screen edges">Edges</button>
+          <button id="snap-centers" type="button" aria-pressed="true" title="Snap to Screen centers">Centers</button>
+          <button id="snap-guides" type="button" aria-pressed="true" title="Snap to guides">Guides</button>
           <label class="toolbar-field"><input id="grid-step" type="number" min="1" step="1" value="10" aria-label="Grid snap step" /><span>px</span></label>
-          <button id="smart-snap" type="button" aria-pressed="true">Smart</button>
+          <button id="guide-add-v" type="button" title="Add vertical guide at viewport center">+ V-Guide</button>
+          <button id="guide-add-h" type="button" title="Add horizontal guide at viewport center">+ H-Guide</button>
         </div>
         <div class="tool-group alignment-tools" aria-label="Align and distribute">
           <button type="button" data-align="left" title="Align left">L</button>
@@ -56,7 +61,6 @@
           <span class="tool-label">Overlays</span>
           <button type="button" data-overlay="cabinets" aria-pressed="true">Cabinets</button>
           <button type="button" data-overlay="modules" aria-pressed="false">Modules</button>
-          <button type="button" data-overlay="signal" aria-pressed="false">Signal</button>
           <button type="button" data-overlay="coordinates" aria-pressed="true">Coordinates</button>
         </div>
         <button id="toggle-mode" class="focus-toggle" type="button">Focus Screen</button>
@@ -69,7 +73,7 @@
         </div>
         <div class="tool-group">
           <button id="mapping-create-region" class="primary" type="button">+ Mapping Region</button>
-          <button id="mapping-from-layout" type="button">Map from Layout Position</button>
+          <button id="mapping-from-layout" type="button">Map from Composition Position</button>
           <button id="mapping-delete-region" type="button">Delete</button>
         </div>
         <div class="tool-group mapping-view-tools">
@@ -166,7 +170,7 @@
 
       <article class="canvas-workspace">
         <div class="canvas-heading">
-          <div><span class="eyebrow">LAYOUT WORKSPACE</span><h2 id="canvas-title">All Screens</h2></div>
+          <div><span class="eyebrow">COMPOSITION WORKSPACE</span><h2 id="canvas-title">All Screens</h2></div>
           <span id="selection-chip" role="status">No selection</span>
         </div>
         <div id="viewport">
@@ -289,7 +293,7 @@
         </div>
         <div id="test-viewport">
           <canvas id="test-canvas" role="img" aria-label="Deterministic Test pattern preview"></canvas>
-          <div id="test-empty" class="canvas-empty" hidden><h2>No screens to test</h2><p>Build the Layout first.</p></div>
+          <div id="test-empty" class="canvas-empty" hidden><h2>No screens to test</h2><p>Build the Composition first.</p></div>
         </div>
       </article>
 

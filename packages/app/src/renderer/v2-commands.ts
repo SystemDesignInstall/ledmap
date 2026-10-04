@@ -361,7 +361,7 @@ export function mapFromLayoutPositionV2(project: LedMapProjectV2, screenId: stri
   screenOf(project, screenId)
   const placement = placementOf(project, screenId)
   if (placement.x < 0 || placement.y < 0) {
-    throw new Error('Layout position is outside Input Canvas coordinates. Mapping X/Y must be non-negative.')
+    throw new Error('Composition position is outside Input Canvas coordinates. Mapping X/Y must be non-negative.')
   }
   const target = regionId === undefined
     ? project.content.mappingRegions.find(value => value.screenId === screenId)

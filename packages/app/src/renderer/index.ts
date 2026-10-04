@@ -11,17 +11,18 @@ import {
   addScreenV2, deleteScreensV2, duplicateScreenV2, renameScreenV2, resizeScreenGridV2,
   setScreenPositionV2, setScreenPositionsV2, updateScreenCabinetConfigV2,
 } from './v2-commands.js'
-import { changeNumbering, initialDraft, type Draft } from './state.js'
+import { initialDraft, type Draft } from './state.js'
 import type { GridShape, OverlayVisibility, Point, ResizeHandle, ResizePreview } from './canvas.js'
 import {
   drawProject, fitCamera, resizeHandleCursor, resizeHandleHit,
   screenResizeHandles, screenShape, toProject, toScreen, zoomAt, type Camera,
 } from './canvas.js'
 import {
-  alignScreens, distributeScreens, marqueeSelection, normalizeSelectionBox, nudgePositions,
-  replaceOrToggleSelection, selectionBounds, snapTranslation,
+  addGuide, alignScreens, distributeScreens, guideHitTest, guidePositions, marqueeSelection, moveGuide,
+  normalizeSelectionBox, nudgePositions, removeGuide, replaceOrToggleSelection, selectionBounds, setGuideLocked,
+  snapTranslation,
   type AlignMode, type AlignmentGuide, type DistributeAxis, type LayoutPoint, type LayoutRect,
-  type SelectionBox,
+  type ProjectGuide, type SelectionBox, type SnapSources,
 } from './layout-interaction.js'
 import { createMappingWorkspace, type MappingWorkspace } from './mapping-workspace.js'
 import { createOutputMappingWorkspace, type OutputMappingWorkspace } from './output-mapping-workspace.js'
@@ -68,8 +69,9 @@ interface LedmapHook {
     readonly revision: number; readonly savedRevision: number }
   projectSnapshot(): string
   selectedScreens(): readonly string[]
-  snap(): { readonly grid: boolean; readonly smart: boolean; readonly step: number }
+  snap(): { readonly enabled: boolean; readonly sources: SnapSources; readonly step: number }
   guides(): readonly AlignmentGuide[]
+  projectGuides(): readonly ProjectGuide[]
 }
 
 function element<T extends HTMLElement>(id: string): T {
@@ -97,9 +99,14 @@ const redoProjectButton = element<HTMLButtonElement>('redo-project')
 const saveProjectButton = element<HTMLButtonElement>('save-project')
 const saveProjectAsButton = element<HTMLButtonElement>('save-project-as')
 const documentError = element<HTMLDivElement>('document-error')
-const gridSnapButton = element<HTMLButtonElement>('grid-snap')
-const smartSnapButton = element<HTMLButtonElement>('smart-snap')
+const snapToggle = element<HTMLButtonElement>('snap-toggle')
+const snapGridButton = element<HTMLButtonElement>('snap-grid')
+const snapEdgesButton = element<HTMLButtonElement>('snap-edges')
+const snapCentersButton = element<HTMLButtonElement>('snap-centers')
+const snapGuidesButton = element<HTMLButtonElement>('snap-guides')
 const gridStepInput = element<HTMLInputElement>('grid-step')
+const guideAddV = element<HTMLButtonElement>('guide-add-v')
+const guideAddH = element<HTMLButtonElement>('guide-add-h')
 const selectedCount = element<HTMLSpanElement>('selected-count')
 const snapStatus = element<HTMLSpanElement>('snap-status')
 const cursorStatus = element<HTMLSpanElement>('cursor-status')
@@ -156,14 +163,16 @@ let selection: SelectedObject | null = null
 let selectedScreenIds: readonly string[] = []
 let activeScreenId: string | null = currentProject().screens[0]?.screen.id ?? null
 let camera: Camera = fitCamera(projectBounds(currentProject()), 1, 1)
-let gridSnap = false
-let smartSnap = true
+let snapEnabled = true
+let snapSources: SnapSources = { grid: false, edges: true, centers: true, guides: true }
 let gridStep = 10
+let projectGuides: readonly ProjectGuide[] = []
+let selectedGuideId: string | null = null
 let alignmentGuides: readonly AlignmentGuide[] = []
 let marqueeBox: SelectionBox | null = null
-let overlays: OverlayVisibility = { cabinets: true, modules: false, signal: false, coordinates: true }
+let overlays: OverlayVisibility = { cabinets: true, modules: false, coordinates: true }
 let spaceDown = false
-type PointerMode = 'none' | 'drag' | 'pan' | 'resize' | 'marquee'
+type PointerMode = 'none' | 'drag' | 'pan' | 'resize' | 'marquee' | 'guide'
 let pointerMode: PointerMode = 'none'
 let dragState: {
   screenIds: readonly string[]
@@ -179,6 +188,7 @@ let arrowHistoryGroupId: number | null = null
 let arrowHistoryKey: string | null = null
 let panState: { lastX: number; lastY: number } | null = null
 let marqueeGesture: { start: Point; baseSelection: readonly string[] } | null = null
+let guideGesture: { id: string; previous: number; moved: boolean } | null = null
 let resizeGesture: {
   screenId: string
   handle: ResizeHandle
@@ -191,16 +201,6 @@ let resizeGesture: {
 let resizePreview: ResizePreview | null = null
 
 const format = new Intl.NumberFormat('en-US')
-
-function directionLabel(direction: Direction): string {
-  const labels: Record<Direction, string> = {
-    'left-to-right': 'Left → Right',
-    'right-to-left': 'Right → Left',
-    'top-to-bottom': 'Top → Bottom',
-    'bottom-to-top': 'Bottom → Top',
-  }
-  return labels[direction]
-}
 
 function applyV2(command: (project: LedMapProjectV2) => LedMapProjectV2, groupId?: number): void {
   const before = documentController.session
@@ -386,6 +386,8 @@ function draw(): void {
     activeScreenId,
     resizePreview,
     alignmentGuides,
+    projectGuides,
+    selectedGuideId,
     marquee: marqueeBox,
     overlays,
   }, camera)
@@ -414,6 +416,7 @@ function fitToProject(): void {
 }
 
 function chipText(): string {
+  if (selectedGuideId !== null && selectedScreenIds.length === 0 && !selection) return 'Guide selected'
   if (selectedScreenIds.length > 1) return `${selectedScreenIds.length} Screens selected`
   const current = selection
   if (!current) return 'No selection'
@@ -423,8 +426,7 @@ function chipText(): string {
   const suffix = screen ? ` · ${screen.screen.name}` : ''
   if (current.type === 'screen') return `${screen?.screen.name ?? 'Screen'} selected`
   if (current.type === 'cabinetGrid') return `Cabinet Grid${suffix}`
-  const cabinet = screen?.cabinets.find(c => c.id === current.id)
-  return `${current.id}${cabinet ? ` · #${cabinet.index + 1}` : ''}${suffix}`
+  return `${current.id}${suffix}`
 }
 
 function findScreenByGrid(gridId: string): ScreenView | undefined {
@@ -436,13 +438,18 @@ function renderStatus(): void {
   selectedCount.textContent = `${selectedScreenIds.length} selected`
   toggleMode.textContent = viewMode === 'all' ? 'Focus Screen' : 'Show All'
   toggleMode.setAttribute('aria-pressed', String(viewMode === 'active'))
-  gridSnapButton.setAttribute('aria-pressed', String(gridSnap))
-  smartSnapButton.setAttribute('aria-pressed', String(smartSnap))
-  gridSnapButton.textContent = 'Grid'
-  smartSnapButton.textContent = 'Smart'
-  gridSnapButton.title = gridSnap ? 'Grid Snap is on' : 'Grid Snap is off'
-  smartSnapButton.title = smartSnap ? 'Smart Snap is on' : 'Smart Snap is off'
-  snapStatus.textContent = `${gridSnap ? `Grid ${gridStep}px` : 'Grid off'} · ${smartSnap ? 'Smart on' : 'Smart off'}`
+  snapToggle.textContent = snapEnabled ? 'Snap ✓' : 'Snap off'
+  snapToggle.setAttribute('aria-pressed', String(snapEnabled))
+  const sourceButtons: ReadonlyArray<[keyof SnapSources, HTMLButtonElement]> = [
+    ['grid', snapGridButton], ['edges', snapEdgesButton], ['centers', snapCentersButton], ['guides', snapGuidesButton],
+  ]
+  for (const [source, button] of sourceButtons) {
+    button.setAttribute('aria-pressed', String(snapSources[source]))
+  }
+  const activeSources = (Object.keys(snapSources) as ReadonlyArray<keyof SnapSources>)
+    .filter(source => snapSources[source])
+    .map(source => source[0]!.toUpperCase() + source.slice(1))
+  snapStatus.textContent = snapEnabled ? `Snap on: ${activeSources.join('+')}` : 'Snap off'
   fitSelectionButton.disabled = selectedScreenIds.length === 0
   renameScreenButton.disabled = selectedScreenIds.length !== 1
   duplicateScreenButton.disabled = selectedScreenIds.length === 0
@@ -533,6 +540,14 @@ function selectScreen(screenId: string, additive = false): void {
 function renderProperties(): void {
   properties.replaceChildren()
   const title = element<HTMLHeadingElement>('properties-title')
+  if (selectedGuideId !== null && selectedScreenIds.length === 0 && !selection) {
+    const guide = projectGuides.find(candidate => candidate.id === selectedGuideId)
+    if (guide) {
+      renderGuideProperties(guide)
+      return
+    }
+    selectedGuideId = null
+  }
   if (selectedScreenIds.length > 1) {
     renderMultiProperties(title)
     return
@@ -557,6 +572,34 @@ function renderProperties(): void {
   }
   const screen = findScreen(currentProject(), selection.screenId)
   if (screen) renderCabinetProperties(screen)
+}
+
+function renderGuideProperties(guide: ProjectGuide): void {
+  element<HTMLHeadingElement>('properties-title').textContent = 'Guide'
+  const container = document.createElement('div')
+  container.className = 'properties-body'
+  const positionInput = numberField(guide.position, 'Guide Position', value => {
+    projectGuides = moveGuide(projectGuides, guide.id, value)
+    render()
+  })
+  positionInput.removeAttribute('min')
+  const box = document.createElement('div')
+  box.append(
+    propertyRow('Orientation', valueNode(guide.orientation === 'vertical' ? 'Vertical' : 'Horizontal')),
+    propertyRow('Position', positionInput),
+    propertyRow('Locked', toggleField(guide.locked, 'Guide Locked', value => {
+      projectGuides = setGuideLocked(projectGuides, guide.id, value)
+      render()
+    })),
+  )
+  container.append(group('Guide', box))
+  const remove = document.createElement('button')
+  remove.type = 'button'
+  remove.textContent = 'Delete Guide'
+  remove.setAttribute('aria-label', 'Delete Guide')
+  remove.addEventListener('click', () => deleteSelectedGuide())
+  container.append(remove)
+  properties.append(container)
 }
 
 function group(title: string, container: HTMLDivElement): HTMLDivElement {
@@ -634,25 +677,6 @@ function textField(initial: string, ariaLabel: string, onCommit: (value: string)
   return input
 }
 
-function selectField<T extends string>(
-  initial: T,
-  ariaLabel: string,
-  options: readonly { readonly value: T; readonly label: string }[],
-  onCommit: (value: T) => void,
-): HTMLSelectElement {
-  const select = document.createElement('select')
-  select.setAttribute('aria-label', ariaLabel)
-  for (const option of options) {
-    const node = document.createElement('option')
-    node.value = option.value
-    node.textContent = option.label
-    select.append(node)
-  }
-  select.value = initial
-  select.addEventListener('change', () => onCommit(select.value as T))
-  return select
-}
-
 function toggleField(initial: boolean, ariaLabel: string, onCommit: (value: boolean) => void): HTMLButtonElement {
   const button = document.createElement('button')
   button.type = 'button'
@@ -709,18 +733,6 @@ function moduleNumberField(screen: ScreenView, prefix: string, key: ModuleDimens
   )
 }
 
-function directionOptions(numbering: Numbering): readonly { readonly value: Direction; readonly label: string }[] {
-  return numbering === 'row'
-    ? [
-        { value: 'left-to-right', label: directionLabel('left-to-right') },
-        { value: 'right-to-left', label: directionLabel('right-to-left') },
-      ]
-    : [
-        { value: 'top-to-bottom', label: directionLabel('top-to-bottom') },
-        { value: 'bottom-to-top', label: directionLabel('bottom-to-top') },
-      ]
-}
-
 function appendCabinetConfigGroups(container: HTMLDivElement, screen: ScreenView, prefix: string): void {
   const modulesBox = document.createElement('div')
   modulesBox.append(
@@ -743,32 +755,6 @@ function appendCabinetConfigGroups(container: HTMLDivElement, screen: ScreenView
     propertyRow('Modules', valueNode(format.format(screen.modulesPerCabinet))),
   )
   container.append(group('Calculated Cabinet', calculatedCabinetBox))
-
-  const orderingBox = document.createElement('div')
-  const numbering = selectField<Numbering>(
-    screen.grid.ordering.numbering,
-    `${prefix} Numbering`,
-    [{ value: 'row', label: 'Row' }, { value: 'column', label: 'Column' }],
-    value => {
-      const next = changeNumbering(screen.grid.ordering, value)
-      commitCabinetConfig(screen.screen.id, { numbering: next.numbering, direction: next.direction })
-    },
-  )
-  const direction = selectField<Direction>(
-    screen.grid.ordering.direction,
-    `${prefix} Direction`,
-    directionOptions(screen.grid.ordering.numbering),
-    value => { commitCabinetConfig(screen.screen.id, { direction: value }) },
-  )
-  const snake = toggleField(screen.grid.ordering.snake, `${prefix} Snake`, value => {
-    commitCabinetConfig(screen.screen.id, { snake: value })
-  })
-  orderingBox.append(
-    propertyRow('Numbering', numbering),
-    propertyRow('Direction', direction),
-    propertyRow('Snake', snake),
-  )
-  container.append(group('Ordering', orderingBox))
 
   const calculatedScreenBox = document.createElement('div')
   calculatedScreenBox.append(
@@ -985,7 +971,6 @@ function renderCabinetProperties(screen: ScreenView): void {
   const box = document.createElement('div')
   box.append(
     propertyRow('Physical ID', valueNode(cabinet.id)),
-    propertyRow('Logical order', valueNode(`#${cabinet.index + 1}`)),
     propertyRow('Position', valueNode(`Column ${cabinet.column + 1} · Row ${cabinet.row + 1}`)),
     propertyRow('Screen', valueNode(screen.screen.name)),
   )
@@ -1026,6 +1011,7 @@ function endPointerGesture(): void {
   panState = null
   marqueeGesture = null
   marqueeBox = null
+  guideGesture = null
   alignmentGuides = []
   resizeGesture = null
   resizePreview = null
@@ -1076,6 +1062,7 @@ canvas.addEventListener('pointerdown', event => {
   if (hit) {
     const screenId = hit.screen.screen.id
     activeScreenId = screenId
+    selectedGuideId = null
     const alreadySelected = selectedScreenIds.includes(screenId)
     if (additive) {
       selectedScreenIds = replaceOrToggleSelection(selectedScreenIds, screenId, true)
@@ -1105,12 +1092,23 @@ canvas.addEventListener('pointerdown', event => {
     }
     canvas.setPointerCapture(event.pointerId)
   } else {
-    selection = null
-    selectedScreenIds = additive ? selectedScreenIds : []
-    pointerMode = 'marquee'
-    marqueeGesture = { start: projectPoint, baseSelection: additive ? [...selectedScreenIds] : [] }
-    marqueeBox = normalizeSelectionBox(projectPoint, projectPoint)
-    canvas.setPointerCapture(event.pointerId)
+    const guide = !additive ? guideHitTest(projectGuides, projectPoint, 8 / camera.zoom) : null
+    if (guide) {
+      selection = null
+      selectedScreenIds = []
+      selectedGuideId = guide.id
+      guideGesture = { id: guide.id, previous: guide.position, moved: false }
+      pointerMode = 'guide'
+      canvas.setPointerCapture(event.pointerId)
+    } else {
+      selection = null
+      selectedScreenIds = additive ? selectedScreenIds : []
+      selectedGuideId = null
+      pointerMode = 'marquee'
+      marqueeGesture = { start: projectPoint, baseSelection: additive ? [...selectedScreenIds] : [] }
+      marqueeBox = normalizeSelectionBox(projectPoint, projectPoint)
+      canvas.setPointerCapture(event.pointerId)
+    }
   }
   render()
 })
@@ -1153,6 +1151,20 @@ canvas.addEventListener('pointermove', event => {
     draw()
     return
   }
+  if (pointerMode === 'guide' && guideGesture) {
+    const gesture = guideGesture
+    const point = toProject(camera, viewportPoint(event))
+    const guide = projectGuides.find(candidate => candidate.id === gesture.id)
+    if (guide && !guide.locked) {
+      const position = guide.orientation === 'vertical' ? point.x : point.y
+      if (position !== guide.position) {
+        guideGesture = { ...gesture, moved: true }
+        projectGuides = moveGuide(projectGuides, guide.id, position)
+      }
+    }
+    draw()
+    return
+  }
   if (pointerMode === 'marquee' && marqueeGesture) {
     const point = toProject(camera, viewportPoint(event))
     marqueeBox = normalizeSelectionBox(marqueeGesture.start, point)
@@ -1164,15 +1176,26 @@ canvas.addEventListener('pointermove', event => {
   }
   if (pointerMode === 'drag' && dragState) {
     const projectPoint = toProject(camera, viewportPoint(event))
-    const snapped = snapTranslation({
-      moving: dragState.bounds,
-      targets: dragState.targets,
-      dx: projectPoint.x - dragState.startProject.x,
-      dy: projectPoint.y - dragState.startProject.y,
-      ...(gridSnap ? { gridStep } : {}),
-      smartSnap,
-      tolerance: 8 / camera.zoom,
-    })
+    const guideTargets = snapEnabled && snapSources.guides && projectGuides.length > 0
+      ? guidePositions(projectGuides)
+      : undefined
+    const snapped = snapEnabled
+      ? snapTranslation({
+        moving: dragState.bounds,
+        targets: dragState.targets,
+        dx: projectPoint.x - dragState.startProject.x,
+        dy: projectPoint.y - dragState.startProject.y,
+        ...(snapSources.grid ? { gridStep } : {}),
+        snapEdges: snapSources.edges,
+        snapCenters: snapSources.centers,
+        ...(guideTargets ? { guideTargets } : {}),
+        tolerance: 8 / camera.zoom,
+      })
+      : {
+        dx: projectPoint.x - dragState.startProject.x,
+        dy: projectPoint.y - dragState.startProject.y,
+        guides: [],
+      }
     alignmentGuides = snapped.guides
     if (snapped.dx !== dragState.appliedDx || snapped.dy !== dragState.appliedDy) {
       const positions = Object.fromEntries(dragState.screenIds.map(id => {
@@ -1210,11 +1233,17 @@ canvas.addEventListener('pointerup', () => {
     render()
     return
   }
+  if (pointerMode === 'guide') {
+    endPointerGesture()
+    render()
+    return
+  }
   endPointerGesture()
   render()
 })
 
 canvas.addEventListener('pointercancel', () => {
+  if (guideGesture) projectGuides = moveGuide(projectGuides, guideGesture.id, guideGesture.previous)
   endPointerGesture()
   render()
 })
@@ -1339,15 +1368,53 @@ document.querySelectorAll<HTMLButtonElement>('[data-distribute]').forEach(button
   button.addEventListener('click', () => arrangeSelection(button.dataset['distribute'] as DistributeAxis, true))
 })
 
-gridSnapButton.addEventListener('click', () => {
-  gridSnap = !gridSnap
-  renderStatus()
+snapToggle.addEventListener('click', () => {
+  snapEnabled = !snapEnabled
+  render()
 })
 
-smartSnapButton.addEventListener('click', () => {
-  smartSnap = !smartSnap
-  renderStatus()
-})
+function toggleSnapSource(source: keyof SnapSources): void {
+  snapSources = { ...snapSources, [source]: !snapSources[source] }
+  render()
+}
+
+snapGridButton.addEventListener('click', () => toggleSnapSource('grid'))
+snapEdgesButton.addEventListener('click', () => toggleSnapSource('edges'))
+snapCentersButton.addEventListener('click', () => toggleSnapSource('centers'))
+snapGuidesButton.addEventListener('click', () => toggleSnapSource('guides'))
+
+function addGuideAtCenter(orientation: ProjectGuide['orientation']): void {
+  const rect = canvas.getBoundingClientRect()
+  const center = toProject(camera, { x: rect.width / 2, y: rect.height / 2 })
+  const position = orientation === 'vertical' ? center.x : center.y
+  projectGuides = addGuide(projectGuides, orientation, position)
+  const created = projectGuides[projectGuides.length - 1]!
+  selection = null
+  selectedScreenIds = []
+  selectedGuideId = created.id
+  render()
+}
+
+guideAddV.addEventListener('click', () => addGuideAtCenter('vertical'))
+guideAddH.addEventListener('click', () => addGuideAtCenter('horizontal'))
+
+function deleteSelectedGuide(): void {
+  if (selectedGuideId === null) return
+  const guide = projectGuides.find(candidate => candidate.id === selectedGuideId)
+  if (!guide) {
+    selectedGuideId = null
+    render()
+    return
+  }
+  if (guide.locked) {
+    render()
+    canvasNote.textContent = 'Guide is locked.'
+    return
+  }
+  projectGuides = removeGuide(projectGuides, guide.id)
+  selectedGuideId = null
+  render()
+}
 
 gridStepInput.addEventListener('change', () => {
   const value = Number(gridStepInput.value)
@@ -1614,12 +1681,19 @@ window.addEventListener('keydown', event => {
     event.preventDefault()
   }
   if (event.key === 'Escape') {
+    if (guideGesture) projectGuides = moveGuide(projectGuides, guideGesture.id, guideGesture.previous)
     endPointerGesture()
     selection = null
     selectedScreenIds = []
+    selectedGuideId = null
     render()
   }
   if (event.key === 'Delete' || event.key === 'Backspace') {
+    if (selectedGuideId !== null) {
+      deleteSelectedGuide()
+      event.preventDefault()
+      return
+    }
     deleteSelection()
     event.preventDefault()
     return
@@ -1731,8 +1805,9 @@ const hook: LedmapHook = {
   }),
   projectSnapshot: () => JSON.stringify(documentController.session.project),
   selectedScreens: () => [...selectedScreenIds],
-  snap: () => ({ grid: gridSnap, smart: smartSnap, step: gridStep }),
+  snap: () => ({ enabled: snapEnabled, sources: { ...snapSources }, step: gridStep }),
   guides: () => [...alignmentGuides],
+  projectGuides: () => projectGuides.map(guide => ({ ...guide })),
 }
 
 ;(window as unknown as { __ledmap: LedmapHook }).__ledmap = hook

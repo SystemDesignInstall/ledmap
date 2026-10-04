@@ -1,7 +1,7 @@
-import { cabinetIndex, cabinetOrder, type CabinetEngineConfig, type GridPosition } from '@ledmap/core'
+import { type CabinetEngineConfig, type GridPosition } from '@ledmap/core'
 import { gridPixelSize } from './state.js'
 import type { Bounds, Project, ScreenView, SelectedObject } from './v2-view-model.js'
-import type { AlignmentGuide, SelectionBox } from './layout-interaction.js'
+import type { AlignmentGuide, ProjectGuide, SelectionBox } from './layout-interaction.js'
 
 export interface Camera {
   readonly zoom: number
@@ -29,6 +29,8 @@ export interface View {
   readonly activeScreenId: string | null
   readonly resizePreview: ResizePreview | null
   readonly alignmentGuides: readonly AlignmentGuide[]
+  readonly projectGuides: readonly ProjectGuide[]
+  readonly selectedGuideId: string | null
   readonly marquee: SelectionBox | null
   readonly overlays: OverlayVisibility
 }
@@ -36,7 +38,6 @@ export interface View {
 export interface OverlayVisibility {
   readonly cabinets: boolean
   readonly modules: boolean
-  readonly signal: boolean
   readonly coordinates: boolean
 }
 
@@ -125,7 +126,6 @@ export function resizeHandleCursor(handle: ResizeHandle): string {
 }
 
 const ACCENT = '#74e0c2'
-const CABINET_FIRST = '#173b39'
 const CABINET_FILL = '#172331'
 const PENDING_FILL = '#121a26'
 const PENDING_EDGE = '#3d5b70'
@@ -224,9 +224,8 @@ function drawCabinetGrid(
       const x = rect.left + column * cw
       const y = rect.top + row * ch
       const id = existing.get(`${column},${row}`)
-      const index = cabinetIndex(config, { column, row })
       if (overlays.cabinets) {
-        ctx.fillStyle = id === undefined ? PENDING_FILL : index === 0 ? CABINET_FIRST : CABINET_FILL
+        ctx.fillStyle = id === undefined ? PENDING_FILL : CABINET_FILL
         ctx.fillRect(x, y, cw, ch)
       }
       if (id !== undefined && overlays.modules && modulesVisible) {
@@ -250,39 +249,10 @@ function drawCabinetGrid(
       }
     }
   }
-  if (overlays.signal) drawSignalPath(ctx, camera, screen, shape, config)
-  if (labelsVisible && (overlays.cabinets || overlays.signal)) {
-    drawCabinetLabels(ctx, camera, screen, shape, config, overlays)
+  if (labelsVisible && overlays.cabinets) {
+    drawCabinetLabels(ctx, camera, screen, shape)
   }
-  return (overlays.cabinets || overlays.signal) && !labelsVisible || overlays.modules && !modulesVisible
-}
-
-function drawSignalPath(ctx: CanvasRenderingContext2D, camera: Camera, screen: ScreenView, shape: GridShape, config: CabinetEngineConfig): void {
-  const path = cabinetOrder(config)
-  const cw = screen.grid.cabinetWidth * camera.zoom
-  const ch = screen.grid.cabinetHeight * camera.zoom
-  ctx.strokeStyle = ACCENT
-  ctx.fillStyle = ACCENT
-  ctx.lineWidth = 1.5
-  for (let i = 1; i < path.length; i += 1) {
-    const before = path[i - 1]!
-    const after = path[i]!
-    const a = cellCenterPx(camera, screen, before)
-    const b = cellCenterPx(camera, screen, after)
-    ctx.beginPath()
-    ctx.moveTo(a.x, a.y)
-    ctx.lineTo(b.x, b.y)
-    ctx.stroke()
-    const angle = Math.atan2(b.y - a.y, b.x - a.x)
-    const tip = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
-    const size = Math.min(6, cw * .15, ch * .15)
-    ctx.beginPath()
-    ctx.moveTo(tip.x, tip.y)
-    ctx.lineTo(tip.x - size * Math.cos(angle - .5), tip.y - size * Math.sin(angle - .5))
-    ctx.lineTo(tip.x - size * Math.cos(angle + .5), tip.y - size * Math.sin(angle + .5))
-    ctx.closePath()
-    ctx.fill()
-  }
+  return overlays.cabinets && !labelsVisible || overlays.modules && !modulesVisible
 }
 
 function drawCabinetLabels(
@@ -290,25 +260,17 @@ function drawCabinetLabels(
   camera: Camera,
   screen: ScreenView,
   shape: GridShape,
-  config: CabinetEngineConfig,
-  overlays: OverlayVisibility,
 ): void {
   for (const cabinet of screen.cabinets) {
     if (cabinet.column >= shape.columns || cabinet.row >= shape.rows) continue
     const p = cellCenterPx(camera, screen, cabinet)
-    const index = cabinetIndex(config, cabinet)
     ctx.fillStyle = '#101c28'
-    ctx.fillRect(p.x - 28, p.y - 24, 56, 48)
+    ctx.fillRect(p.x - 28, p.y - 14, 56, 28)
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
     ctx.font = '12px "Segoe UI", sans-serif'
     ctx.fillStyle = TEXT
-    if (overlays.cabinets) ctx.fillText(cabinet.id, p.x, overlays.signal ? p.y - 10 : p.y)
-    if (overlays.signal) {
-      ctx.font = '600 18px "Segoe UI", sans-serif'
-      ctx.fillStyle = ACCENT
-      ctx.fillText(`#${index + 1}`, p.x, overlays.cabinets ? p.y + 10 : p.y)
-    }
+    ctx.fillText(cabinet.id, p.x, p.y)
   }
 }
 
@@ -385,6 +347,8 @@ function drawInteractionOverlay(
   width: number,
   height: number,
   guides: readonly AlignmentGuide[],
+  projectGuides: readonly ProjectGuide[],
+  selectedGuideId: string | null,
   marquee: SelectionBox | null,
 ): void {
   ctx.save()
@@ -399,6 +363,23 @@ function drawInteractionOverlay(
       ctx.lineTo(x, height)
     } else {
       const y = toScreen(camera, { x: 0, y: guide.value }).y
+      ctx.moveTo(0, y)
+      ctx.lineTo(width, y)
+    }
+    ctx.stroke()
+  }
+  ctx.setLineDash([])
+  for (const guide of projectGuides) {
+    const selected = guide.id === selectedGuideId
+    ctx.strokeStyle = selected ? ACCENT : guide.locked ? '#5a6b80' : '#3d8b70'
+    ctx.lineWidth = selected ? 2 : 1
+    ctx.beginPath()
+    if (guide.orientation === 'vertical') {
+      const x = toScreen(camera, { x: guide.position, y: 0 }).x
+      ctx.moveTo(x, 0)
+      ctx.lineTo(x, height)
+    } else {
+      const y = toScreen(camera, { x: 0, y: guide.position }).y
       ctx.moveTo(0, y)
       ctx.lineTo(width, y)
     }
@@ -446,6 +427,6 @@ export function drawProject(canvas: HTMLCanvasElement, project: Project, view: V
       drawCabinetSelection(ctx, camera, screen, view.selection)
     }
   }
-  drawInteractionOverlay(ctx, camera, width, height, view.alignmentGuides, view.marquee)
+  drawInteractionOverlay(ctx, camera, width, height, view.alignmentGuides, view.projectGuides, view.selectedGuideId, view.marquee)
   return hints > 0 ? note : ''
 }

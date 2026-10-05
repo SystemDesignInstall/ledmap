@@ -1,5 +1,6 @@
 import {
-  createMediaOutputPixelResolver, inspectMediaOutputMapping, pointInPolygon,
+  createMediaOutputPixelResolver, inspectMediaOutputMapping, pointInPolygon, resolveMediaOutputPixel,
+  resolveScreenPixelToOutput,
   type LedMapProjectV2, type MediaOutputMappingInspection,
 } from '@ledmap/core'
 import {
@@ -418,6 +419,49 @@ export function createOutputMappingWorkspace(options: Options): OutputMappingWor
         ] }))
       }))
     }
+    const probeTitle = document.createElement('p')
+    probeTitle.className = 'hint'
+    probeTitle.textContent = 'Pixel probe · Output → Screen → slice'
+    properties.append(probeTitle)
+    const probeX = document.createElement('input')
+    probeX.type = 'number'
+    probeX.step = '1'
+    probeX.value = String(media.resolution.width > 0 ? 0 : 0)
+    probeX.setAttribute('aria-label', 'Probe output X')
+    const probeY = document.createElement('input')
+    probeY.type = 'number'
+    probeY.step = '1'
+    probeY.value = '0'
+    probeY.setAttribute('aria-label', 'Probe output Y')
+    const probeResult = document.createElement('p')
+    probeResult.className = 'hint'
+    probeResult.setAttribute('aria-label', 'Probe result')
+    const updateProbe = (): void => {
+      const x = Number(probeX.value)
+      const y = Number(probeY.value)
+      if (!Number.isSafeInteger(x) || !Number.isSafeInteger(y)) {
+        probeResult.textContent = 'Enter integer output pixels.'
+        return
+      }
+      const hit = resolveMediaOutputPixel(project(), media.id, x, y)
+      if (hit.status === 'resolved') {
+        probeResult.textContent = `Out ${x},${y} → slice ${hit.mappingId} · screen ${hit.screenId} ${hit.screenX},${hit.screenY}`
+      } else if (hit.status === 'blocked') {
+        probeResult.textContent = `Out ${x},${y} → blocked (${hit.code})`
+      } else {
+        probeResult.textContent = `Out ${x},${y} → empty`
+      }
+    }
+    probeX.addEventListener('change', updateProbe)
+    probeY.addEventListener('change', updateProbe)
+    properties.append(field('Probe out X', probeX), field('Probe out Y', probeY), probeResult)
+    const reverseResult = document.createElement('p')
+    reverseResult.className = 'hint'
+    reverseResult.setAttribute('aria-label', 'Reverse probe result')
+    reverseResult.textContent = `Screen ${mapping.screenRect.x},${mapping.screenRect.y} → out ${
+      JSON.stringify(resolveScreenPixelToOutput(project(), mapping.id, mapping.screenRect.x, mapping.screenRect.y) ?? null)
+    }`
+    properties.append(reverseResult)
   }
 
   function draw(inspection: MediaOutputMappingInspection | null): void {

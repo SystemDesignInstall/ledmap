@@ -4,6 +4,7 @@ import {
 } from '../shared/v2-export-engine.js'
 import { buildPngExportPlan, type PngExportMode } from '../shared/png-export.js'
 import { TEST_PATTERN_DEFINITIONS, type TestPatternGroup, type TestPatternId } from '../shared/test-engine.js'
+import { buildHippoCsv, buildResolumeXml } from '../shared/media-output-adapters.js'
 import { renderPngJob } from './export-image.js'
 import type { LedMapProjectV2 } from '@ledmap/core'
 import type { TestWorkspaceSnapshot } from './test-workspace.js'
@@ -65,6 +66,8 @@ export function createExportWorkspace(options: ExportWorkspaceOptions): ExportWo
   const pngButton = element<HTMLButtonElement>('export-png-run')
   const jsonButton = element<HTMLButtonElement>('export-json-run')
   const csvButton = element<HTMLButtonElement>('export-csv-run')
+  const resolumeButton = element<HTMLButtonElement>('export-resolume-run')
+  const hippoButton = element<HTMLButtonElement>('export-hippo-run')
   const genericScopeSelect = element<HTMLSelectElement>('export-generic-scope')
   const genericScreenSelect = element<HTMLSelectElement>('export-generic-screen')
   const genericScreenField = element<HTMLLabelElement>('export-generic-screen-field')
@@ -227,6 +230,29 @@ export function createExportWorkspace(options: ExportWorkspaceOptions): ExportWo
     }
   }
 
+  async function exportMediaServer(kind: 'resolume' | 'hippo'): Promise<void> {
+    busy = true
+    lastResult = kind === 'resolume' ? 'Writing Resolume XML…' : 'Writing Hippo CSV…'
+    render()
+    options.clearError()
+    try {
+      const project = options.getProjectV2()
+      const text = kind === 'resolume' ? buildResolumeXml(project) : buildHippoCsv(project)
+      const name = kind === 'resolume' ? 'ledmap-output-slices.xml' : 'ledmap-output-slices.csv'
+      const result = await window.ledmapDesktop.writeExportFiles({
+        mode: 'single',
+        files: [{ name, bytes: new TextEncoder().encode(text) }],
+      })
+      lastResult = result.canceled ? `${name} export canceled.` : `Exported ${name}.`
+    } catch (error) {
+      lastResult = error instanceof Error ? error.message : 'Unable to export media server file.'
+      options.showError(error, 'Unable to export media server file.')
+    } finally {
+      busy = false
+      render()
+    }
+  }
+
   patternSelect.addEventListener('change', () => {
     pattern = patternSelect.value as TestPatternId
     patternCustomized = true
@@ -254,6 +280,8 @@ export function createExportWorkspace(options: ExportWorkspaceOptions): ExportWo
   pngButton.addEventListener('click', () => { void exportPng() })
   jsonButton.addEventListener('click', () => { void exportMapping('json') })
   csvButton.addEventListener('click', () => { void exportMapping('csv') })
+  resolumeButton.addEventListener('click', () => { void exportMediaServer('resolume') })
+  hippoButton.addEventListener('click', () => { void exportMediaServer('hippo') })
 
   const hook: ExportHook = {
     dump: () => {

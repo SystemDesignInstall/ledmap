@@ -151,7 +151,7 @@ export function addScreenV2(project: LedMapProjectV2, draft: Draft = initialDraf
   const previousPlacement = previous && placementOf(project, previous.id)
   const x = options.position?.x ?? (previousPlacement ? previousPlacement.x + 100 : 0)
   const y = options.position?.y ?? (previousPlacement ? previousPlacement.y + 100 : 0)
-  if (!Number.isSafeInteger(x) || !Number.isSafeInteger(y)) throw new Error('Screen position must use signed whole numbers.')
+  if (!Number.isSafeInteger(x) || !Number.isSafeInteger(y) || x < 0 || y < 0) throw new Error('Screen position must use non-negative whole numbers.')
   const name = options.name?.trim() || `Screen ${serial}`
   const built = buildSnapshot(null, draft, {
     screenId: `screen-${serial}`, gridId: `grid-${serial}`, screenName: name, gridName: 'Cabinet Grid',
@@ -204,8 +204,8 @@ export function setScreenPositionsV2(
 ): LedMapProjectV2 {
   const entries = Object.entries(positions)
   for (const [screenId, position] of entries) {
-    if (!Number.isSafeInteger(position.x) || !Number.isSafeInteger(position.y)) {
-      throw new Error('Screen position must use signed whole numbers.')
+    if (!Number.isSafeInteger(position.x) || !Number.isSafeInteger(position.y) || position.x < 0 || position.y < 0) {
+      throw new Error('Screen position must use non-negative whole numbers.')
     }
     screenOf(project, screenId)
     const placement = placementOf(project, screenId)

@@ -84,6 +84,23 @@ export function selectionBounds(screens: readonly LayoutRect[]): LayoutRect | nu
   return { id: 'selection', x: left, y: top, width: right - left, height: bottom - top }
 }
 
+export function clampTranslationToOrigin(
+  bounds: LayoutPoint,
+  dx: number,
+  dy: number,
+): { readonly dx: number; readonly dy: number } {
+  const nextDx = Math.max(integerCoordinate(dx), -integerCoordinate(bounds.x))
+  const nextDy = Math.max(integerCoordinate(dy), -integerCoordinate(bounds.y))
+  return {
+    dx: nextDx === 0 ? 0 : nextDx,
+    dy: nextDy === 0 ? 0 : nextDy,
+  }
+}
+
+export function clampPositionToOrigin(point: LayoutPoint): LayoutPoint {
+  return { x: Math.max(0, integerCoordinate(point.x)), y: Math.max(0, integerCoordinate(point.y)) }
+}
+
 export function snapCoordinateToGrid(value: number, step: number): number {
   if (!Number.isSafeInteger(step) || step < 1) throw new Error('Grid step must be a positive whole number.')
   return integerCoordinate(Math.round(value / step) * step)
@@ -260,10 +277,19 @@ export function nudgePositions(
   dx: number,
   dy: number,
 ): Readonly<Record<string, LayoutPoint>> {
+  const selected = selectedIds
+    .map(id => positions[id])
+    .filter((position): position is LayoutPoint => position !== undefined)
+  if (selected.length === 0) return { ...positions }
+  const clamped = clampTranslationToOrigin(
+    { x: Math.min(...selected.map(position => position.x)), y: Math.min(...selected.map(position => position.y)) },
+    dx,
+    dy,
+  )
   const next = { ...positions }
   for (const id of selectedIds) {
     const position = positions[id]
-    if (position) next[id] = { x: integerCoordinate(position.x + dx), y: integerCoordinate(position.y + dy) }
+    if (position) next[id] = { x: integerCoordinate(position.x + clamped.dx), y: integerCoordinate(position.y + clamped.dy) }
   }
   return next
 }
@@ -281,7 +307,8 @@ export function alignScreens(screens: readonly LayoutRect[], mode: AlignMode): R
     if (mode === 'top') y = bounds.y
     if (mode === 'vertical-center') y = bounds.y + (bounds.height - screen.height) / 2
     if (mode === 'bottom') y = bounds.y + bounds.height - screen.height
-    result[screen.id] = { x: integerCoordinate(x), y: integerCoordinate(y) }
+    const clamped = clampPositionToOrigin({ x, y })
+    result[screen.id] = { x: integerCoordinate(clamped.x), y: integerCoordinate(clamped.y) }
   }
   return result
 }
@@ -290,7 +317,10 @@ export function distributeScreens(
   screens: readonly LayoutRect[],
   axis: DistributeAxis,
 ): Readonly<Record<string, LayoutPoint>> {
-  const result = Object.fromEntries(screens.map(screen => [screen.id, { x: screen.x, y: screen.y }])) as Record<string, LayoutPoint>
+  const result = Object.fromEntries(screens.map(screen => {
+    const clamped = clampPositionToOrigin({ x: screen.x, y: screen.y })
+    return [screen.id, { x: integerCoordinate(clamped.x), y: integerCoordinate(clamped.y) }]
+  })) as Record<string, LayoutPoint>
   if (screens.length < 3) return result
   const horizontal = axis === 'horizontal'
   const ordered = [...screens].sort((a, b) => horizontal ? a.x - b.x || a.id.localeCompare(b.id) : a.y - b.y || a.id.localeCompare(b.id))
@@ -302,9 +332,10 @@ export function distributeScreens(
   const gap = (lastEnd - firstStart - totalSize) / (ordered.length - 1)
   let cursor = firstStart
   for (const screen of ordered) {
+    const clamped = clampPositionToOrigin(horizontal ? { x: cursor, y: screen.y } : { x: screen.x, y: cursor })
     result[screen.id] = horizontal
-      ? { x: integerCoordinate(cursor), y: screen.y }
-      : { x: screen.x, y: integerCoordinate(cursor) }
+      ? { x: integerCoordinate(clamped.x), y: integerCoordinate(clamped.y) }
+      : { x: integerCoordinate(clamped.x), y: integerCoordinate(clamped.y) }
     cursor += (horizontal ? screen.width : screen.height) + gap
   }
   return result

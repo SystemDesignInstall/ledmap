@@ -198,6 +198,31 @@ function drawBackgroundGrid(ctx: CanvasRenderingContext2D, camera: Camera, width
   ctx.stroke()
 }
 
+function drawOriginAxes(ctx: CanvasRenderingContext2D, camera: Camera, width: number, height: number): void {
+  const origin = toScreen(camera, { x: 0, y: 0 })
+  ctx.save()
+  ctx.strokeStyle = '#2b4a5e'
+  ctx.lineWidth = 1
+  ctx.beginPath()
+  if (origin.x >= 0 && origin.x <= width) {
+    ctx.moveTo(origin.x, 0)
+    ctx.lineTo(origin.x, height)
+  }
+  if (origin.y >= 0 && origin.y <= height) {
+    ctx.moveTo(0, origin.y)
+    ctx.lineTo(width, origin.y)
+  }
+  ctx.stroke()
+  if (origin.x >= 0 && origin.x <= width && origin.y >= 0 && origin.y <= height) {
+    ctx.fillStyle = '#5a7a90'
+    ctx.font = '11px "Segoe UI", sans-serif'
+    ctx.textAlign = 'left'
+    ctx.textBaseline = 'top'
+    ctx.fillText('0, 0', origin.x + 5, origin.y + 4)
+  }
+  ctx.restore()
+}
+
 function previewConfig(screen: ScreenView, shape: GridShape): CabinetEngineConfig {
   return { ...screen.config, columns: shape.columns, rows: shape.rows }
 }
@@ -410,6 +435,7 @@ export function drawProject(canvas: HTMLCanvasElement, project: Project, view: V
   ctx.fillStyle = '#0b1119'
   ctx.fillRect(0, 0, width, height)
   drawBackgroundGrid(ctx, camera, width, height)
+  drawOriginAxes(ctx, camera, width, height)
   const visible = view.mode === 'active' ? project.screens.filter(s => s.screen.id === view.activeScreenId) : project.screens
   let hints = 0
   for (const screen of visible) {

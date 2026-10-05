@@ -41,15 +41,33 @@ export function createProjectSession(documentId: string): ProjectSession {
   })
 }
 
+export function clampCompositionToOrigin(project: LedMapProjectV2): LedMapProjectV2 {
+  if (!project.design.composition.placements.some(placement => placement.x < 0 || placement.y < 0)) return project
+  return {
+    ...project,
+    design: {
+      ...project.design,
+      composition: {
+        placements: project.design.composition.placements.map(placement => (
+          placement.x < 0 || placement.y < 0
+            ? { ...placement, x: Math.max(0, placement.x), y: Math.max(0, placement.y) }
+            : placement
+        )),
+      },
+    },
+  }
+}
+
 export function loadProjectSession(text: string, currentFilePath: string, documentId: string): ProjectSession {
   const loaded = loadLedMapProject(text)
-  const project = loaded.project
+  const project = clampCompositionToOrigin(loaded.project)
+  const normalized = project !== loaded.project
   projectV2WorkspaceReadModel(project)
   return Object.freeze({
     project,
-    revision: 0,
+    revision: normalized ? 1 : 0,
     savedRevision: 0,
-    stateId: 0,
+    stateId: normalized ? 1 : 0,
     savedStateId: 0,
     documentId,
     currentFilePath,
@@ -60,8 +78,9 @@ export function loadProjectSession(text: string, currentFilePath: string, docume
 
 export function recoverProjectSession(text: string, documentId: string): ProjectSession {
   const loaded = loadLedMapProject(text)
-  projectV2WorkspaceReadModel(loaded.project)
-  return Object.freeze({ project: loaded.project, extensions: loaded.extensions, documentId,
+  const project = clampCompositionToOrigin(loaded.project)
+  projectV2WorkspaceReadModel(project)
+  return Object.freeze({ project, extensions: loaded.extensions, documentId,
     revision: 1, savedRevision: 0, stateId: 1, savedStateId: null,
     currentFilePath: null, sourceSchemaVersion: 4 })
 }

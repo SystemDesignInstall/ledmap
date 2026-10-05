@@ -182,8 +182,8 @@ export function setScreenPositions(
 ): Project {
   const entries = Object.entries(positions)
   for (const [screenId, position] of entries) {
-    if (!Number.isSafeInteger(position.x) || !Number.isSafeInteger(position.y)) {
-      throw new Error('Screen position must use signed whole numbers.')
+    if (!Number.isSafeInteger(position.x) || !Number.isSafeInteger(position.y) || position.x < 0 || position.y < 0) {
+      throw new Error('Screen position must use non-negative whole numbers.')
     }
     if (!findScreen(project, screenId)) throw new Error(`Unknown screen: ${screenId}`)
   }
@@ -374,7 +374,7 @@ export function addScreen(project: Project, draft: Draft = initialDraft, options
   const previous = project.screens[project.screens.length - 1]
   const x = options.position?.x ?? (previous ? previous.x + 100 : 0)
   const y = options.position?.y ?? (previous ? previous.y + 100 : 0)
-  if (!Number.isSafeInteger(x) || !Number.isSafeInteger(y)) throw new Error('Screen position must use signed whole numbers.')
+  if (!Number.isSafeInteger(x) || !Number.isSafeInteger(y) || x < 0 || y < 0) throw new Error('Screen position must use non-negative whole numbers.')
   const name = options.name?.trim() || `Screen ${serial}`
   const ids: SnapshotIds = {
     screenId: `screen-${serial}`,

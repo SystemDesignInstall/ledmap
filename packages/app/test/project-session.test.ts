@@ -35,7 +35,7 @@ describe('ProjectSession V2 ownership', () => {
   it('advances exactly once for each real V2 mutation and reopens the schema-v4 wire result', () => {
     const empty = createProjectSession('session-1')
     const added = commitProjectV2(empty, project => addScreenV2(project))
-    const moved = commitProjectV2(added, project => setScreenPositionV2(project, 'screen-1', -240, 80))
+    const moved = commitProjectV2(added, project => setScreenPositionV2(project, 'screen-1', 240, 80))
     expect(added.revision).toBe(1)
     expect(moved.revision).toBe(2)
     expect(moved.savedRevision).toBe(0)
@@ -47,7 +47,19 @@ describe('ProjectSession V2 ownership', () => {
     expect(reopened.project.design.cabinets[0]).toMatchObject({ moduleColumns: 1, moduleRows: 1 })
     expect(reopened.project.design.modules).toHaveLength(12)
     expect(reopened.revision).toBe(0)
-    expect(sessionWorkspaceProject(reopened).screens[0]).toMatchObject({ x: -240, y: 80 })
+    expect(sessionWorkspaceProject(reopened).screens[0]).toMatchObject({ x: 240, y: 80 })
+  })
+
+  it('clamps negative Composition placements to the origin on open', () => {
+    const empty = createProjectSession('session-1')
+    const added = commitProjectV2(empty, project => addScreenV2(project))
+    const stored = JSON.parse(serializeProjectSession(added)) as {
+      project: { design: { composition: { placements: Array<{ x: number; y: number }> } } }
+    }
+    stored.project.design.composition.placements[0] = { ...(stored.project.design.composition.placements[0] as object), x: -240, y: -80 } as never
+    const reopened = loadProjectSession(JSON.stringify(stored), 'negative.ledmap', 'session-negative')
+    expect(sessionWorkspaceProject(reopened).screens[0]).toMatchObject({ x: 0, y: 0 })
+    expect(sessionDirty(reopened)).toBe(true)
   })
 
   it('preserves V2-only metadata, Cabinet labels and assignment metadata after an unrelated Layout mutation', () => {

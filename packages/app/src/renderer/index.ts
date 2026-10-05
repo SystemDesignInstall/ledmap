@@ -18,7 +18,7 @@ import {
   screenResizeHandles, screenShape, toProject, toScreen, zoomAt, type Camera,
 } from './canvas.js'
 import {
-  addGuide, alignScreens, distributeScreens, guideHitTest, guidePositions, marqueeSelection, moveGuide,
+  addGuide, alignScreens, clampTranslationToOrigin, distributeScreens, guideHitTest, guidePositions, marqueeSelection, moveGuide,
   normalizeSelectionBox, nudgePositions, removeGuide, replaceOrToggleSelection, selectionBounds, setGuideLocked,
   snapTranslation,
   type AlignMode, type AlignmentGuide, type DistributeAxis, type LayoutPoint, type LayoutRect,
@@ -795,7 +795,7 @@ function renderScreenProperties(screen: ScreenView): void {
       showDocumentError(error, 'Unable to move Screen.')
     }
     render()
-  }, signedCoordinateProblem)
+  }, nonnegativeCoordinateProblem)
   const yInput = numberField(screen.y, 'Screen Y position', value => {
     try {
       applyV2(project => setScreenPositionV2(project, screen.screen.id, screen.x, value))
@@ -803,9 +803,9 @@ function renderScreenProperties(screen: ScreenView): void {
       showDocumentError(error, 'Unable to move Screen.')
     }
     render()
-  }, signedCoordinateProblem)
-  xInput.removeAttribute('min')
-  yInput.removeAttribute('min')
+  }, nonnegativeCoordinateProblem)
+  xInput.min = '0'
+  yInput.min = '0'
   positionBox.append(
     propertyRow('X', xInput),
     propertyRow('Y', yInput),
@@ -911,8 +911,8 @@ function applyScreenPositions(positions: Readonly<Record<string, LayoutPoint>>, 
   }
 }
 
-function signedCoordinateProblem(value: number): string | null {
-  return Number.isSafeInteger(value) ? null : 'Position must be a signed whole number.'
+function nonnegativeCoordinateProblem(value: number): string | null {
+  return Number.isSafeInteger(value) && value >= 0 ? null : 'Position must be a non-negative whole number.'
 }
 
 function commitResize(screenId: string, columns: number, rows: number): string | null {
@@ -1197,14 +1197,15 @@ canvas.addEventListener('pointermove', event => {
         guides: [],
       }
     alignmentGuides = snapped.guides
-    if (snapped.dx !== dragState.appliedDx || snapped.dy !== dragState.appliedDy) {
+    const clamped = clampTranslationToOrigin(dragState.bounds, snapped.dx, snapped.dy)
+    if (clamped.dx !== dragState.appliedDx || clamped.dy !== dragState.appliedDy) {
       const positions = Object.fromEntries(dragState.screenIds.map(id => {
         const start = dragState!.positions[id]!
-        return [id, { x: start.x + snapped.dx, y: start.y + snapped.dy }]
+        return [id, { x: start.x + clamped.dx, y: start.y + clamped.dy }]
       }))
       if (applyScreenPositions(positions, dragHistoryGroupId ?? undefined)) {
-        dragState.appliedDx = snapped.dx
-        dragState.appliedDy = snapped.dy
+        dragState.appliedDx = clamped.dx
+        dragState.appliedDy = clamped.dy
       }
     }
     render()

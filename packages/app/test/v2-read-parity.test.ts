@@ -25,7 +25,7 @@ function screenSnapshot(view: LegacyScreenView | V2ScreenView) {
 
 describe('direct V2 renderer read model parity', () => {
   it('matches ScreenView order, geometry, logical order and allocator state without legacy projection', () => {
-    const old = setScreenPosition(resizeScreenGrid(createTestProject(), 'screen-2', 5, 3), 'screen-3', -240, 90)
+    const old = setScreenPosition(resizeScreenGrid(createTestProject(), 'screen-2', 5, 3), 'screen-3', 240, 90)
     const canonical = convertEditableProjectToV2(old.source)
     const projected = projectV2WorkspaceReadModel(canonical)
     expect(projected.model).toBe(canonical)

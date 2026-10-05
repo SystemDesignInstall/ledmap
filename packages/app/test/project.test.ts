@@ -45,10 +45,12 @@ describe('Project canvas state', () => {
     expect(moved.screens[2]!).toEqual(original.screens[2])
   })
 
-  it('supports negative project coordinates without changing signal order', () => {
+  it('rejects negative project coordinates without changing signal order', () => {
     const original = createTestProject()
-    const moved = setScreenPosition(original, 'screen-1', -120, -80)
-    expect([moved.screens[0]!.x, moved.screens[0]!.y]).toEqual([-120, -80])
+    expect(() => setScreenPosition(original, 'screen-1', -120, 0)).toThrow(/non-negative/)
+    expect(() => setScreenPosition(original, 'screen-1', 0, -80)).toThrow(/non-negative/)
+    const moved = setScreenPosition(original, 'screen-1', 120, 80)
+    expect([moved.screens[0]!.x, moved.screens[0]!.y]).toEqual([120, 80])
     expect(firstOrder(moved)).toEqual(firstOrder(original))
     expect(moved.screens[0]!.screen.id).toBe('screen-1')
   })
@@ -56,24 +58,29 @@ describe('Project canvas state', () => {
   it('updates several exact source positions atomically', () => {
     const project = createTestProject()
     const moved = setScreenPositions(project, {
-      'screen-1': { x: -301, y: 42 },
-      'screen-3': { x: 901, y: -77 },
+      'screen-1': { x: 301, y: 42 },
+      'screen-3': { x: 901, y: 77 },
     })
-    expect(moved.screens.map(screen => [screen.x, screen.y])).toEqual([[-301, 42], [700, 120], [901, -77]])
+    expect(moved.screens.map(screen => [screen.x, screen.y])).toEqual([[301, 42], [700, 120], [901, 77]])
     expect(moved.source.editorLayout.screenPositions.map(placement => [placement.position.x, placement.position.y]))
-      .toEqual([[-301, 42], [700, 120], [901, -77]])
+      .toEqual([[301, 42], [700, 120], [901, 77]])
     expect(() => setScreenPositions(project, {
       'screen-1': { x: 0.5, y: 0 },
       missing: { x: 0, y: 0 },
     })).toThrow(/whole numbers/)
+    expect(() => setScreenPositions(project, {
+      'screen-1': { x: 10, y: 10 },
+      'screen-3': { x: -1, y: 77 },
+    })).toThrow(/non-negative/)
     expect(project.screens.map(screen => [screen.x, screen.y])).toEqual([[0, 0], [700, 120], [320, 620]])
   })
 
-  it('computes project bounds for the demo and after moving a screen into negative space', () => {
+  it('computes project bounds for the demo and after moving a screen within the origin', () => {
     const project = createTestProject()
     expect(projectBounds(project)).toEqual({ left: 0, top: 0, right: 796, bottom: 684, width: 796, height: 684 })
-    const moved = setScreenPosition(project, 'screen-1', -100, -50)
-    expect(projectBounds(moved)).toEqual({ left: -100, top: -50, right: 796, bottom: 684, width: 896, height: 734 })
+    const moved = setScreenPosition(project, 'screen-1', 100, 50)
+    expect(projectBounds(moved)).toEqual({ left: 100, top: 50, right: 796, bottom: 684, width: 696, height: 634 })
+    expect(() => setScreenPosition(project, 'screen-1', -100, -50)).toThrow(/non-negative/)
   })
 
   it('offers per-screen bounds from the derived resolution', () => {
@@ -118,13 +125,17 @@ describe('Project canvas state', () => {
   it('creates a source-backed Screen from exact creation fields', () => {
     const project = addScreen(createProject(), { ...initialDraft, columns: '2', rows: '1' }, {
       name: 'Lobby Ribbon',
-      position: { x: -512, y: 96 },
+      position: { x: 512, y: 96 },
     })
     const screen = project.screens[0]!
     expect(screen.screen.name).toBe('Lobby Ribbon')
-    expect([screen.x, screen.y]).toEqual([-512, 96])
+    expect([screen.x, screen.y]).toEqual([512, 96])
     expect([screen.grid.columns, screen.grid.rows]).toEqual([2, 1])
     expect(project.source.hardwareTopology.cabinets).toHaveLength(2)
+    expect(() => addScreen(createProject(), { ...initialDraft, columns: '2', rows: '1' }, {
+      name: 'Negative',
+      position: { x: -512, y: 96 },
+    })).toThrow(/non-negative/)
   })
 
   it('renames, duplicates and deletes Screens without broken source references', () => {

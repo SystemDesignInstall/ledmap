@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  addGuide, alignScreens, distributeScreens, guideHitTest, guidePositions, integerCoordinate, marqueeSelection,
+  addGuide, alignScreens, clampPositionToOrigin, clampTranslationToOrigin, distributeScreens, guideHitTest, guidePositions, integerCoordinate, marqueeSelection,
   moveGuide, normalizeSelectionBox, nudgePositions, removeGuide, replaceOrToggleSelection, selectionBounds,
   setGuideLocked, snapCoordinateToGrid, snapTranslation,
   type LayoutRect,
@@ -67,40 +67,72 @@ describe('Layout interaction math', () => {
   })
 
   it('nudges every selected Screen by exact integer pixels', () => {
-    expect(nudgePositions({ a: { x: -2, y: 4 }, b: { x: 8, y: 10 } }, ['a', 'b'], 1, -10)).toEqual({
-      a: { x: -1, y: -6 },
-      b: { x: 9, y: 0 },
+    expect(nudgePositions({ a: { x: 2, y: 14 }, b: { x: 8, y: 20 } }, ['a', 'b'], 1, -10)).toEqual({
+      a: { x: 3, y: 4 },
+      b: { x: 9, y: 10 },
     })
   })
 
+  it('clamps group translation and positions to the origin', () => {
+    expect(clampTranslationToOrigin({ x: 5, y: 3 }, -10, -10)).toEqual({ dx: -5, dy: -3 })
+    expect(clampTranslationToOrigin({ x: 0, y: 0 }, -1, -1)).toEqual({ dx: 0, dy: 0 })
+    expect(clampTranslationToOrigin({ x: 10, y: 10 }, 5, -4)).toEqual({ dx: 5, dy: -4 })
+    expect(clampPositionToOrigin({ x: -12, y: -7 })).toEqual({ x: 0, y: 0 })
+    expect(nudgePositions({ a: { x: 0, y: 0 }, b: { x: 8, y: 10 } }, ['a', 'b'], -1, -5)).toEqual({
+      a: { x: 0, y: 0 },
+      b: { x: 8, y: 10 },
+    })
+    expect(nudgePositions({ a: { x: 5, y: 5 } }, ['a'], -10, -10)).toEqual({ a: { x: 0, y: 0 } })
+  })
+
   it.each([
-    ['left', { a: { x: -120, y: 40 }, b: { x: -120, y: 100 }, c: { x: -120, y: -20 } }],
-    ['right', { a: { x: 240, y: 40 }, b: { x: 260, y: 100 }, c: { x: 220, y: -20 } }],
-    ['top', { a: { x: -120, y: -20 }, b: { x: 40, y: -20 }, c: { x: 220, y: -20 } }],
-    ['bottom', { a: { x: -120, y: 80 }, b: { x: 40, y: 100 }, c: { x: 220, y: 60 } }],
+    ['left', { a: { x: 0, y: 40 }, b: { x: 0, y: 100 }, c: { x: 0, y: 0 } }],
+    ['right', { a: { x: 240, y: 40 }, b: { x: 260, y: 100 }, c: { x: 220, y: 0 } }],
+    ['top', { a: { x: 0, y: 0 }, b: { x: 40, y: 0 }, c: { x: 220, y: 0 } }],
+    ['bottom', { a: { x: 0, y: 80 }, b: { x: 40, y: 100 }, c: { x: 220, y: 60 } }],
   ] as const)('aligns Screens to %s', (mode, expected) => {
     expect(alignScreens(screens, mode)).toEqual(expected)
   })
 
   it('aligns centers while preserving integer source coordinates', () => {
     expect(alignScreens(screens, 'horizontal-center')).toEqual({
-      a: { x: 60, y: 40 }, b: { x: 70, y: 100 }, c: { x: 50, y: -20 },
+      a: { x: 60, y: 40 }, b: { x: 70, y: 100 }, c: { x: 50, y: 0 },
     })
     expect(alignScreens(screens, 'vertical-center')).toEqual({
-      a: { x: -120, y: 30 }, b: { x: 40, y: 40 }, c: { x: 220, y: 20 },
+      a: { x: 0, y: 30 }, b: { x: 40, y: 40 }, c: { x: 220, y: 20 },
     })
   })
 
   it('distributes Screens between fixed outer bounds', () => {
     expect(distributeScreens(screens, 'horizontal')).toEqual({
-      a: { x: -120, y: 40 }, b: { x: 60, y: 100 }, c: { x: 220, y: -20 },
+      a: { x: 0, y: 40 }, b: { x: 60, y: 100 }, c: { x: 220, y: 0 },
     })
     expect(distributeScreens(screens, 'vertical')).toEqual({
-      a: { x: -120, y: 50 }, b: { x: 40, y: 100 }, c: { x: 220, y: -20 },
+      a: { x: 0, y: 50 }, b: { x: 40, y: 100 }, c: { x: 220, y: 0 },
     })
     expect(distributeScreens(screens.slice(0, 2), 'horizontal')).toEqual({
-      a: { x: -120, y: 40 }, b: { x: 40, y: 100 },
+      a: { x: 0, y: 40 }, b: { x: 40, y: 100 },
     })
+  })
+
+  it('never returns negative positions from align or distribute', () => {
+    const negative: LayoutRect[] = [
+      { id: 'a', x: 0, y: 0, width: 100, height: 80 },
+      { id: 'b', x: 5, y: 5, width: 80, height: 60 },
+      { id: 'c', x: 10, y: 10, width: 120, height: 100 },
+    ]
+    for (const mode of ['left', 'right', 'top', 'bottom', 'horizontal-center', 'vertical-center'] as const) {
+      for (const position of Object.values(alignScreens(negative, mode))) {
+        expect(position.x).toBeGreaterThanOrEqual(0)
+        expect(position.y).toBeGreaterThanOrEqual(0)
+      }
+    }
+    for (const axis of ['horizontal', 'vertical'] as const) {
+      for (const position of Object.values(distributeScreens(negative, axis))) {
+        expect(position.x).toBeGreaterThanOrEqual(0)
+        expect(position.y).toBeGreaterThanOrEqual(0)
+      }
+    }
   })
 
   it('snaps edges and centers independently through snap sources', () => {

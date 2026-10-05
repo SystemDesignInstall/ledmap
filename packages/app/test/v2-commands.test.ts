@@ -77,10 +77,10 @@ describe('direct V2 Layout and Mapping commands', () => {
     legacy = renameScreen(legacy, 'screen-4', 'Lobby')
     v2 = renameScreenV2(v2, 'screen-4', 'Lobby')
     parity(legacy, v2)
-    legacy = setScreenPosition(legacy, 'screen-4', -40, 80)
-    v2 = setScreenPositionV2(v2, 'screen-4', -40, 80)
+    legacy = setScreenPosition(legacy, 'screen-4', 40, 80)
+    v2 = setScreenPositionV2(v2, 'screen-4', 40, 80)
     parity(legacy, v2)
-    const positions = { 'screen-1': { x: 30, y: 40 }, 'screen-2': { x: 700, y: -20 } }
+    const positions = { 'screen-1': { x: 30, y: 40 }, 'screen-2': { x: 700, y: 20 } }
     legacy = setScreenPositions(legacy, positions)
     v2 = setScreenPositionsV2(v2, positions)
     parity(legacy, v2)
@@ -187,6 +187,19 @@ describe('direct V2 Layout and Mapping commands', () => {
     expect(renamed.design.composition).toBe(project.design.composition)
     expect(() => setScreenPositionV2(project, 'screen-1', 25, 30)).toThrow(/PROJECT_COMPAT_MUTATION_BLOCKED/)
     expect(setScreenPositionV2(project, 'screen-1', 0, 0)).toBe(project)
+  })
+
+  it('rejects negative Screen positions atomically', () => {
+    const project = convertEditableProjectToV2(createTestProject().source)
+    expect(() => setScreenPositionV2(project, 'screen-1', -1, 0)).toThrow(/non-negative/)
+    expect(() => setScreenPositionsV2(project, {
+      'screen-1': { x: 10, y: 10 },
+      'screen-2': { x: 0, y: -5 },
+    })).toThrow(/non-negative/)
+    expect(() => addScreenV2(project, initialDraft, { position: { x: -10, y: 5 } })).toThrow(/non-negative/)
+    expect(projectV2WorkspaceReadModel(project).screens.map(view => [view.x, view.y])).toEqual(
+      projectV2WorkspaceReadModel(project).screens.map(view => [view.x, view.y]),
+    )
   })
 
   it('keeps out-of-bounds Mapping geometry diagnosable rather than blocking a valid edit', () => {

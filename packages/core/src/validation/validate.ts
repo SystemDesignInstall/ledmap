@@ -1,7 +1,8 @@
 import { resolveMapping } from '../mapping-engine/index.js'
+import { resolveHardwareLayouts } from '../hardware-engine/layout.js'
 import { resolveRemap } from '../remap-engine/index.js'
 import { DomainError } from '../model/errors.js'
-import { selectV2GeometryRead, selectV2HardwareRead } from '../project-model/direct-engine-inputs.js'
+import { selectV2GeometryRead, selectV2HardwareEngineInput, selectV2HardwareRead } from '../project-model/direct-engine-inputs.js'
 import { projectHardwareDiagnostics, selectProjectHardwareLoad } from '../project-model/hardware-planning.js'
 import { validateProjectV2Structural } from '../project-model/structural-validation.js'
 import type { LedMapProjectV2 } from '../project-model/types.js'
@@ -31,6 +32,13 @@ function validateV2(project: LedMapProjectV2): ProjectValidationReport {
   } catch (error) {
     if (!(error instanceof DomainError)) throw error
     diagnostics.push({ severity: 'error', stage: 'hardware', code: error.code, path: ['hardware'], message: error.message })
+  }
+  try {
+    const input = selectV2HardwareEngineInput(project)
+    resolveHardwareLayouts(input.cabinets, input.modules)
+  } catch (error) {
+    if (!(error instanceof DomainError)) throw error
+    diagnostics.push({ severity: 'error', stage: 'hardware', code: error.code, path: ['design'], message: error.message })
   }
   if (!diagnostics.some(issue => issue.stage === 'hardware' && issue.severity === 'error')) {
     const hardware = selectV2HardwareRead(project)

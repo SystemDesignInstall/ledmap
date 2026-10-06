@@ -186,6 +186,20 @@ describe('project-bound Hardware planning and validation', () => {
     expect(validateProject({ project }).diagnostics.some(issue => issue.code === 'HARDWARE_OVERFLOW')).toBe(true)
   })
 
+  it.each(['rotation', 'modules'] as const)('reports invalid %s independently of assignment completeness and Mapping Regions', kind => {
+    const original = unpatched(16384)
+    const broken = original.design.cabinets.at(-1)!
+    const project = { ...original, content: { ...original.content, mappingRegions: [] }, design: { ...original.design,
+      screens: original.design.screens.map(screen => ({ ...screen, mappingRegionOrder: [] })),
+      cabinets: original.design.cabinets.map(cabinet => cabinet === broken && kind === 'rotation' ? { ...cabinet, rotation: 90 } : cabinet),
+      modules: original.design.modules.filter(module => kind !== 'modules' || module.id !== original.design.modules.at(-1)!.id),
+    } }
+    const issues = validateProject({ project: planProjectHardware(project).project }).diagnostics
+    expect(issues.some(issue => issue.code === 'HARDWARE_UNPATCHED')).toBe(true)
+    expect(issues).toContainEqual(expect.objectContaining({ stage: 'hardware',
+      code: kind === 'rotation' ? 'HARDWARE_UNSUPPORTED_TRANSFORM' : 'HARDWARE_LAYOUT_MISMATCH' }))
+  })
+
   it('includes unsupported remap rules in the same V2 report', () => {
     const project = { ...base(), remap: { rules: [{ id: 'warp', version: '1', type: 'unsupported' }] } }
     expect(validateProject({ project }).diagnostics).toContainEqual(expect.objectContaining({ stage: 'remap', code: 'REMAP_UNSUPPORTED_RULE' }))

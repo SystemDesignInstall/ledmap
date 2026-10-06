@@ -33,7 +33,7 @@ This stage uses canonical LedMAP model/engine/serializer code and fixtures. Cand
 | Check | Result |
 |---|---|
 | `npm ci` | passed; lockfile unchanged |
-| Full `npm test` with Windows symlink permission | 107 files, 1665 tests passed; 19 added |
+| Full `npm test` with Windows symlink permission | 107 files, 1669 tests passed; 23 added including review regressions |
 | REF-001–004 | existing acceptance/regression tests passed |
 | `npm run typecheck` | both workspaces passed |
 | `npm run lint` | passed |
@@ -63,6 +63,8 @@ Both screenshots were inspected. The dialog has a scrolling body with visible su
 
 ## Informational performance
 
+These measurements precede the review corrective below. The corrective adds an independent geometry check to validation; no updated validation timing is claimed.
+
 Windows, Node 24.19.0; REF-001 (12 Cabinets, 192 Modules), 10 warm-up calls and 100 samples. Before is the existing all-or-error allocator with precomputed order; after is the new full V2 plan, including cloned intent and load projections. Their complete topology outputs are equal for this all-fitting fixture. Paired before/after sampling alternates order.
 
 | Metric | Before | After | Delta |
@@ -74,6 +76,10 @@ Windows, Node 24.19.0; REF-001 (12 Cabinets, 192 Modules), 10 warm-up calls and 
 The added planning/report scope costs time on this small fixture. These measurements are informational, do not include UI rendering, and make no claim about large-project p95, memory or frame rate. They are not a CI timing threshold.
 
 The [benchmark harness](fixtures/p02-hardware-benchmark.ts) is retained outside automatic tests. To reproduce, copy it into `packages/app/test/p02-benchmark.test.ts`, run `npm test -- packages/app/test/p02-benchmark.test.ts --reporter=verbose --silent=false`, then remove that temporary copy. Do not overwrite an existing file at that path.
+
+## PR #17 review corrective
+
+The review found that `HARDWARE_UNPATCHED` prevented the Hardware resolver from checking Cabinet transforms and complete Module layouts. Mapping diagnostics alone did not block partial Apply. The corrected V2 report validates those geometry invariants independently of assignment completeness, using the same layout resolver as Hardware Engine. Two core regressions cover rotation and missing Modules without Mapping Regions; two app regressions verify that partial Apply publishes neither a session nor a history entry. Targeted verification: 41 tests passed. Full verification: 107 files / 1669 tests passed; typecheck, lint, build and whitespace checks passed.
 
 ## Rollback and next work
 

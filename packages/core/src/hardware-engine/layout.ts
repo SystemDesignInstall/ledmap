@@ -2,7 +2,22 @@ import { decomposeCabinetPixel, moduleIndex } from '../cabinet-engine/index.js'
 import type { Cabinet } from '../model/cabinet.js'
 import type { Module } from '../model/module.js'
 import type { ModuleId } from '../model/ids.js'
-import { assertSafeInteger, fail, safeAdd, safeProduct } from './validation.js'
+import { assertSafeInteger, fail, indexEntities, reference, safeAdd, safeProduct } from './validation.js'
+
+export function resolveHardwareLayouts(cabinets: readonly Cabinet[], modules: readonly Module[]) {
+  const indexed = indexEntities(cabinets, 'Cabinet')
+  indexEntities(modules, 'Module')
+  const modulesByCabinet = new Map<string, Module[]>()
+  for (const module of modules) {
+    reference(indexed, module.cabinet, `Module ${module.id} cabinet`)
+    const siblings = modulesByCabinet.get(module.cabinet) ?? []
+    siblings.push(module)
+    modulesByCabinet.set(module.cabinet, siblings)
+  }
+  return new Map([...indexed.values()].map(cabinet => [
+    cabinet.id, resolveCabinetLayout(cabinet, modulesByCabinet.get(cabinet.id) ?? []),
+  ] as const))
+}
 
 export function resolveCabinetLayout(cabinet: Cabinet, modules: readonly Module[]) {
   const label = `Cabinet ${cabinet.id}`

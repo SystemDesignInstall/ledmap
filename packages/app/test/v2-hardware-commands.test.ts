@@ -477,6 +477,26 @@ describe('direct V2 Hardware commands', () => {
     expect(() => applyHardwareAllocationV2(project, plan)).toThrow(/uses .* of 1 pixels/)
   })
 
+  it.each(['rotation', 'modules'] as const)('rejects partial allocation with invalid %s without publishing history', kind => {
+    const original = withReceivers(1)
+    const broken = original.design.cabinets.at(-1)!
+    const project = { ...original, design: { ...original.design,
+      cabinets: original.design.cabinets.map(cabinet => cabinet === broken && kind === 'rotation' ? { ...cabinet, rotation: 90 } : cabinet),
+      modules: original.design.modules.filter(module => kind !== 'modules' || module.id !== original.design.modules.at(-1)!.id),
+    }, hardware: { ...original.hardware, receivers: original.hardware.receivers.map(receiver => ({ ...receiver, pixelCapacity: 1 })) } }
+    const plan = previewHardwareAllocationV2(project)
+    expect(plan.unpatched.length).toBeGreaterThan(0)
+    const document = new ProjectDocumentController(() => 'invalid-partial')
+    document.replace({ ...createProjectSession('invalid-partial'), project })
+    const session = document.session
+    expect(() => document.transactV2(source => applyHardwareAllocationV2(source, plan))).toThrow(
+      kind === 'rotation' ? /rotation and flip/ : /expected .* modules/,
+    )
+    expect(document.session).toBe(session)
+    expect(document.historyDepth).toBe(0)
+    expect(document.canUndo).toBe(false)
+  })
+
   it('marks explicit reassignment of auto intent as manual while preserving its identity', () => {
     let project = withReceivers(2)
     project = applyHardwareAllocationV2(project, previewHardwareAllocationV2(project))

@@ -78,6 +78,7 @@
         <div class="tool-group">
           <button id="output-add-media" class="primary" type="button">+ Media Output</button>
           <button id="output-add-mapping" type="button">+ Output Mapping</button>
+          <button id="resolume-import-open" type="button">Import Arena XML</button>
           <button id="output-delete-selection" type="button">Delete</button>
         </div>
         <div class="tool-group" role="group" aria-label="Slice coordinate space">
@@ -449,6 +450,36 @@
           <button class="primary" type="submit">Add Screen</button>
         </div>
       </form>
+    </dialog>
+
+    <dialog id="resolume-import-dialog" class="resolume-import-dialog" aria-labelledby="resolume-import-title">
+      <div class="resolume-import-body">
+        <div class="dialog-heading"><span class="eyebrow">RESOLUME</span><h2 id="resolume-import-title">Import Arena XML</h2><p>Inspect the file, bind slices to existing Screens and preview before applying. Imported data appends Media Outputs and Output Mappings.</p></div>
+        <label class="output-field">Arena preset / preferences XML<input id="resolume-import-file" type="file" accept=".xml,application/xml,text/xml" aria-label="Arena XML file" /></label>
+        <div id="resolume-import-summary" role="status"></div>
+        <div class="resolume-import-frame dialog-grid">
+          <label>Composition frame origin X<input id="resolume-import-frame-x" type="number" step="1" /></label>
+          <label>Composition frame origin Y<input id="resolume-import-frame-y" type="number" step="1" /></label>
+          <label>Composition frame width<input id="resolume-import-frame-width" type="number" min="1" step="1" /></label>
+          <label>Composition frame height<input id="resolume-import-frame-height" type="number" min="1" step="1" /></label>
+        </div>
+        <p class="hint">Frame coordinates start at the Composition drawing origin used by this XML. Initial values come from the current project chart frame.</p>
+        <button id="resolume-import-use-frame" type="button">Use current Composition frame</button>
+        <div id="resolume-import-diagnostics" class="resolume-import-diagnostics" role="status"></div>
+        <div id="resolume-import-bindings" class="resolume-import-bindings"></div>
+        <div class="resolume-import-geometry">
+          <section><h3>Composition inputs and project Screens</h3><canvas id="resolume-import-input-canvas" role="img" aria-label="Imported Composition input geometry"></canvas></section>
+          <section><label class="output-field">Output geometry<select id="resolume-import-output" aria-label="Imported output geometry"></select></label><canvas id="resolume-import-output-canvas" role="img" aria-label="Imported output quads and control lattice"></canvas></section>
+        </div>
+        <p class="hint">Geometry inspection only. Unknown raster dimensions remain unknown; disabled slices use dashed outlines. Warp controls are shown without flattening.</p>
+        <div id="resolume-import-result" class="resolume-import-result" role="status"></div>
+        <div id="resolume-import-compatibility" class="hint"></div>
+        <div class="dialog-actions">
+          <button id="resolume-import-cancel" type="button">Cancel</button>
+          <button id="resolume-import-preview" type="button">Preview import</button>
+          <button id="resolume-import-apply" class="primary" type="button" disabled>Apply import</button>
+        </div>
+      </div>
     </dialog>
 
     <dialog id="allocation-preview-dialog" class="allocation-dialog">

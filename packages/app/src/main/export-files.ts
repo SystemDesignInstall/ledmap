@@ -30,7 +30,7 @@ function withExtension(filePath: string, extension: string): string {
 }
 
 function fileFilter(extension: string): Electron.FileFilter[] {
-  const name = extension === '.png' ? 'PNG Image' : extension === '.json' ? 'JSON' : 'CSV'
+  const name = extension === '.png' ? 'PNG Image' : extension === '.svg' ? 'SVG Image' : extension === '.xml' ? 'XML' : extension === '.json' ? 'JSON' : 'CSV'
   return [{ name, extensions: [extension.slice(1)] }]
 }
 
@@ -76,7 +76,9 @@ export class ExportFileService {
     if (!Array.isArray(request.files) || request.files.length === 0) throw new Error('Export requires at least one file.')
     if (request.mode === 'single' && request.files.length !== 1) throw new Error('Single export requires exactly one file.')
     const files = request.files.map(validateFile)
-    if (files.some(file => extname(file.name).toLowerCase() !== '.png')) throw new Error('Binary export supports PNG files only.')
+    if (files.some(file => !['.png', '.svg', '.xml', '.csv'].includes(extname(file.name).toLowerCase()))) {
+      throw new Error('Unsupported export file extension.')
+    }
     if (new Set(files.map(file => file.name)).size !== files.length) throw new Error('Export file names must be unique.')
     if (this.consumeCancel()) return { canceled: true, filePaths: [] }
     const paths = await this.destinationPaths(owner, request.mode, files.map(file => file.name))

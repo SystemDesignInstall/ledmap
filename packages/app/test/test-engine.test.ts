@@ -46,9 +46,10 @@ function config(pattern: TestPatternConfig['pattern'], scope: TestPatternConfig[
 
 describe('headless Test pattern engine', () => {
   it('publishes every required pattern as deterministic metadata', () => {
-    expect(TEST_PATTERN_DEFINITIONS).toHaveLength(22)
+    expect(TEST_PATTERN_DEFINITIONS).toHaveLength(24)
     expect(TEST_PATTERN_DEFINITIONS.map(value => value.id)).toEqual([
       'black', 'white', 'red', 'green', 'blue',
+      'composition-chart', 'composition-mask',
       'checkerboard', 'module-grid', 'borders', 'center-cross', 'diagonals', 'corner-markers',
       'horizontal-gradient', 'vertical-gradient',
       'screen-labels', 'cabinet-labels', 'cabinet-order', 'module-labels',

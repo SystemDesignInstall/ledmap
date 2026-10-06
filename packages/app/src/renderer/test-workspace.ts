@@ -20,9 +20,11 @@ import {
   v2WalkOrdinalForDataIndex,
 } from './v2-test-project.js'
 import type { LedMapProjectV2 } from '@ledmap/core'
+import type { ChartSettings } from '../shared/chart-settings.js'
 
 interface TestWorkspaceOptions {
   readonly getProjectV2: () => LedMapProjectV2
+  readonly getChartSettings?: () => ChartSettings
   readonly onFrameChanged?: (snapshot: TestWorkspaceSnapshot) => void
   readonly getOutputOverlays?: () => readonly TestOutputOverlay[]
 }
@@ -39,6 +41,7 @@ export interface TestWorkspace {
   projectChanged(): void
   snapshot(): TestWorkspaceSnapshot
   redraw(): void
+  selectPattern(pattern: TestPatternId): void
 }
 
 interface TestHookDump {
@@ -110,6 +113,8 @@ export function createTestWorkspace(options: TestWorkspaceOptions): TestWorkspac
   const addressControls = element<HTMLDivElement>('test-address-controls')
   const previousButton = element<HTMLButtonElement>('test-address-previous')
   const nextButton = element<HTMLButtonElement>('test-address-next')
+  const playButton = element<HTMLButtonElement>('test-address-play')
+  const speedSelect = element<HTMLSelectElement>('test-address-speed')
   const addressIndex = element<HTMLInputElement>('test-address-index')
   const addressGo = element<HTMLButtonElement>('test-address-go')
   const fitButton = element<HTMLButtonElement>('test-fit')
@@ -127,11 +132,31 @@ export function createTestWorkspace(options: TestWorkspaceOptions): TestWorkspac
   let scene = buildV2TestScene(options.getProjectV2())
   let walkSpace = buildV2TestWalkSpace(options.getProjectV2(), scene, scope)
   let walkPixel: TestWalkPixel | null = null
-  let frame: TestFrame = evaluateTestPattern(scene, { pattern, scope, walkPixel })
+  let frame: TestFrame = evaluateTestPattern(scene, { pattern, scope, walkPixel, chartSettings: options.getChartSettings?.() })
   let camera: Camera = { zoom: 1, offsetX: 0, offsetY: 0 }
   let pan: Point | null = null
   let spaceDown = false
   let sourceReference = options.getProjectV2()
+  let walkTimer: ReturnType<typeof setInterval> | null = null
+
+  function stopWalk(): void {
+    if (walkTimer !== null) clearInterval(walkTimer)
+    walkTimer = null
+    playButton.textContent = 'Play walk'
+    playButton.setAttribute('aria-pressed', 'false')
+  }
+
+  function startWalk(): void {
+    if (pattern !== 'address-walk' || availability() !== null || walkSpace.total < 1) return
+    stopWalk()
+    playButton.textContent = 'Pause walk'
+    playButton.setAttribute('aria-pressed', 'true')
+    walkTimer = setInterval(() => {
+      if (!active || pattern !== 'address-walk' || walkSpace.total < 1) { stopWalk(); return }
+      walkOrdinal = (walkOrdinal + 1) % walkSpace.total
+      render()
+    }, Number(speedSelect.value))
+  }
 
   function project(): LedMapProjectV2 {
     return options.getProjectV2()
@@ -142,6 +167,7 @@ export function createTestWorkspace(options: TestWorkspaceOptions): TestWorkspac
   }
 
   function scopeValid(): boolean {
+    if ((pattern === 'composition-chart' || pattern === 'composition-mask') && scope.kind !== 'composition' && scope.kind !== 'screen') return false
     if (scope.kind === 'composition') return true
     if ((scope.kind === 'receiver' || scope.kind === 'port') && !scene.hardwareReady) return false
     return v2TestScopeTargets(scene, scope.kind).some(target => target.id === scope.target)
@@ -160,7 +186,7 @@ export function createTestWorkspace(options: TestWorkspaceOptions): TestWorkspac
     walkPixel = pattern === 'address-walk' && availability() === null
       ? resolveV2TestWalkPixel(project(), walkSpace, walkOrdinal)
       : null
-    frame = evaluateTestPattern(scene, { pattern, scope, walkPixel })
+    frame = evaluateTestPattern(scene, { pattern, scope, walkPixel, chartSettings: options.getChartSettings?.() })
   }
 
   function fit(): void {
@@ -202,6 +228,7 @@ export function createTestWorkspace(options: TestWorkspaceOptions): TestWorkspac
         button.disabled = reason !== null
         if (reason) button.title = reason
         button.addEventListener('click', () => {
+          stopWalk()
           pattern = definition.id
           walkOrdinal = 0
           render()
@@ -215,11 +242,13 @@ export function createTestWorkspace(options: TestWorkspaceOptions): TestWorkspac
   function renderScope(): void {
     scopeSelect.value = scope.kind
     const hardwareDisabled = !scene.hardwareReady
-    for (const kind of ['receiver', 'port'] as const) {
+    const chartPattern = pattern === 'composition-chart' || pattern === 'composition-mask'
+    for (const kind of ['cabinet', 'module', 'receiver', 'port'] as const) {
       const option = scopeSelect.querySelector<HTMLOptionElement>(`option[value="${kind}"]`)
       if (option) {
-        option.disabled = hardwareDisabled
-        option.title = hardwareDisabled ? scene.hardwareReason ?? 'Complete Hardware first.' : ''
+        option.disabled = chartPattern || (hardwareDisabled && (kind === 'receiver' || kind === 'port'))
+        option.title = chartPattern ? 'Screen drawings use Composition or Screen scope.'
+          : hardwareDisabled && (kind === 'receiver' || kind === 'port') ? scene.hardwareReason ?? 'Complete Hardware first.' : ''
       }
     }
     targetSelect.replaceChildren()
@@ -248,6 +277,7 @@ export function createTestWorkspace(options: TestWorkspaceOptions): TestWorkspac
     const ready = availability() === null && walkSpace.total > 0 && walkPixel !== null
     previousButton.disabled = !ready || walkOrdinal === 0
     nextButton.disabled = !ready || walkOrdinal >= walkSpace.total - 1
+    playButton.disabled = !ready
     addressIndex.disabled = !ready
     addressGo.disabled = !ready
     addressIndex.max = ready
@@ -266,7 +296,7 @@ export function createTestWorkspace(options: TestWorkspaceOptions): TestWorkspac
       row('Scope', scopeLabels[scope.kind]),
       row('Target', scope.target ?? 'Entire Composition'),
       row('Cabinets', frame.scopedCabinets.length.toLocaleString('en-US')),
-      row('State', 'Session only'),
+      row('State', pattern === 'composition-chart' || pattern === 'composition-mask' ? 'Saved Screen drawings' : 'Session only'),
     )
     properties.append(group('Test configuration', status))
     if (walkPixel) {
@@ -303,7 +333,9 @@ export function createTestWorkspace(options: TestWorkspaceOptions): TestWorkspac
     const definition = TEST_PATTERN_DEFINITIONS.find(value => value.id === pattern)!
     canvasTitle.textContent = `${definition.name} · ${scope.target ?? scopeLabels[scope.kind]}`
     const reason = availability()
-    patternReason.textContent = reason ?? 'Pattern evaluation is deterministic and uses session-only controls.'
+    patternReason.textContent = reason ?? (pattern === 'composition-chart' || pattern === 'composition-mask'
+      ? 'Chart appearance and frame are saved with the project.'
+      : 'Pattern evaluation is deterministic and uses session-only controls.')
     healthStatus.textContent = reason ?? `${definition.name} ready`
     empty.hidden = scene.screens.length > 0
     canvas.hidden = scene.screens.length === 0
@@ -331,6 +363,8 @@ export function createTestWorkspace(options: TestWorkspaceOptions): TestWorkspac
     walkOrdinal = Math.min(Math.max(0, walkSpace.total - 1), walkOrdinal + 1)
     render()
   })
+  playButton.addEventListener('click', () => { if (walkTimer === null) startWalk(); else stopWalk() })
+  speedSelect.addEventListener('change', () => { if (walkTimer !== null) startWalk() })
   function goToAddress(): void {
     const value = Number(addressIndex.value)
     const ordinal = scope.kind === 'port' || scope.kind === 'receiver'
@@ -400,6 +434,14 @@ export function createTestWorkspace(options: TestWorkspaceOptions): TestWorkspac
   }, { passive: false })
   window.addEventListener('keydown', event => {
     if (!active || event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement) return
+    if (!event.ctrlKey && !event.altKey && !event.metaKey && ['0', '1', '2', '3', '4'].includes(event.key)) {
+      const shortcut: Record<string, TestPatternId> = { '0': 'black', '1': 'white', '2': 'red', '3': 'green', '4': 'blue' }
+      stopWalk()
+      pattern = shortcut[event.key]!
+      render()
+      event.preventDefault()
+      return
+    }
     if (event.code === 'Space') {
       spaceDown = true
       canvas.classList.add('space-grab')
@@ -432,15 +474,16 @@ export function createTestWorkspace(options: TestWorkspaceOptions): TestWorkspac
   ;(window as Window & { __ledmapTest?: TestHook }).__ledmapTest = hook
 
   return {
+    selectPattern: next => { stopWalk(); pattern = next; walkOrdinal = 0; render() },
     activate: () => {
       active = true
       render()
       requestAnimationFrame(fit)
     },
-    deactivate: () => { active = false },
+    deactivate: () => { active = false; stopWalk() },
     projectChanged: () => {
       if (sourceReference === project()) {
-        if (active) render()
+        render()
         return
       }
       sourceReference = project()

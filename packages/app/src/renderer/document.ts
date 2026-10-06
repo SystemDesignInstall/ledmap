@@ -1,6 +1,7 @@
 import type { LegacyUpgradeChoice, OpenProjectResult, SaveProjectRequest, SaveProjectResult } from '../shared/ipc.js'
-import type { LedMapProjectV2 } from '@ledmap/core'
+import type { JsonObject, LedMapProjectV2 } from '@ledmap/core'
 import {
+  commitSessionExtensions,
   commitProjectV2,
   createProjectSession,
   loadProjectSession,
@@ -15,6 +16,7 @@ export type OpenSessionResult = 'opened' | 'canceled' | 'stale'
 
 interface HistoryEntry {
   readonly project: LedMapProjectV2
+  readonly extensions: JsonObject
   readonly stateId: number
 }
 
@@ -52,8 +54,9 @@ export class ProjectDocumentController {
     const group = this.activeGroup
     if (!group || (id !== undefined && group.id !== id)) return
     if (!group.changed) { this.activeGroup = null; return }
-    if (sameDocumentValue(this.current.project, group.initial.project)) {
-      const restored = restoreProjectSessionState(this.current, group.initial.project, group.initial.stateId)
+    if (sameDocumentValue(this.current.project, group.initial.project) &&
+        sameDocumentValue(this.current.extensions, group.initial.extensions)) {
+      const restored = restoreProjectSessionState(this.current, group.initial.project, group.initial.stateId, group.initial.extensions)
       this.activeGroup = null
       this.current = restored
       return
@@ -79,11 +82,38 @@ export class ProjectDocumentController {
     this.current = next
   }
 
+  transactExtensions(command: (extensions: JsonObject) => JsonObject): void {
+    const previous = this.current
+    let next = commitSessionExtensions(previous, command)
+    if (next === previous) return
+    if (this.activeGroup) {
+      this.endHistoryGroup()
+      if (this.current !== previous) next = commitSessionExtensions(this.current, command)
+    }
+    this.redoStack.length = 0
+    this.retainUndo(this.entry())
+    this.current = next
+  }
+
+  transactV2AndExtensions(
+    projectCommand: (project: LedMapProjectV2) => LedMapProjectV2,
+    extensionsCommand: (extensions: JsonObject) => JsonObject,
+  ): void {
+    this.endHistoryGroup()
+    const previous = this.current
+    const projectNext = commitProjectV2(previous, projectCommand)
+    const next = commitSessionExtensions(projectNext, extensionsCommand)
+    if (next === previous) return
+    this.redoStack.length = 0
+    this.retainUndo(this.entry())
+    this.current = next
+  }
+
   undo(): boolean {
     this.endHistoryGroup()
     const previous = this.undoStack.at(-1)
     if (!previous) return false
-    const restored = restoreProjectSessionState(this.current, previous.project, previous.stateId)
+    const restored = restoreProjectSessionState(this.current, previous.project, previous.stateId, previous.extensions)
     this.undoStack.pop()
     this.redoStack.push(this.entry())
     this.current = restored
@@ -94,7 +124,7 @@ export class ProjectDocumentController {
     this.endHistoryGroup()
     const next = this.redoStack.at(-1)
     if (!next) return false
-    const restored = restoreProjectSessionState(this.current, next.project, next.stateId)
+    const restored = restoreProjectSessionState(this.current, next.project, next.stateId, next.extensions)
     this.redoStack.pop()
     this.undoStack.push(this.entry())
     this.current = restored
@@ -102,7 +132,7 @@ export class ProjectDocumentController {
   }
 
   private entry(): HistoryEntry {
-    return Object.freeze({ project: this.current.project, stateId: this.current.stateId })
+    return Object.freeze({ project: this.current.project, extensions: this.current.extensions, stateId: this.current.stateId })
   }
 
   private retainUndo(entry: HistoryEntry): void {

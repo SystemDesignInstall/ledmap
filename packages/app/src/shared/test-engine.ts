@@ -1,9 +1,13 @@
+import { buildCompositionChartFrame } from './chart-engine.js'
+import { defaultChartSettings, type ChartSettings } from './chart-settings.js'
+
 export type TestPatternGroup = 'Basic' | 'Geometry' | 'LedMAP diagnostics' | 'Address Walk'
 
 export type TestPatternId =
   | 'black' | 'white' | 'red' | 'green' | 'blue'
   | 'checkerboard' | 'module-grid' | 'borders' | 'center-cross' | 'diagonals' | 'corner-markers'
   | 'horizontal-gradient' | 'vertical-gradient'
+  | 'composition-chart' | 'composition-mask'
   | 'screen-labels' | 'cabinet-labels' | 'cabinet-order' | 'module-labels'
   | 'receiver-labels' | 'port-labels' | 'processor-labels' | 'signal-flow'
   | 'address-walk'
@@ -37,6 +41,7 @@ export interface TestHardwareIdentity {
 
 export interface TestCabinetNode {
   readonly id: string
+  readonly label?: string
   readonly screen: string
   readonly logicalOrder: number
   readonly bounds: TestBounds
@@ -97,12 +102,14 @@ export interface TestPatternConfig {
   readonly pattern: TestPatternId
   readonly scope: TestScope
   readonly walkPixel: TestWalkPixel | null
+  readonly chartSettings?: ChartSettings | undefined
 }
 
 export type TestPrimitive =
   | { readonly kind: 'rect'; readonly bounds: TestBounds; readonly fill?: string; readonly stroke?: string; readonly lineWidth?: number }
   | { readonly kind: 'line'; readonly from: TestPoint; readonly to: TestPoint; readonly color: string; readonly lineWidth: number; readonly dash?: readonly number[] }
-  | { readonly kind: 'text'; readonly point: TestPoint; readonly text: string; readonly color: string; readonly size: number; readonly align?: 'left' | 'center' | 'right' }
+  | { readonly kind: 'text'; readonly point: TestPoint; readonly text: string; readonly color: string; readonly size: number; readonly align?: 'left' | 'center' | 'right'; readonly shadow?: boolean; readonly role?: 'screen-title' }
+  | { readonly kind: 'image'; readonly bounds: TestBounds; readonly dataUrl: string }
   | { readonly kind: 'gradient'; readonly bounds: TestBounds; readonly direction: 'horizontal' | 'vertical'; readonly from: string; readonly to: string }
   | { readonly kind: 'pixel'; readonly point: TestPoint; readonly color: string }
 
@@ -139,6 +146,8 @@ export const TEST_PATTERN_DEFINITIONS: readonly TestPatternDefinition[] = Object
   definition('red', 'Red', 'Basic'),
   definition('green', 'Green', 'Basic'),
   definition('blue', 'Blue', 'Basic'),
+  definition('composition-chart', 'Screen drawings', 'Geometry'),
+  definition('composition-mask', 'Screen mask', 'Geometry'),
   definition('checkerboard', 'Checkerboard', 'Geometry'),
   definition('module-grid', 'Module / Grid', 'Geometry'),
   definition('borders', 'Borders', 'Geometry'),
@@ -301,6 +310,10 @@ function label(primitives: TestPrimitive[], bounds: TestBounds, text: string, co
 }
 
 export function evaluateTestPattern(scene: TestScene, config: TestPatternConfig): TestFrame {
+  if (config.pattern === 'composition-chart' || config.pattern === 'composition-mask') {
+    return buildCompositionChartFrame(scene, config.scope, config.chartSettings ?? defaultChartSettings,
+      config.pattern === 'composition-mask')
+  }
   const primitives: TestPrimitive[] = []
   screenFrames(primitives, scene)
   const cabinets = matchingCabinets(scene, config.scope)

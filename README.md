@@ -1,6 +1,6 @@
-# LedMAP — Early Alpha
+# LedMAP
 
-Cabinet Grid Visualizer: один Screen, одна сетка кабинетов и интерактивный Canvas на базе `@ledmap/core`.
+Desktop-приложение для компоновки LED-экранов, редактирования сетки кабинетов, проверки и экспорта изображения. Вкладка **Composition** размещает несколько Screen в координатах проекта. Вкладка **Test** показывает тестовые паттерны и композиционную карту, **Live Output** выводит тот же кадр, а **Export** сохраняет PNG.
 
 Нужны Node.js 24 LTS (>=24), npm и Git. Из корня репозитория:
 
@@ -11,11 +11,11 @@ npm run dev
 
 В Windows PowerShell, если запуск `npm.ps1` запрещён политикой, используйте `npm.cmd` вместо `npm`.
 
-Нажмите **Create Screen**. Меняйте размеры сетки и модулей, Numbering, Direction и Snake. Белое `C01` обозначает физический кабинет; зелёное `#1` — его место в логическом порядке (`cabinetIndex + 1`). Зелёные стрелки показывают путь сигнала. Геометрия и ID не меняются при смене ordering.
+В **Composition** можно создать Screen, изменить его положение и размер сетки кабинетов. По умолчанию кабинеты подписаны по строкам: `A1 A2 … / B1 B2 …`. Схема подписей выбирается справа в блоке **Cabinet labels**. Двойной щелчок по кабинету открывает поле для своего имени. Физический ID `C…` остаётся в свойствах и не зависит от видимой подписи; сигнальный порядок настраивается отдельно.
 
-Разрешение экрана вычисляется из геометрии. Invalid input оставляет последний допустимый preview и показывает ошибку. Preview ограничен 1024 кабинетами и 65 536 модулями суммарно; при мелком масштабе подписи и модульные линии скрываются. ID и логические номера также перечислены в доступном имени Canvas для экранного диктора.
+`+ Screen` открывает простую форму сетки кабинетов с расчётом разрешения и временным рисунком прямо на центральном холсте. Режим **Module geometry** задаёт модули подробно; готовые форматы позволяют создать отдельный Screen с кабинетами половинной высоты или ширины. Новые экраны автоматически располагаются рядом; ручные X/Y доступны в форме. Создание геометрии и рисунка — один шаг Undo.
 
-Состояние хранится в памяти и теряется при закрытии. StartCorner — Top Left. Hardware, Mapping Engine, save/load, экспорт и installer в Alpha не входят.
+Выберите Screen: справа в **Screen drawing** можно изменить его рисунок, подписи, линии кабинетов, цвет, прозрачность, координатный маркер, смещение маски, надпись и PNG-логотип. Из геометрии и рисунка можно сохранить локальный preset для следующих экранов. Изменения сразу видны на центральном холсте; **Clean View** убирает только элементы редактора. **Test** и **Live Output** используют сохранённый рисунок. В **Export** можно сохранить `screen-drawings.png`, `screen-mask.png` или соответствующие SVG. Маска не меняет физический состав кабинетов. Настройки Screen входят в `.ledmap`, Undo/Redo и восстановление проекта. [Контракт вывода](docs/specs/LEDMAP-COMPOSITION-CHART-001.md) и [план развития Composition](docs/specs/LEDMAP-COMPOSITION-PIXL-001.md) описывают границы модели.
 
 Проверки:
 
@@ -27,9 +27,6 @@ npm run build
 npm run test:smoke
 ```
 
-`build` создаёт Electron main и renderer в `packages/app/out`. `test:smoke` запускает эту сборку в настоящем Electron через Playwright, проверяет настройки, нарисованные на Canvas номера, обработку ошибок, resize и DPR=2, затем закрывает окно. Скриншоты сохраняются в `packages/app/out/smoke` (не коммитятся). Для smoke требуется доступный графический сеанс.
+`build` создаёт Electron main и renderer в `packages/app/out`. `test:smoke` запускает сборку в Electron через Playwright. Скриншоты и контрольные PNG сохраняются в `packages/app/out/smoke` и не коммитятся. Для smoke нужен доступный графический сеанс.
 
-Core остаётся без runtime-зависимостей. App разрешает импорт `@ledmap/core` в существующий public barrel через согласованные aliases TypeScript, electron-vite и Vitest; файлы core не изменяются.
-
-Контракт: [LEDMAP-ALPHA-UI-001](docs/specs/LEDMAP-ALPHA-UI-001.md), [ADR-017](docs/DECISIONS.md#adr-017-early-alpha-ui--cabinet-grid-visualizer).
-Инструменты: [electron-vite configuration](https://electron-vite.org/config/), [Playwright Electron API](https://playwright.dev/docs/api/class-electron), [Electron security](https://www.electronjs.org/docs/latest/tutorial/security).
+Архитектурные ограничения и решения: [ARCHITECTURE](ARCHITECTURE.md), [DECISIONS](docs/DECISIONS.md).

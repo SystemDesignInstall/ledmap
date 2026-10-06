@@ -8,10 +8,12 @@ import { ProjectDocumentController } from './document.js'
 import { AutosaveCoordinator } from './autosave-coordinator.js'
 import { createProjectSession, recoverProjectSession, sessionDirty, sessionWorkspaceProject, type ProjectSession } from './project-session.js'
 import {
-  addScreenV2, deleteScreensV2, duplicateScreenV2, renameScreenV2, resizeScreenGridV2,
+  addScreenV2, deleteScreensV2, duplicateScreenV2, renameScreenV2, resizeScreenGridV2, setCabinetLabelV2,
   setScreenPositionV2, setScreenPositionsV2, updateScreenCabinetConfigV2,
 } from './v2-commands.js'
-import { initialDraft, type Draft } from './state.js'
+import { buildSnapshot, initialDraft, type Draft, type Snapshot } from './state.js'
+import { manualScreenPosition, nextScreenPosition, screenCreationDraft } from './screen-authoring.js'
+import { SCREEN_PRESETS_KEY, builtInScreenPresets, makeScreenPreset, parseScreenPresets, upsertScreenPreset, type ScreenPreset } from './screen-presets.js'
 import type { GridShape, OverlayVisibility, Point, ResizeHandle, ResizePreview } from './canvas.js'
 import {
   drawProject, fitCamera, resizeHandleCursor, resizeHandleHit,
@@ -28,9 +30,14 @@ import { createMappingWorkspace, type MappingWorkspace } from './mapping-workspa
 import { createOutputMappingWorkspace, type OutputMappingWorkspace } from './output-mapping-workspace.js'
 import { createHardwareWorkspace, type HardwareWorkspace } from './hardware-workspace.js'
 import { createTestWorkspace, type TestWorkspace } from './test-workspace.js'
+import { buildV2TestScene } from './v2-test-project.js'
+import { buildCompositionChartFrame } from '../shared/chart-engine.js'
+import type { TestFrame } from '../shared/test-engine.js'
 import { createLiveOutputController, type LiveOutputController } from './live-output.js'
 import { createExportWorkspace, type ExportWorkspace } from './export-workspace.js'
-import type { Direction, Numbering } from '@ledmap/core'
+import { selectCompositionGeometry, type Direction, type Numbering } from '@ledmap/core'
+import { chartSettingsFromExtensions, screenChartStyle, withChartSettings, type ChartSettings, type ChartPalette, type ChartLabels, type ScreenChartStyle } from '../shared/chart-settings.js'
+import { cabinetDisplayLabel, duplicateCabinetLabel, physicalCabinetLabel, type CabinetLabelMode } from '../shared/cabinet-labels.js'
 
 interface LedmapHook {
   dump(): ReadonlyArray<{
@@ -54,7 +61,7 @@ interface LedmapHook {
     readonly direction: Direction
     readonly snake: boolean
     readonly nextCabinetSerial: number
-    readonly cabinets: ReadonlyArray<{ readonly id: string; readonly index: number; readonly column: number; readonly row: number }>
+    readonly cabinets: ReadonlyArray<{ readonly id: string; readonly label: string; readonly index: number; readonly column: number; readonly row: number }>
     readonly order: readonly number[]
   }>
   bounds(): { readonly width: number; readonly height: number; readonly left: number; readonly top: number; readonly right: number; readonly bottom: number }
@@ -110,10 +117,12 @@ const guideAddH = element<HTMLButtonElement>('guide-add-h')
 const selectedCount = element<HTMLSpanElement>('selected-count')
 const snapStatus = element<HTMLSpanElement>('snap-status')
 const cursorStatus = element<HTMLSpanElement>('cursor-status')
+const compositionStatus = element<HTMLSpanElement>('composition-status')
 const fitSelectionButton = element<HTMLButtonElement>('fit-selection')
 const actualSizeButton = element<HTMLButtonElement>('actual-size')
 const zoomInButton = element<HTMLButtonElement>('zoom-in')
 const zoomOutButton = element<HTMLButtonElement>('zoom-out')
+const cleanViewButton = element<HTMLButtonElement>('clean-view')
 const duplicateScreenButton = element<HTMLButtonElement>('duplicate-screen')
 const deleteScreenButton = element<HTMLButtonElement>('delete-screen')
 const renameScreenButton = element<HTMLButtonElement>('rename-screen')
@@ -150,6 +159,10 @@ autosave.attach(documentController.session, null)
 function currentProject(): Project {
   return sessionWorkspaceProject(documentController.session)
 }
+
+function chartSettings(): ChartSettings {
+  return chartSettingsFromExtensions(documentController.session.extensions)
+}
 type AppMode = 'layout' | 'mapping' | 'output-mapping' | 'hardware' | 'test' | 'export'
 let appMode: AppMode = 'layout'
 let mappingWorkspace: MappingWorkspace | null = null
@@ -171,6 +184,12 @@ let selectedGuideId: string | null = null
 let alignmentGuides: readonly AlignmentGuide[] = []
 let marqueeBox: SelectionBox | null = null
 let overlays: OverlayVisibility = { cabinets: true, modules: false, coordinates: true }
+let cleanView = false
+let compositionDrawingCache: { session: ProjectSession; scopeId: string | null; frame: TestFrame } | null = null
+let creationPreview: { frame: TestFrame; bounds: { x: number; y: number; width: number; height: number } } | null = null
+let creationCamera: Camera | null = null
+let screenPresets: ScreenPreset[] = []
+try { screenPresets = parseScreenPresets(localStorage.getItem(SCREEN_PRESETS_KEY)) } catch { screenPresets = [] }
 let spaceDown = false
 type PointerMode = 'none' | 'drag' | 'pan' | 'resize' | 'marquee' | 'guide'
 let pointerMode: PointerMode = 'none'
@@ -207,6 +226,29 @@ function applyV2(command: (project: LedMapProjectV2) => LedMapProjectV2, groupId
   documentController.transactV2(command, groupId)
   autosave.mutation(before, documentController.session)
   syncDocumentState()
+}
+
+function applyV2AndChartSettings(
+  command: (project: LedMapProjectV2) => LedMapProjectV2,
+  settingsCommand: (settings: ChartSettings) => ChartSettings,
+): void {
+  const before = documentController.session
+  documentController.transactV2AndExtensions(command, extensions =>
+    withChartSettings(extensions, settingsCommand(chartSettingsFromExtensions(extensions))))
+  autosave.mutation(before, documentController.session)
+  syncDocumentState()
+}
+
+function applyChartSettings(settings: ChartSettings): void {
+  const previous = chartSettings()
+  const before = documentController.session
+  documentController.transactExtensions(extensions => withChartSettings(extensions, settings))
+  autosave.mutation(before, documentController.session)
+  syncDocumentState()
+  if (previous.frameMode !== settings.frameMode ||
+      previous.frame.x !== settings.frame.x || previous.frame.y !== settings.frame.y ||
+      previous.frame.width !== settings.frame.width || previous.frame.height !== settings.frame.height) fitToProject()
+  render()
 }
 
 function finishHistoryGroup(groupId?: number): void {
@@ -378,8 +420,31 @@ function render(): void {
   exportWorkspace?.projectChanged()
 }
 
+function compositionDrawing(): TestFrame {
+  const session = documentController.session
+  const scopeId = viewMode === 'active' ? activeScreenId : null
+  if (compositionDrawingCache?.session === session && compositionDrawingCache.scopeId === scopeId) {
+    return compositionDrawingCache.frame
+  }
+  const scene = buildV2TestScene(session.project)
+  const scope = scopeId ? { kind: 'screen' as const, target: scopeId } : { kind: 'composition' as const, target: null }
+  const frame = buildCompositionChartFrame(scene, scope, chartSettings())
+  compositionDrawingCache = { session, scopeId, frame }
+  return frame
+}
+
 function draw(): void {
-  const note = drawProject(canvas, currentProject(), {
+  const project = currentProject()
+  const hidden = project.screens.length === 0 && creationPreview === null
+  canvas.hidden = hidden
+  empty.hidden = !hidden
+  const settings = chartSettings()
+  const visible = viewMode === 'active' ? project.screens.filter(screen => screen.screen.id === activeScreenId) : project.screens
+  const transparentScreens = visible.filter(screen => {
+    const style = screenChartStyle(settings, screen.screen.id)
+    return style.palette === 'screen-color' && style.fill === 'transparent'
+  }).map(screen => ({ x: screen.x, y: screen.y, width: screenWidth(screen), height: screenHeight(screen) }))
+  const note = drawProject(canvas, project, {
     mode: viewMode,
     selection,
     selectedScreenIds,
@@ -390,28 +455,48 @@ function draw(): void {
     selectedGuideId,
     marquee: marqueeBox,
     overlays,
+    chartFrame: settings.frameMode === 'fixed' ? settings.frame : null,
+    drawing: compositionDrawing(),
+    creationPreview,
+    transparentScreens,
+    cleanView,
+    cabinetLabelModes: Object.fromEntries(visible.map(screen => [screen.screen.id,
+      screenChartStyle(settings, screen.screen.id).cabinetLabelMode ?? 'row-coordinate'])),
   }, camera)
   zoomIndicator.textContent = `${Math.round(camera.zoom * 100)}%`
   canvasNote.textContent = note
   const active = activeScreenId ? findScreen(currentProject(), activeScreenId) : undefined
-  canvasTitle.textContent = viewMode === 'all' ? 'All Screens' : active ? active.screen.name : 'Active Screen'
+  if (viewMode === 'all') {
+    const bounds = projectBounds(currentProject())
+    canvasTitle.textContent = currentProject().screens.length === 0
+      ? 'All Screens'
+      : `All Screens · ${format.format(bounds.width)} × ${format.format(bounds.height)} px`
+  } else {
+    canvasTitle.textContent = active ? active.screen.name : 'Active Screen'
+  }
   const summaries = currentProject().screens.map(s => `${s.screen.name} at ${s.x}, ${s.y}`).join('; ')
   canvas.setAttribute('aria-label', `Project canvas. ${currentProject().screens.length} screens. ${summaries}.`)
-  const hidden = currentProject().screens.length === 0
-  canvas.hidden = hidden
-  empty.hidden = !hidden
   toggleMode.disabled = currentProject().screens.length === 0
 }
 
 function fitTo(b: { left: number; top: number; right: number; bottom: number; width: number; height: number }): void {
-  const { width, height } = canvas.getBoundingClientRect()
+  const { clientWidth: width, clientHeight: height } = viewport
   camera = fitCamera({ left: b.left, top: b.top, right: b.right, bottom: b.bottom, width: b.width, height: b.height }, width, height)
   draw()
 }
 
 function fitToProject(): void {
   const active = activeScreenId ? findScreen(currentProject(), activeScreenId) : undefined
-  if (viewMode === 'all') fitTo(projectBounds(currentProject()))
+  if (viewMode === 'all') {
+    const bounds = projectBounds(currentProject())
+    const settings = chartSettings()
+    if (settings.frameMode !== 'fixed') { fitTo(bounds); return }
+    const left = Math.min(bounds.left, settings.frame.x)
+    const top = Math.min(bounds.top, settings.frame.y)
+    const right = Math.max(bounds.right, settings.frame.x + settings.frame.width)
+    const bottom = Math.max(bounds.bottom, settings.frame.y + settings.frame.height)
+    fitTo({ left, top, right, bottom, width: right - left, height: bottom - top })
+  }
   else if (active) fitTo(screenBounds(active))
 }
 
@@ -424,7 +509,7 @@ function chipText(): string {
     current.type === 'screen' ? findScreen(currentProject(), current.id) : findScreenByGrid(current.id)
   )
   const suffix = screen ? ` · ${screen.screen.name}` : ''
-  if (current.type === 'screen') return `${screen?.screen.name ?? 'Screen'} selected`
+  if (current.type === 'screen') return '1 Screen selected'
   if (current.type === 'cabinetGrid') return `Cabinet Grid${suffix}`
   return `${current.id}${suffix}`
 }
@@ -433,8 +518,21 @@ function findScreenByGrid(gridId: string): ScreenView | undefined {
   return currentProject().screens.find(s => s.grid.id === gridId)
 }
 
+function compositionStatusText(): string {
+  try {
+    const geometry = selectCompositionGeometry(currentProject().model)
+    if (!geometry.bounds) return 'No composition'
+    const bounds = geometry.bounds
+    const screens = geometry.screenCount === 1 ? '1 screen' : `${format.format(geometry.screenCount)} screens`
+    return `Composition ${format.format(bounds.width)} × ${format.format(bounds.height)} px · ${screens}`
+  } catch {
+    return 'Composition unavailable'
+  }
+}
+
 function renderStatus(): void {
   chip.textContent = chipText()
+  compositionStatus.textContent = compositionStatusText()
   selectedCount.textContent = `${selectedScreenIds.length} selected`
   toggleMode.textContent = viewMode === 'all' ? 'Focus Screen' : 'Show All'
   toggleMode.setAttribute('aria-pressed', String(viewMode === 'active'))
@@ -458,6 +556,7 @@ function renderStatus(): void {
     const key = button.dataset['overlay'] as keyof OverlayVisibility
     button.setAttribute('aria-pressed', String(overlays[key]))
   })
+  cleanViewButton.setAttribute('aria-pressed', String(cleanView))
 }
 
 function fitToSelection(): void {
@@ -770,6 +869,185 @@ function appendCabinetConfigGroups(container: HTMLDivElement, screen: ScreenView
     propertyRow('Pixels', valueNode(format.format(screen.pixelCount))),
   )
   container.append(group('Totals', totalsBox))
+
+  const labelMode = screenChartStyle(chartSettings(), screen.screen.id).cabinetLabelMode ?? 'row-coordinate'
+  const labelsBox = document.createElement('div')
+  const labelChoices: readonly (readonly [CabinetLabelMode, string])[] = [
+    ['row-coordinate', 'Rows A, B... / columns 1, 2...'],
+    ['column-coordinate', 'Columns A, B... / rows 1, 2...'],
+    ['coordinates', 'Coordinates 1,1'],
+    ['row-sequential', 'Sequential by rows'],
+    ['column-sequential', 'Sequential by columns'],
+    ['row-snake', 'Alternating rows'],
+    ['column-snake', 'Alternating columns'],
+    ['row-reverse', 'Reverse by rows'],
+    ['column-reverse', 'Reverse by columns'],
+  ]
+  labelsBox.append(propertyRow('Display', drawingSelect('cabinet-label-mode', labelMode, labelChoices,
+    value => updateScreenDrawing(screen.screen.id, { cabinetLabelMode: value }))))
+  const labelHint = document.createElement('p')
+  labelHint.className = 'hint'
+  labelHint.textContent = 'Double-click a Cabinet on the canvas to set a custom label.'
+  labelsBox.append(labelHint)
+  container.append(group('Cabinet labels', labelsBox))
+}
+
+function updateScreenDrawing(screenId: string, patch: Partial<ScreenChartStyle>): void {
+  try {
+    const settings = chartSettings()
+    if (patch.cabinetLabelMode) {
+      const screen = findScreen(currentProject(), screenId)
+      if (screen) {
+        const duplicate = duplicateCabinetLabel(patch.cabinetLabelMode, screen.grid.columns, screen.grid.rows, screen.cabinets)
+        if (duplicate) throw new Error(`Cabinet label ${duplicate} is already used on this Screen.`)
+      }
+    }
+    const style = { ...screenChartStyle(settings, screenId), ...patch }
+    applyChartSettings({ ...settings, screenStyles: { ...settings.screenStyles, [screenId]: style } })
+  } catch (error) {
+    showDocumentError(error, 'Unable to update Screen drawing.')
+    render()
+  }
+}
+
+function drawingSelect<T extends string>(
+  id: string, value: T, choices: readonly (readonly [T, string])[], onChange: (value: T) => void,
+): HTMLSelectElement {
+  const select = document.createElement('select')
+  select.id = id
+  for (const [choice, label] of choices) {
+    const option = document.createElement('option')
+    option.value = choice
+    option.textContent = label
+    select.append(option)
+  }
+  select.value = value
+  select.addEventListener('change', () => onChange(select.value as T))
+  return select
+}
+
+function appendScreenDrawingGroup(container: HTMLDivElement, screen: ScreenView): void {
+  const screenId = screen.screen.id
+  const style = screenChartStyle(chartSettings(), screenId)
+  const drawing = document.createElement('div')
+  const transparentToggle = toggleField(style.fill === 'transparent', 'Transparent Screen fill', value =>
+    updateScreenDrawing(screenId, { fill: value ? 'transparent' : '#284a68' }))
+  transparentToggle.disabled = style.palette !== 'screen-color'
+  drawing.append(
+    propertyRow('Pattern', drawingSelect<ChartPalette>('screen-drawing-palette', style.palette, [
+      ['screen-color', 'Solid color'], ['white-grid', 'White grid'], ['checkerboard', 'Checkerboard'],
+      ['gray-gradient', 'Gray gradient'], ['rgb-bars', 'RGB bars'],
+    ], value => updateScreenDrawing(screenId, { palette: value }))),
+    propertyRow('Color', (() => {
+      const input = document.createElement('input')
+      input.id = 'screen-drawing-color'
+      input.type = 'color'
+      input.value = style.fill === 'transparent' ? '#284a68' : style.fill
+      input.disabled = style.palette !== 'screen-color' || style.fill === 'transparent'
+      input.addEventListener('change', () => updateScreenDrawing(screenId, { fill: input.value }))
+      return input
+    })()),
+    propertyRow('Transparent', transparentToggle),
+    propertyRow('Labels', drawingSelect<ChartLabels>('screen-drawing-labels', style.labels, [
+      ['screen', 'Name and size'], ['cabinet', 'Cabinet labels'], ['cabinet-id', 'Physical IDs'], ['coordinates', 'Coordinates'],
+      ['grid-address', 'Columns / rows'], ['none', 'None'],
+    ], value => updateScreenDrawing(screenId, { labels: value }))),
+    propertyRow('Cabinet lines', toggleField(style.cabinetEdges, 'Screen cabinet lines', value =>
+      updateScreenDrawing(screenId, { cabinetEdges: value }))),
+    propertyRow('Text shadow', toggleField(style.textShadow, 'Screen text shadow', value =>
+      updateScreenDrawing(screenId, { textShadow: value }))),
+    propertyRow('Offset marker', toggleField(style.offsetMarkers ?? false, 'Screen offset marker', value =>
+      updateScreenDrawing(screenId, { offsetMarkers: value }))),
+  )
+  const maskOffset = (axis: 'X' | 'Y') => {
+    const key = axis === 'X' ? 'maskOffsetX' : 'maskOffsetY'
+    const input = numberField(style[key] ?? 0, `Screen mask offset ${axis}`, value =>
+      updateScreenDrawing(screenId, { [key]: value }), value =>
+      Number.isSafeInteger(value) && Math.abs(value) <= 8192 ? null : 'Enter a whole number from -8192 to 8192.')
+    input.min = '-8192'
+    input.max = '8192'
+    return input
+  }
+  drawing.append(propertyRow('Mask offset X', maskOffset('X')), propertyRow('Mask offset Y', maskOffset('Y')))
+  const caption = textField(style.caption, 'Screen drawing caption', value => {
+    updateScreenDrawing(screenId, { caption: value })
+  })
+  caption.id = 'screen-drawing-caption'
+  caption.maxLength = 80
+  drawing.append(propertyRow('Caption', caption))
+  const logoFile = document.createElement('input')
+  logoFile.id = 'screen-drawing-logo-file'
+  logoFile.type = 'file'
+  logoFile.accept = 'image/png'
+  logoFile.setAttribute('aria-label', 'Screen drawing logo PNG')
+  logoFile.addEventListener('change', () => {
+    const file = logoFile.files?.[0]
+    if (!file) return
+    void (async () => {
+      try {
+        if (file.type !== 'image/png' || file.size > 256 * 1024) throw new Error('Choose a PNG no larger than 256 KiB.')
+        const bitmap = await createImageBitmap(file)
+        const { width, height } = bitmap
+        bitmap.close()
+        if (width < 1 || height < 1 || width > 512 || height > 512 ||
+            width + 16 > screenWidth(screen) || height + 16 > screenHeight(screen)) {
+          throw new Error('Logo must fit the Screen and be at most 512 × 512 px.')
+        }
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onload = () => typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('Unable to read logo.'))
+          reader.onerror = () => reject(new Error('Unable to read logo.'))
+          reader.readAsDataURL(file)
+        })
+        updateScreenDrawing(screenId, { logo: { dataUrl, width, height } })
+      } catch (error) {
+        showDocumentError(error, 'Unable to import Screen logo.')
+      } finally {
+        logoFile.value = ''
+      }
+    })()
+  })
+  const logoBox = document.createElement('div')
+  logoBox.className = 'screen-drawing-logo'
+  const logoLabel = document.createElement('label')
+  logoLabel.htmlFor = logoFile.id
+  logoLabel.textContent = 'Logo PNG'
+  logoBox.append(logoLabel, logoFile)
+  const logoStatus = valueNode(style.logo ? `${style.logo.width} × ${style.logo.height} px` : 'No logo')
+  logoStatus.id = 'screen-drawing-logo-summary'
+  logoBox.append(logoStatus)
+  const removeLogo = document.createElement('button')
+  removeLogo.type = 'button'
+  removeLogo.id = 'screen-drawing-logo-remove'
+  removeLogo.textContent = 'Remove logo'
+  removeLogo.disabled = style.logo === null
+  removeLogo.addEventListener('click', () => updateScreenDrawing(screenId, { logo: null }))
+  logoBox.append(removeLogo)
+  drawing.append(logoBox)
+  const presetBox = document.createElement('div')
+  presetBox.className = 'screen-preset-save'
+  const presetName = document.createElement('input')
+  presetName.type = 'text'
+  presetName.maxLength = 40
+  presetName.placeholder = 'Preset name'
+  presetName.setAttribute('aria-label', 'New Screen preset name')
+  const savePreset = document.createElement('button')
+  savePreset.type = 'button'
+  savePreset.textContent = 'Save preset'
+  savePreset.addEventListener('click', () => {
+    try {
+      const next = upsertScreenPreset(screenPresets, makeScreenPreset(presetName.value, screen, screenChartStyle(chartSettings(), screenId)))
+      localStorage.setItem(SCREEN_PRESETS_KEY, JSON.stringify(next))
+      screenPresets = next
+      presetName.value = ''
+      canvasNote.textContent = 'Screen preset saved for new Screens.'
+    } catch (error) {
+      showDocumentError(error, 'Unable to save Screen preset.')
+    }
+  })
+  presetBox.append(presetName, savePreset)
+  drawing.append(presetBox)
+  container.append(group('Screen drawing', drawing))
 }
 
 function renderScreenProperties(screen: ScreenView): void {
@@ -786,6 +1064,7 @@ function renderScreenProperties(screen: ScreenView): void {
     }
   })
   container.append(propertyRow('Name', nameInput))
+  appendScreenDrawingGroup(container, screen)
 
   const positionBox = document.createElement('div')
   const xInput = numberField(screen.x, 'Screen X position', value => {
@@ -834,46 +1113,78 @@ function renderScreenProperties(screen: ScreenView): void {
 }
 
 function renderMultiProperties(title: HTMLHeadingElement): void {
-  title.textContent = `${selectedScreenIds.length} Screens`
+  title.textContent = `${selectedScreenIds.length} Screens selected`
   const screens = layoutRects(selectedScreenIds)
   const bounds = selectionBounds(screens)
   const container = document.createElement('div')
   container.className = 'properties-body'
   const selectionBox = document.createElement('div')
   selectionBox.append(
-    propertyRow('Selected', valueNode(String(selectedScreenIds.length))),
+    propertyRow('Screens', valueNode(String(selectedScreenIds.length))),
     propertyRow('Bounds', valueNode(bounds ? `${format.format(bounds.width)} × ${format.format(bounds.height)} px` : '—')),
   )
   container.append(group('Selection', selectionBox))
 
-  const alignBox = document.createElement('div')
-  alignBox.className = 'inspector-actions'
-  const actions: readonly [string, AlignMode][] = [
-    ['Left', 'left'], ['Center X', 'horizontal-center'], ['Right', 'right'],
-    ['Top', 'top'], ['Center Y', 'vertical-center'], ['Bottom', 'bottom'],
-  ]
-  for (const [label, mode] of actions) {
+  const arrangeBox = document.createElement('div')
+  arrangeBox.className = 'arrange-panel'
+  appendArrangeRow(arrangeBox, 'Align horizontal', [
+    ['Left', 'left', 'Align left'],
+    ['Center', 'horizontal-center', 'Align horizontal centers'],
+    ['Right', 'right', 'Align right'],
+  ], false)
+  appendArrangeRow(arrangeBox, 'Align vertical', [
+    ['Top', 'top', 'Align top'],
+    ['Middle', 'vertical-center', 'Align vertical centers'],
+    ['Bottom', 'bottom', 'Align bottom'],
+  ], false)
+  appendArrangeRow(arrangeBox, 'Distribute', [
+    ['Horizontal', 'horizontal', 'Distribute horizontally'],
+    ['Vertical', 'vertical', 'Distribute vertically'],
+  ], true)
+  container.append(group('Arrange', arrangeBox))
+
+  const common = (values: readonly number[]): string =>
+    values.every(value => value === values[0]) ? `${format.format(values[0]!)} px` : 'Mixed'
+  const positionBox = document.createElement('div')
+  positionBox.append(
+    propertyRow('X', valueNode(common(screens.map(screen => screen.x)))),
+    propertyRow('Y', valueNode(common(screens.map(screen => screen.y)))),
+  )
+  container.append(group('Position', positionBox))
+  const sizeBox = document.createElement('div')
+  sizeBox.append(
+    propertyRow('Width', valueNode(common(screens.map(screen => screen.width)))),
+    propertyRow('Height', valueNode(common(screens.map(screen => screen.height)))),
+  )
+  container.append(group('Size', sizeBox))
+  properties.append(container)
+}
+
+function appendArrangeRow(
+  container: HTMLDivElement,
+  label: string,
+  actions: readonly (readonly [string, AlignMode | DistributeAxis, string])[],
+  distribute: boolean,
+): void {
+  const row = document.createElement('div')
+  row.className = distribute ? 'arrange-row distribute' : 'arrange-row'
+  const heading = document.createElement('span')
+  heading.className = 'arrange-label'
+  heading.textContent = label
+  const buttons = document.createElement('div')
+  buttons.className = 'arrange-buttons'
+  for (const [text, kind, tooltip] of actions) {
     const button = document.createElement('button')
     button.type = 'button'
-    button.textContent = label
-    button.addEventListener('click', () => arrangeSelection(mode, false))
-    alignBox.append(button)
+    button.textContent = text
+    button.title = tooltip
+    button.dataset[distribute ? 'distribute' : 'align'] = kind
+    button.disabled = distribute && selectedScreenIds.length < 3
+    button.addEventListener('click', () => arrangeSelection(kind, distribute))
+    buttons.append(button)
   }
-  container.append(group('Align', alignBox))
-
-  if (selectedScreenIds.length >= 3) {
-    const distributeBox = document.createElement('div')
-    distributeBox.className = 'inspector-actions'
-    for (const [label, axis] of [['Horizontal', 'horizontal'], ['Vertical', 'vertical']] as const) {
-      const button = document.createElement('button')
-      button.type = 'button'
-      button.textContent = label
-      button.addEventListener('click', () => arrangeSelection(axis, true))
-      distributeBox.append(button)
-    }
-    container.append(group('Distribute', distributeBox))
-  }
-  properties.append(container)
+  row.append(heading, buttons)
+  container.append(row)
 }
 
 function focusScreenName(): void {
@@ -917,9 +1228,20 @@ function nonnegativeCoordinateProblem(value: number): string | null {
 
 function commitResize(screenId: string, columns: number, rows: number): string | null {
   try {
-    applyV2(project => resizeScreenGridV2(project, screenId, columns, rows))
+    const mode = screenChartStyle(chartSettings(), screenId).cabinetLabelMode ?? 'row-coordinate'
+    applyV2(project => {
+      const resized = resizeScreenGridV2(project, screenId, columns, rows)
+      const grid = resized.design.cabinetGrids.find(value => value.screenId === screenId)
+      if (grid) {
+        const duplicate = duplicateCabinetLabel(mode, grid.columns, grid.rows,
+          resized.design.cabinets.filter(value => value.gridId === grid.id))
+        if (duplicate) throw new Error(`Cabinet label ${duplicate} is already used on this Screen.`)
+      }
+      return resized
+    })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unable to resize the cabinet grid.'
+    draw()
     canvasNote.textContent = message
     return message
   }
@@ -969,7 +1291,29 @@ function renderCabinetProperties(screen: ScreenView): void {
   const container = document.createElement('div')
   container.className = 'properties-body'
   const box = document.createElement('div')
+  const mode = screenChartStyle(chartSettings(), screen.screen.id).cabinetLabelMode ?? 'row-coordinate'
+  const label = cabinetDisplayLabel(mode, screen.grid.columns, screen.grid.rows, cabinet)
+  const manual = cabinet.label.trim().length > 0 && cabinet.label !== physicalCabinetLabel(cabinet.sourceId)
+  const commitLabel = (value: string | null): string | null => {
+    try {
+      applyV2(project => setCabinetLabelV2(project, cabinet.sourceId, value, mode))
+      render()
+      return null
+    } catch (error) {
+      return error instanceof Error ? error.message : 'Unable to update Cabinet label.'
+    }
+  }
+  const labelInput = textField(manual ? cabinet.label : '', 'Cabinet custom label', value => commitLabel(value || null))
+  labelInput.placeholder = label
+  const resetLabel = document.createElement('button')
+  resetLabel.type = 'button'
+  resetLabel.textContent = 'Use automatic label'
+  resetLabel.disabled = !manual
+  resetLabel.addEventListener('click', () => { commitLabel(null) })
   box.append(
+    propertyRow('Display label', valueNode(label)),
+    propertyRow('Custom label', labelInput),
+    resetLabel,
     propertyRow('Physical ID', valueNode(cabinet.id)),
     propertyRow('Position', valueNode(`Column ${cabinet.column + 1} · Row ${cabinet.row + 1}`)),
     propertyRow('Screen', valueNode(screen.screen.name)),
@@ -1113,8 +1457,26 @@ canvas.addEventListener('pointerdown', event => {
   render()
 })
 
+canvas.addEventListener('dblclick', event => {
+  if (event.button !== 0 || cleanView) return
+  const hit = hitTest(currentProject(), toProject(camera, viewportPoint(event)))
+  if (!hit?.cabinet) return
+  selection = { type: 'cabinet', id: hit.cabinet.id, screenId: hit.screen.screen.id }
+  selectedScreenIds = [hit.screen.screen.id]
+  activeScreenId = hit.screen.screen.id
+  render()
+})
+
 canvas.addEventListener('pointermove', event => {
   const cursor = toProject(camera, viewportPoint(event))
+  const hovered = !cleanView && pointerMode === 'none' ? hitTest(currentProject(), cursor) : null
+  if (hovered?.cabinet && (viewMode === 'all' || hovered.screen.screen.id === activeScreenId)) {
+    const mode = screenChartStyle(chartSettings(), hovered.screen.screen.id).cabinetLabelMode ?? 'row-coordinate'
+    const label = cabinetDisplayLabel(mode, hovered.screen.grid.columns, hovered.screen.grid.rows, hovered.cabinet)
+    canvas.title = `${label} · ${hovered.cabinet.id}`
+  } else {
+    canvas.title = ''
+  }
   cursorStatus.textContent = `X ${Math.round(cursor.x)} · Y ${Math.round(cursor.y)}`
   if (pointerMode === 'pan' && panState) {
     camera = { ...camera, offsetX: camera.offsetX + event.offsetX - panState.lastX, offsetY: camera.offsetY + event.offsetY - panState.lastY }
@@ -1215,6 +1577,10 @@ canvas.addEventListener('pointermove', event => {
   canvas.style.cursor = target ? resizeHandleCursor(target.handle) : ''
 })
 
+canvas.addEventListener('pointerleave', () => {
+  canvas.title = ''
+})
+
 canvas.addEventListener('pointerup', () => {
   if (pointerMode === 'resize') {
     const gesture = resizeGesture
@@ -1303,46 +1669,210 @@ function dialogInput(id: string): HTMLInputElement {
   return element<HTMLInputElement>(id)
 }
 
+function selectedCreationPreset(): ScreenPreset | undefined {
+  const name = element<HTMLSelectElement>('new-screen-preset').value
+  return [...builtInScreenPresets, ...screenPresets].find(preset => preset.name === name)
+}
+
+function refreshScreenPresets(): void {
+  const selector = element<HTMLSelectElement>('new-screen-preset')
+  selector.replaceChildren(new Option('Custom settings', ''))
+  const builtIn = document.createElement('optgroup')
+  builtIn.label = 'Cabinet formats'
+  for (const preset of builtInScreenPresets) builtIn.append(new Option(preset.name, preset.name))
+  selector.append(builtIn)
+  if (screenPresets.length > 0) {
+    const saved = document.createElement('optgroup')
+    saved.label = 'Saved presets'
+    for (const preset of screenPresets) saved.append(new Option(preset.name, preset.name))
+    selector.append(saved)
+  }
+  element<HTMLButtonElement>('new-screen-preset-delete').disabled = true
+}
+
+function applyCreationPreset(): void {
+  const preset = selectedCreationPreset()
+  element<HTMLButtonElement>('new-screen-preset-delete').disabled = preset === undefined || !screenPresets.some(value => value.name === preset.name)
+  if (!preset) return
+  element<HTMLSelectElement>('new-screen-geometry-mode').value = 'advanced'
+  dialogInput('new-screen-module-columns').value = String(preset.moduleColumns)
+  dialogInput('new-screen-module-rows').value = String(preset.moduleRows)
+  dialogInput('new-screen-module-width').value = String(preset.modulePixelWidth)
+  dialogInput('new-screen-module-height').value = String(preset.modulePixelHeight)
+  element<HTMLSelectElement>('new-screen-palette').value = preset.drawing.palette
+  dialogInput('new-screen-color').value = preset.drawing.fill === 'transparent' ? '#284a68' : preset.drawing.fill
+  dialogInput('new-screen-transparent').checked = preset.drawing.fill === 'transparent'
+  updateCreationPreview()
+}
+
+function creationDetails(): {
+  draft: Draft
+  snapshot: Snapshot
+  position: { x: number; y: number }
+  name: string
+  palette: ChartPalette
+  color: string
+} {
+  const advanced = element<HTMLSelectElement>('new-screen-geometry-mode').value === 'advanced'
+  const draft = screenCreationDraft(
+    dialogInput('new-screen-columns').value,
+    dialogInput('new-screen-rows').value,
+    advanced ? {
+      mode: 'advanced',
+      moduleColumns: dialogInput('new-screen-module-columns').value,
+      moduleRows: dialogInput('new-screen-module-rows').value,
+      moduleWidth: dialogInput('new-screen-module-width').value,
+      moduleHeight: dialogInput('new-screen-module-height').value,
+    } : {
+      mode: 'basic', width: dialogInput('new-screen-cabinet-width').value,
+      height: dialogInput('new-screen-cabinet-height').value,
+    },
+    initialDraft.ordering,
+  )
+  const built = buildSnapshot(null, draft)
+  const problem = built.errors.form ?? Object.values(built.errors)[0]
+  if (problem || !built.snapshot) throw new Error(problem ?? 'Unable to calculate Screen resolution.')
+  const name = dialogInput('new-screen-name').value.trim()
+  if (!name) throw new Error('Screen name cannot be empty.')
+  const position = element<HTMLSelectElement>('new-screen-position-mode').value === 'manual'
+    ? manualScreenPosition(dialogInput('new-screen-x').value, dialogInput('new-screen-y').value)
+    : nextScreenPosition(currentProject().screens)
+  return {
+    draft, snapshot: built.snapshot, position, name,
+    palette: element<HTMLSelectElement>('new-screen-palette').value as ChartPalette,
+    color: dialogInput('new-screen-transparent').checked ? 'transparent' : dialogInput('new-screen-color').value,
+  }
+}
+
+function updateCreationPreview(): void {
+  if (!screenDialog.open) return
+  const advanced = element<HTMLSelectElement>('new-screen-geometry-mode').value === 'advanced'
+  element<HTMLElement>('new-screen-basic').hidden = advanced
+  element<HTMLElement>('new-screen-advanced').hidden = !advanced
+  dialogInput('new-screen-cabinet-width').disabled = advanced
+  dialogInput('new-screen-cabinet-height').disabled = advanced
+  const manual = element<HTMLSelectElement>('new-screen-position-mode').value === 'manual'
+  element<HTMLElement>('new-screen-manual').hidden = !manual
+  dialogInput('new-screen-x').disabled = !manual
+  dialogInput('new-screen-y').disabled = !manual
+  dialogInput('new-screen-transparent').disabled = element<HTMLSelectElement>('new-screen-palette').value !== 'screen-color'
+  dialogInput('new-screen-color').disabled = dialogInput('new-screen-transparent').checked || dialogInput('new-screen-transparent').disabled
+  try {
+    const details = creationDetails()
+    const { snapshot, position, name, palette, color } = details
+    const bounds = { x: position.x, y: position.y,
+      width: snapshot.screen.resolution.width, height: snapshot.screen.resolution.height }
+    const scene = {
+      ...buildV2TestScene(documentController.session.project),
+      bounds,
+      screens: [{ id: 'creation-preview', name, bounds }],
+      cabinets: snapshot.cabinets.map(cabinet => ({
+        id: cabinet.id, screen: 'creation-preview', logicalOrder: cabinet.index + 1,
+        bounds: {
+          x: position.x + cabinet.column * snapshot.grid.cabinetWidth,
+          y: position.y + cabinet.row * snapshot.grid.cabinetHeight,
+          width: snapshot.grid.cabinetWidth, height: snapshot.grid.cabinetHeight,
+        },
+        hardware: null,
+      })),
+      modules: [], signalPaths: [],
+    }
+    const settings = chartSettings()
+    const style = { ...screenChartStyle(settings, 'creation-preview'), palette, fill: color }
+    const frame = buildCompositionChartFrame(scene, { kind: 'screen', target: 'creation-preview' }, {
+      ...settings, frameMode: 'fit', background: 'transparent', logoText: '', logo: null,
+      screenStyles: { 'creation-preview': style },
+    })
+    creationPreview = { frame, bounds }
+    element<HTMLElement>('new-screen-resolution').textContent =
+      `${snapshot.grid.columns} × ${snapshot.grid.rows} cabinets · ${bounds.width} × ${bounds.height} px · ${snapshot.pixelCount.toLocaleString('en-US')} pixels`
+    const screens = currentProject().screens
+    const left = Math.min(bounds.x, ...screens.map(screen => screen.x))
+    const top = Math.min(bounds.y, ...screens.map(screen => screen.y))
+    const right = Math.max(bounds.x + bounds.width, ...screens.map(screen => screen.x + screenWidth(screen)))
+    const bottom = Math.max(bounds.y + bounds.height, ...screens.map(screen => screen.y + screenHeight(screen)))
+    const viewportRect = viewport.getBoundingClientRect()
+    const dialogRect = screenDialog.getBoundingClientRect()
+    const previewWidth = Math.max(200, Math.min(viewport.clientWidth, dialogRect.left - viewportRect.left - 16))
+    camera = fitCamera({ left, top, right, bottom, width: right - left, height: bottom - top }, previewWidth, viewport.clientHeight)
+  } catch (error) {
+    creationPreview = null
+    element<HTMLElement>('new-screen-resolution').textContent = error instanceof Error ? error.message : 'Invalid Screen geometry.'
+  }
+  draw()
+}
+
 function openScreenDialog(): void {
-  const previous = currentProject().screens[currentProject().screens.length - 1]
+  creationCamera = camera
   dialogInput('new-screen-name').value = `Screen ${currentProject().screens.length + 1}`
-  dialogInput('new-screen-x').value = String(previous ? previous.x + 100 : 0)
-  dialogInput('new-screen-y').value = String(previous ? previous.y + 100 : 0)
+  dialogInput('new-screen-x').value = '0'
+  dialogInput('new-screen-y').value = '0'
   dialogInput('new-screen-columns').value = initialDraft.columns
   dialogInput('new-screen-rows').value = initialDraft.rows
-  dialogInput('new-screen-module-columns').value = initialDraft.moduleColumns
-  dialogInput('new-screen-module-rows').value = initialDraft.moduleRows
-  dialogInput('new-screen-module-width').value = initialDraft.modulePixelWidth
-  dialogInput('new-screen-module-height').value = initialDraft.modulePixelHeight
+  dialogInput('new-screen-cabinet-width').value = '128'
+  dialogInput('new-screen-cabinet-height').value = '128'
+  dialogInput('new-screen-module-columns').value = '1'
+  dialogInput('new-screen-module-rows').value = '1'
+  dialogInput('new-screen-module-width').value = '128'
+  dialogInput('new-screen-module-height').value = '128'
+  element<HTMLSelectElement>('new-screen-geometry-mode').value = 'basic'
+  element<HTMLSelectElement>('new-screen-position-mode').value = 'auto'
+  element<HTMLSelectElement>('new-screen-palette').value = 'screen-color'
+  dialogInput('new-screen-color').value = '#284a68'
+  dialogInput('new-screen-transparent').checked = false
+  refreshScreenPresets()
   screenFormError.hidden = true
   screenFormError.textContent = ''
   screenDialog.showModal()
+  updateCreationPreview()
   dialogInput('new-screen-name').select()
 }
 
 addScreenButton.addEventListener('click', openScreenDialog)
 emptyAddScreenButton.addEventListener('click', openScreenDialog)
 element<HTMLButtonElement>('screen-cancel').addEventListener('click', () => screenDialog.close())
+element<HTMLSelectElement>('new-screen-preset').addEventListener('change', applyCreationPreset)
+element<HTMLButtonElement>('new-screen-preset-delete').addEventListener('click', () => {
+  const preset = selectedCreationPreset()
+  if (!preset) return
+  try {
+    const next = screenPresets.filter(value => value.name !== preset.name)
+    localStorage.setItem(SCREEN_PRESETS_KEY, JSON.stringify(next))
+    screenPresets = next
+    refreshScreenPresets()
+    updateCreationPreview()
+  } catch (error) {
+    showDocumentError(error, 'Unable to delete Screen preset.')
+  }
+})
+screenForm.addEventListener('input', updateCreationPreview)
+screenForm.addEventListener('change', updateCreationPreview)
+screenDialog.addEventListener('close', () => {
+  creationPreview = null
+  if (creationCamera) camera = creationCamera
+  creationCamera = null
+  draw()
+})
 
 screenForm.addEventListener('submit', event => {
   event.preventDefault()
-  const draft: Draft = {
-    columns: dialogInput('new-screen-columns').value,
-    rows: dialogInput('new-screen-rows').value,
-    moduleColumns: dialogInput('new-screen-module-columns').value,
-    moduleRows: dialogInput('new-screen-module-rows').value,
-    modulePixelWidth: dialogInput('new-screen-module-width').value,
-    modulePixelHeight: dialogInput('new-screen-module-height').value,
-    ordering: { ...initialDraft.ordering },
-  }
   try {
-    applyV2(project => addScreenV2(project, draft, {
-      name: dialogInput('new-screen-name').value,
-      position: {
-        x: Number(dialogInput('new-screen-x').value),
-        y: Number(dialogInput('new-screen-y').value),
+    const { draft, position, name, palette, color } = creationDetails()
+    const preset = selectedCreationPreset()
+    let createdId = ''
+    applyV2AndChartSettings(project => {
+      const next = addScreenV2(project, draft, { name, position })
+      createdId = next.design.screens.at(-1)?.id ?? ''
+      return next
+    }, settings => ({
+      ...settings,
+      screenStyles: {
+        ...settings.screenStyles,
+        [createdId]: { ...screenChartStyle(settings, createdId), ...preset?.drawing, palette, fill: color },
       },
     }))
+    creationCamera = null
+    creationPreview = null
     screenDialog.close()
     finishAddingScreen()
   } catch (error) {
@@ -1360,14 +1890,6 @@ function arrangeSelection(kind: AlignMode | DistributeAxis, distribute: boolean)
     : alignScreens(screens, kind as AlignMode)
   if (applyScreenPositions(positions)) render()
 }
-
-document.querySelectorAll<HTMLButtonElement>('[data-align]').forEach(button => {
-  button.addEventListener('click', () => arrangeSelection(button.dataset['align'] as AlignMode, false))
-})
-
-document.querySelectorAll<HTMLButtonElement>('[data-distribute]').forEach(button => {
-  button.addEventListener('click', () => arrangeSelection(button.dataset['distribute'] as DistributeAxis, true))
-})
 
 snapToggle.addEventListener('click', () => {
   snapEnabled = !snapEnabled
@@ -1442,13 +1964,19 @@ document.querySelectorAll<HTMLButtonElement>('[data-overlay]').forEach(button =>
   })
 })
 
+cleanViewButton.addEventListener('click', () => {
+  cleanView = !cleanView
+  renderStatus()
+  draw()
+})
+
 renameScreenButton.addEventListener('click', focusScreenName)
 
 duplicateScreenButton.addEventListener('click', () => {
   const sourceIds = [...selectedScreenIds]
   if (sourceIds.length === 0) return
   const duplicates: string[] = []
-  applyV2(original => {
+  applyV2AndChartSettings(original => {
     let next = original
     for (const screenId of sourceIds) {
       next = duplicateScreenV2(next, screenId)
@@ -1456,7 +1984,10 @@ duplicateScreenButton.addEventListener('click', () => {
       if (fresh) duplicates.push(fresh.id)
     }
     return next
-  })
+  }, settings => ({ ...settings, screenStyles: {
+    ...settings.screenStyles,
+    ...Object.fromEntries(duplicates.map((id, index) => [id, screenChartStyle(settings, sourceIds[index]!)])),
+  } }))
   selectedScreenIds = duplicates
   activeScreenId = duplicates[duplicates.length - 1] ?? null
   selection = duplicates.length === 1 ? { type: 'screen', id: duplicates[0]! } : null
@@ -1467,7 +1998,11 @@ duplicateScreenButton.addEventListener('click', () => {
 function deleteSelection(): void {
   if (selectedScreenIds.length === 0) return
   try {
-    applyV2(project => deleteScreensV2(project, selectedScreenIds))
+    applyV2AndChartSettings(project => deleteScreensV2(project, selectedScreenIds), settings => ({
+      ...settings,
+      screenStyles: Object.fromEntries(Object.entries(settings.screenStyles).filter(([id]) => !selectedScreenIds.includes(id))),
+      screenColors: Object.fromEntries(Object.entries(settings.screenColors).filter(([id]) => !selectedScreenIds.includes(id))),
+    }))
   } catch (error) {
     showDocumentError(error, 'Unable to delete the selected Screens.')
     return
@@ -1555,6 +2090,7 @@ hardwareWorkspace = createHardwareWorkspace({
 
 testWorkspace = createTestWorkspace({
   getProjectV2: () => documentController.session.project,
+  getChartSettings: chartSettings,
   onFrameChanged: snapshot => liveOutputController?.frameChanged(snapshot),
   getOutputOverlays: () => liveOutputController?.overlays() ?? [],
 })
@@ -1575,6 +2111,7 @@ liveOutputController = createLiveOutputController({
 liveOutputController.frameChanged(testWorkspace.snapshot())
 exportWorkspace = createExportWorkspace({
   getProjectV2: () => documentController.session.project,
+  getChartSettings: chartSettings,
   getTestSnapshot: () => testWorkspace!.snapshot(),
   getSelectedScreenId: () => selectedScreenIds[0] ?? activeScreenId,
   showError: showDocumentError,
@@ -1647,7 +2184,6 @@ outputMappingModeButton.addEventListener('click', () => setAppMode('output-mappi
 hardwareModeButton.addEventListener('click', () => setAppMode('hardware'))
 testModeButton.addEventListener('click', () => setAppMode('test'))
 exportModeButton.addEventListener('click', () => setAppMode('export'))
-
 function isNativeTextEditingTarget(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) return false
   return target.closest('input, select, textarea') !== null ||
@@ -1731,7 +2267,7 @@ window.addEventListener('keydown', event => {
 })
 
 function fitOnFirstPaint(): void {
-  const { width, height } = canvas.getBoundingClientRect()
+  const { clientWidth: width, clientHeight: height } = viewport
   if (width > 0 && height > 0) {
     camera = fitCamera(projectBounds(currentProject()), width, height)
     draw()
@@ -1776,7 +2312,9 @@ const hook: LedmapHook = {
     direction: s.grid.ordering.direction,
     snake: s.grid.ordering.snake,
     nextCabinetSerial: s.nextCabinetSerial,
-    cabinets: s.cabinets.map(c => ({ id: c.id, index: c.index, column: c.column, row: c.row })),
+    cabinets: s.cabinets.map(c => ({ id: c.id, label: cabinetDisplayLabel(
+      screenChartStyle(chartSettings(), s.screen.id).cabinetLabelMode ?? 'row-coordinate',
+      s.grid.columns, s.grid.rows, c), index: c.index, column: c.column, row: c.row })),
     order: s.cabinets.map(c => c.index + 1),
   })),
   bounds: () => projectBounds(currentProject()),

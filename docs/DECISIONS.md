@@ -511,3 +511,13 @@ Final Hardware Remap answers:
 - **Export:** A separate Export control writes deterministic preset XmlState with virtual devices, rectangular slices and identity Warper/Homography. It uses the current Composition PNG frame, preserves mappingOrder and refuses unsupported transforms/masks, clipping and incomplete orders. Existing reference XML/CSV remain available. Native import UI with binding choices is deferred to the product UI stage.
 - **Evidence:** Pinned MIT UnMapper reader and real Arena 7.27.0 revision 14395 fixtures, plus pixel-peeker writer/generated fixture, support the tested sample structure. Chromium independently parses generated smoke XML. Loading LedMAP output in Arena has not been tested and is explicitly labelled unverified.
 - **Persistence:** No project schema change or XML/derived state in .ledmap; current v3–v5 regression applies. Removing native export loses no intent. MIT adaptations and fixture sanitization are recorded in the source audit with complete notices; B.L.I.N.K material is excluded.
+
+## ADR-031: Explicit, previewed native Resolume import UI
+
+- **Date:** 2026-10-06.
+- **Status:** Accepted for implementation by the user's ordered P1 import-UI instruction.
+- **Contract:** [LEDMAP-RESOLUME-IMPORT-UI-001](specs/LEDMAP-RESOLUME-IMPORT-UI-001.md), baseline merged P0-3 PR #18.
+- **Flow:** Output Mapping opens a local XML inspector. Every source slice starts with an empty binding to an existing Screen. The operator selects the Composition raster frame and provides any unknown output dimensions. Original corners, control lattice, enabled state and diagnostics are shown without inferring Cabinet or Hardware intent.
+- **Preview:** File reads and all edits leave the project/history unchanged. Explicit preview resolves the canonical P0-3 import, reports added output intent and Screen-local crops. Editing settings or changing document identity/revision invalidates it. Apply checks the stamp, recomputes and verifies the reviewed output intent before publishing one undoable transaction.
+- **Runtime:** Strict UTF-8 and existing bounded parser, selected File only, no new IPC/network/dependency. Dialog and parser are dynamically imported on demand. Late selections/closed-dialog reads cannot publish inspection or proposals. Canvas buffers stay at 720×240 and the lattice walk is linear in control points.
+- **Compatibility:** Existing v3–v5 data and export/edit flows remain valid. No source XML, binding/session/preview or derived coordinates are persisted. Existing audited fixtures/notices are reused. Live Arena verification is skipped at the user's explicit instruction, so compatibility remains labelled unverified. This closes the narrow P1-1 flow only.

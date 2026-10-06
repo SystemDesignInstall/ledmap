@@ -36,7 +36,7 @@ import type { TestFrame } from '../shared/test-engine.js'
 import { createLiveOutputController, type LiveOutputController } from './live-output.js'
 import { createExportWorkspace, type ExportWorkspace } from './export-workspace.js'
 import { selectCompositionGeometry, type Direction, type Numbering } from '@ledmap/core'
-import { chartSettingsFromExtensions, screenChartStyle, withChartSettings, type ChartSettings, type ChartPalette, type ChartLabels, type ScreenChartStyle } from '../shared/chart-settings.js'
+import { chartBounds, chartSettingsFromExtensions, screenChartStyle, withChartSettings, type ChartSettings, type ChartPalette, type ChartLabels, type ScreenChartStyle } from '../shared/chart-settings.js'
 import { cabinetDisplayLabel, duplicateCabinetLabel, physicalCabinetLabel, type CabinetLabelMode } from '../shared/cabinet-labels.js'
 
 interface LedmapHook {
@@ -2072,6 +2072,8 @@ mappingWorkspace = createMappingWorkspace({
 
 outputMappingWorkspace = createOutputMappingWorkspace({
   getProject: () => documentController.session.project,
+  getDocumentStamp: () => ({ documentId: documentController.session.documentId, revision: documentController.session.revision }),
+  getCompositionFrame: () => chartBounds(testWorkspace!.snapshot().scene, chartSettings()),
   runCommand: (command, groupId) => applyV2(command, groupId),
   beginHistoryGroup: () => documentController.beginHistoryGroup(),
   endHistoryGroup: groupId => finishHistoryGroup(groupId),

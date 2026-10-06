@@ -1,7 +1,7 @@
 import {
   createMediaOutputPixelResolver, inspectMediaOutputMapping, pointInPolygon, resolveMediaOutputPixel,
   resolveScreenPixelToOutput,
-  type LedMapProjectV2, type MediaOutputMappingInspection,
+  type LedMapProjectV2, type MediaOutputMappingInspection, type PixelRect,
 } from '@ledmap/core'
 import {
   addMediaOutputV2, addOutputMappingV2, addOutputMaskPointV2, deleteMediaOutputV2, deleteOutputMappingV2,
@@ -13,9 +13,12 @@ import {
   containsPoint, fitCamera, hitResizeHandle, snapMove, snapResize, worldFromScreen,
   zoomAt, type EditorRect, type ResizeHandle, type ViewCamera,
 } from './rect-editor.js'
+import type { ResolumeDocumentStamp } from '../shared/resolume-import-session.js'
 
 interface Options {
   readonly getProject: () => LedMapProjectV2
+  readonly getDocumentStamp: () => ResolumeDocumentStamp
+  readonly getCompositionFrame: () => PixelRect
   readonly runCommand: (command: (project: LedMapProjectV2) => LedMapProjectV2, groupId?: number) => void
   readonly beginHistoryGroup: () => number
   readonly endHistoryGroup: (groupId: number) => void
@@ -171,6 +174,28 @@ export function createOutputMappingWorkspace(options: Options): OutputMappingWor
   const cameras = new Map<string, ViewCamera>()
   let gesture: Gesture | null = null
   let spaceDown = false
+  let nativeImport: ReturnType<typeof import('./resolume-import-workspace.js')['createResolumeImportWorkspace']> | null = null
+  let importRequest = 0
+  const importButton = element<HTMLButtonElement>('resolume-import-open')
+  importButton.addEventListener('click', () => {
+    finishGesture()
+    const request = ++importRequest
+    importButton.disabled = true
+    void (async () => {
+      try {
+        const module = await import('./resolume-import-workspace.js')
+        if (request !== importRequest || !active) return
+        nativeImport ??= module.createResolumeImportWorkspace({ ...options, finishGesture,
+          runCommand: command => { options.runCommand(command); render() },
+        })
+        nativeImport.open()
+      } catch (error) {
+        if (request === importRequest) options.showError(error, 'Unable to open Arena XML import.')
+      } finally {
+        if (request === importRequest) importButton.disabled = false
+      }
+    })()
+  })
 
   function project(): LedMapProjectV2 { return options.getProject() }
 
@@ -863,6 +888,7 @@ export function createOutputMappingWorkspace(options: Options): OutputMappingWor
   }
   ;(window as Window & { __ledmapOutputMapping?: typeof hook }).__ledmapOutputMapping = hook
 
-  return { activate: () => { active = true; render() }, deactivate: () => { finishGesture(); active = false },
-    finishGesture, projectChanged: () => { if (active) render() } }
+  return { activate: () => { active = true; render() }, deactivate: () => {
+    finishGesture(); importRequest += 1; importButton.disabled = false; nativeImport?.close(); active = false
+  }, finishGesture, projectChanged: () => { nativeImport?.projectChanged(); if (active) render() } }
 }

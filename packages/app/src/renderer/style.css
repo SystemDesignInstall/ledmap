@@ -167,6 +167,21 @@ dialog::backdrop { background: #06090dc7; backdrop-filter: blur(2px); }
 .screen-preset-save { display: flex; gap: 6px; margin-top: 10px; }
 .screen-preset-save input { min-width: 0; flex: 1; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 7px; margin-top: 16px; }
+.resolume-import-dialog { width: min(980px, calc(100vw - 40px)); max-width: none; }
+.resolume-import-body { padding: 20px; overflow-wrap: anywhere; }
+.resolume-import-body p { font-size: 11px; overflow-wrap: anywhere; }
+.resolume-import-frame { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.resolume-import-bindings { max-height: 210px; overflow: auto; margin: 12px 0; padding-right: 8px; }
+.resolume-import-output h3 { font-size: 12px; margin: 12px 0 6px; }
+.resolume-import-binding { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.resolume-import-binding details { min-width: 0; font-size: 11px; }
+.resolume-import-geometry { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.resolume-import-geometry section { min-width: 0; }
+.resolume-import-geometry h3 { font-size: 11px; margin: 4px 0 8px; }
+.resolume-import-geometry canvas { position: static; inset: auto; display: block; width: 100%; height: auto; margin-top: 8px; border: 1px solid var(--line); }
+.resolume-import-result, .resolume-import-diagnostics { max-height: 110px; overflow: auto; }
+.resolume-import-body .dialog-actions { position: sticky; bottom: 0; background: #26292b; padding: 12px 0; }
+@media (max-width: 700px) { .resolume-import-frame, .resolume-import-geometry, .resolume-import-binding { grid-template-columns: 1fr; } }
 .form-error { margin: 12px 0 0; color: #ef9aa1; font-size: 11px; }
 
 .mapping-workspace { grid-template-columns: 240px minmax(0, 1fr) 310px; }

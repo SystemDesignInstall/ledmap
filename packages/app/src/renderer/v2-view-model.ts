@@ -1,5 +1,6 @@
 import {
   cabinetOrder,
+  selectCompositionGeometry,
   type CabinetEngineConfig,
   type Direction,
   type GridPosition,
@@ -14,6 +15,7 @@ import { gridPixelSize, maxPreviewColumns, maxPreviewRows } from './state.js'
 export interface SourceCabinet extends GridPosition {
   readonly sourceId: string
   readonly id: string
+  readonly label: string
   readonly index: number
 }
 
@@ -117,7 +119,7 @@ function screenView(project: LedMapProjectV2, screen: ProjectScreen): ScreenView
   const path = cabinetOrder(config)
   const cabinets = sourceCabinets.map(cabinet => {
     const id = cabinetLabel(screen.id, cabinet.id)
-    return Object.freeze({ sourceId: cabinet.id, id, column: cabinet.column, row: cabinet.row,
+    return Object.freeze({ sourceId: cabinet.id, id, label: cabinet.label, column: cabinet.column, row: cabinet.row,
       index: path.findIndex(cell => cell.column === cabinet.column && cell.row === cabinet.row) })
   })
   const modulesPerCabinet = safeProduct('Modules per cabinet', config.moduleColumns, config.moduleRows)
@@ -142,18 +144,9 @@ export function maxColumnsForRows(screen: ScreenView, rows: number): number { re
 export function maxRowsForColumns(screen: ScreenView, columns: number): number { return maxPreviewRows(columns, screen.modulesPerCabinet) }
 
 export function projectBounds(project: Project): Bounds {
-  if (project.screens.length === 0) return { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 }
-  let left = Infinity
-  let top = Infinity
-  let right = -Infinity
-  let bottom = -Infinity
-  for (const screen of project.screens) {
-    left = Math.min(left, screen.x)
-    top = Math.min(top, screen.y)
-    right = Math.max(right, screen.x + screenWidth(screen))
-    bottom = Math.max(bottom, screen.y + screenHeight(screen))
-  }
-  return { left, top, right, bottom, width: right - left, height: bottom - top }
+  const geometry = selectCompositionGeometry(project.model)
+  if (!geometry.bounds) return { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 }
+  return { ...geometry.bounds }
 }
 
 export function screenBounds(screen: ScreenView): Bounds {

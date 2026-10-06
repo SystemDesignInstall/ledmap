@@ -28,7 +28,9 @@ function parity(legacy: Project, v2: LedMapProjectV2): void {
   expect(projectV2WorkspaceReadModel(canonical).screens.map(view => ({
     id: view.screen.id, name: view.screen.name, resolution: view.screen.resolution,
     columns: view.grid.columns, rows: view.grid.rows, ordering: view.grid.ordering,
-    config: view.config, x: view.x, y: view.y, cabinets: view.cabinets,
+    config: view.config, x: view.x, y: view.y, cabinets: view.cabinets.map(cabinet => ({
+      sourceId: cabinet.sourceId, id: cabinet.id, index: cabinet.index, column: cabinet.column, row: cabinet.row,
+    })),
     nextCabinetSerial: view.nextCabinetSerial, path: view.path,
     modulesPerCabinet: view.modulesPerCabinet, totalModules: view.totalModules, pixelCount: view.pixelCount,
   }))).toEqual(legacy.screens.map(view => ({

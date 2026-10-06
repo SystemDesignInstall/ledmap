@@ -5,6 +5,7 @@ import {
 import { buildSnapshot, initialDraft, type CabinetSeed, type Draft, type Snapshot } from './state.js'
 import type { AddScreenOptions, ScreenCabinetConfigPatch } from './v2-view-model.js'
 import type { MappingRegionPatch } from './v2-mapping-read.js'
+import { duplicateCabinetLabel, physicalCabinetLabel, type CabinetLabelMode } from '../shared/cabinet-labels.js'
 
 function screenOf(project: LedMapProjectV2, screenId: string) {
   const screen = project.design.screens.find(value => value.id === screenId)
@@ -183,9 +184,19 @@ export function addScreenV2(project: LedMapProjectV2, draft: Draft = initialDraf
 export function duplicateScreenV2(project: LedMapProjectV2, screenId: string): LedMapProjectV2 {
   const screen = screenOf(project, screenId)
   const placement = placementOf(project, screenId)
-  return addScreenV2(project, draftFromGrid(project, screenId), {
+  const duplicated = addScreenV2(project, draftFromGrid(project, screenId), {
     name: `${screen.name} Copy`, position: { x: placement.x + 32, y: placement.y + 32 },
   })
+  const sourceGrid = gridOf(project, screenId)
+  const targetGrid = gridOf(duplicated, duplicated.design.screens.at(-1)!.id)
+  const sourceLabels = new Map(project.design.cabinets.filter(cabinet =>
+    cabinet.gridId === sourceGrid.id && cabinet.label.trim().length > 0 && cabinet.label !== physicalCabinetLabel(cabinet.id))
+    .map(cabinet => [`${cabinet.column},${cabinet.row}`, cabinet.label] as const))
+  return { ...duplicated, design: { ...duplicated.design,
+    cabinets: duplicated.design.cabinets.map(cabinet => cabinet.gridId === targetGrid.id
+      ? { ...cabinet, label: sourceLabels.get(`${cabinet.column},${cabinet.row}`) ?? cabinet.label }
+      : cabinet),
+  } }
 }
 
 export function renameScreenV2(project: LedMapProjectV2, screenId: string, name: string): LedMapProjectV2 {
@@ -196,6 +207,23 @@ export function renameScreenV2(project: LedMapProjectV2, screenId: string, name:
   return { ...project, design: { ...project.design,
     screens: project.design.screens.map(value => value.id === screenId ? { ...value, name: normalized } : value),
   } }
+}
+
+export function setCabinetLabelV2(
+  project: LedMapProjectV2, cabinetId: string, label: string | null, mode: CabinetLabelMode,
+): LedMapProjectV2 {
+  const cabinet = project.design.cabinets.find(value => value.id === cabinetId)
+  if (!cabinet) throw new Error(`Unknown Cabinet: ${cabinetId}`)
+  const grid = project.design.cabinetGrids.find(value => value.id === cabinet.gridId)
+  if (!grid) throw new Error(`Cabinet ${cabinetId} has no Cabinet Grid.`)
+  const normalized = label?.trim() ?? physicalCabinetLabel(cabinet.id)
+  if (!normalized || normalized.length > 32) throw new Error('Cabinet label must contain 1 to 32 characters.')
+  const cabinets = project.design.cabinets.map(value => value.id === cabinetId ? { ...value, label: normalized } : value)
+  const duplicate = duplicateCabinetLabel(mode, grid.columns, grid.rows,
+    cabinets.filter(value => value.gridId === grid.id))
+  if (duplicate) throw new Error(`Cabinet label ${duplicate} is already used on this Screen.`)
+  if (cabinet.label === normalized) return project
+  return { ...project, design: { ...project.design, cabinets } }
 }
 
 export function setScreenPositionsV2(

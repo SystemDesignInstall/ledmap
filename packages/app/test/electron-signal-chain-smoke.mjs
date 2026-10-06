@@ -66,6 +66,7 @@ try {
   await page.locator('#add-screen').click()
   await page.locator('#new-screen-columns').fill('3')
   await page.locator('#new-screen-rows').fill('1')
+  await page.locator('#new-screen-geometry-mode').selectOption('advanced')
   await page.locator('#new-screen-module-width').fill('8')
   await page.locator('#new-screen-module-height').fill('8')
   await page.locator('#screen-form button[type="submit"]').click()

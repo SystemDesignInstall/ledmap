@@ -5,12 +5,15 @@ import {
 import { buildPngExportPlan, type PngExportMode } from '../shared/png-export.js'
 import { TEST_PATTERN_DEFINITIONS, type TestPatternGroup, type TestPatternId } from '../shared/test-engine.js'
 import { buildHippoCsv, buildResolumeXml } from '../shared/media-output-adapters.js'
+import { renderFrameSvg } from '../shared/svg-export.js'
 import { renderPngJob } from './export-image.js'
 import type { LedMapProjectV2 } from '@ledmap/core'
 import type { TestWorkspaceSnapshot } from './test-workspace.js'
+import { defaultChartSettings, type ChartSettings } from '../shared/chart-settings.js'
 
 interface ExportWorkspaceOptions {
   readonly getProjectV2: () => LedMapProjectV2
+  readonly getChartSettings?: () => ChartSettings
   readonly getTestSnapshot: () => TestWorkspaceSnapshot
   readonly getSelectedScreenId: () => string | null
   readonly showError: (error: unknown, fallback: string) => void
@@ -21,6 +24,7 @@ export interface ExportWorkspace {
   activate(): void
   deactivate(): void
   projectChanged(): void
+  selectPattern(pattern: TestPatternId): void
 }
 
 interface ExportHook {
@@ -64,6 +68,7 @@ export function createExportWorkspace(options: ExportWorkspaceOptions): ExportWo
   const pngScreenSelect = element<HTMLSelectElement>('export-png-screen')
   const pngScreenField = element<HTMLLabelElement>('export-png-screen-field')
   const pngButton = element<HTMLButtonElement>('export-png-run')
+  const svgButton = element<HTMLButtonElement>('export-svg-run')
   const jsonButton = element<HTMLButtonElement>('export-json-run')
   const csvButton = element<HTMLButtonElement>('export-csv-run')
   const resolumeButton = element<HTMLButtonElement>('export-resolume-run')
@@ -130,6 +135,7 @@ export function createExportWorkspace(options: ExportWorkspaceOptions): ExportWo
       walkPixel: snapshot.frame.walkPixel,
       mode: pngMode,
       screenId: pngScreenId,
+      chartSettings: options.getChartSettings?.() ?? defaultChartSettings,
     })
   }
 
@@ -174,6 +180,7 @@ export function createExportWorkspace(options: ExportWorkspaceOptions): ExportWo
       ? `${formatCount(report.pixelCount)} deterministic rows. JSON and CSV use identical traversal and project-wide port-local dataIndex values.`
       : 'Resolve the blocked preflight stages before exporting Generic Mapping files.'
     pngButton.disabled = busy || !pngPlan.ready
+    svgButton.disabled = busy || !pngPlan.ready || (pattern !== 'composition-chart' && pattern !== 'composition-mask')
     jsonButton.disabled = busy || !report.ready
     csvButton.disabled = busy || !report.ready
     resultElement.textContent = lastResult
@@ -197,6 +204,32 @@ export function createExportWorkspace(options: ExportWorkspaceOptions): ExportWo
     } catch (error) {
       lastResult = error instanceof Error ? error.message : 'Unable to export PNG.'
       options.showError(error, 'Unable to export PNG.')
+    } finally {
+      busy = false
+      render()
+    }
+  }
+
+  async function exportSvg(): Promise<void> {
+    if (pattern !== 'composition-chart' && pattern !== 'composition-mask') return
+    const plan = currentPngPlan()
+    if (!plan.ready) return
+    busy = true
+    lastResult = 'Writing Screen drawing SVG…'
+    render()
+    options.clearError()
+    try {
+      const files = plan.jobs.map(job => ({
+        name: job.name.replace(/\.png$/, '.svg'),
+        bytes: new TextEncoder().encode(renderFrameSvg(job.frame, job.bounds)),
+      }))
+      const result = await window.ledmapDesktop.writeExportFiles({
+        mode: files.length === 1 ? 'single' : 'batch', files,
+      })
+      lastResult = result.canceled ? 'SVG export canceled.' : `Exported ${result.filePaths.length} SVG file${result.filePaths.length === 1 ? '' : 's'}.`
+    } catch (error) {
+      lastResult = error instanceof Error ? error.message : 'Unable to export SVG.'
+      options.showError(error, 'Unable to export SVG.')
     } finally {
       busy = false
       render()
@@ -232,7 +265,7 @@ export function createExportWorkspace(options: ExportWorkspaceOptions): ExportWo
 
   async function exportMediaServer(kind: 'resolume' | 'hippo'): Promise<void> {
     busy = true
-    lastResult = kind === 'resolume' ? 'Writing Resolume XML…' : 'Writing Hippo CSV…'
+    lastResult = kind === 'resolume' ? 'Writing slice XML…' : 'Writing slice CSV…'
     render()
     options.clearError()
     try {
@@ -278,6 +311,7 @@ export function createExportWorkspace(options: ExportWorkspaceOptions): ExportWo
     render()
   })
   pngButton.addEventListener('click', () => { void exportPng() })
+  svgButton.addEventListener('click', () => { void exportSvg() })
   jsonButton.addEventListener('click', () => { void exportMapping('json') })
   csvButton.addEventListener('click', () => { void exportMapping('csv') })
   resolumeButton.addEventListener('click', () => { void exportMediaServer('resolume') })
@@ -307,6 +341,7 @@ export function createExportWorkspace(options: ExportWorkspaceOptions): ExportWo
   ;(window as Window & { __ledmapExport?: ExportHook }).__ledmapExport = hook
 
   return {
+    selectPattern: next => { pattern = next; patternCustomized = true; render() },
     activate: () => {
       active = true
       if (!patternCustomized) pattern = options.getTestSnapshot().frame.pattern

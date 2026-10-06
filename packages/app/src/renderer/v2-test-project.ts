@@ -76,7 +76,7 @@ export function buildV2TestScene(project: LedMapProjectV2): TestScene {
       const port = receiver ? ports.get(receiver.portId) : undefined
       const processor = port ? processors.get(port.processorId) : undefined
       cabinets.push({
-        id: cabinet.id, screen: view.screen.id,
+        id: cabinet.id, label: cabinet.label, screen: view.screen.id,
         logicalOrder: path.findIndex(cell => cell.column === cabinet.column && cell.row === cabinet.row) + 1,
         bounds: {
           x: view.x + cabinet.column * cabinet.pixelWidth,

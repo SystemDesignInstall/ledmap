@@ -47,21 +47,12 @@
           <button id="guide-add-v" type="button" title="Add vertical guide at viewport center">+ V-Guide</button>
           <button id="guide-add-h" type="button" title="Add horizontal guide at viewport center">+ H-Guide</button>
         </div>
-        <div class="tool-group alignment-tools" aria-label="Align and distribute">
-          <button type="button" data-align="left" title="Align left">L</button>
-          <button type="button" data-align="horizontal-center" title="Align horizontal centers">Cˣ</button>
-          <button type="button" data-align="right" title="Align right">R</button>
-          <button type="button" data-align="top" title="Align top">T</button>
-          <button type="button" data-align="vertical-center" title="Align vertical centers">Cʸ</button>
-          <button type="button" data-align="bottom" title="Align bottom">B</button>
-          <button type="button" data-distribute="horizontal" title="Distribute horizontally">Dˣ</button>
-          <button type="button" data-distribute="vertical" title="Distribute vertically">Dʸ</button>
-        </div>
         <div class="tool-group overlay-tools" aria-label="Canvas overlays">
           <span class="tool-label">Overlays</span>
           <button type="button" data-overlay="cabinets" aria-pressed="true">Cabinets</button>
           <button type="button" data-overlay="modules" aria-pressed="false">Modules</button>
           <button type="button" data-overlay="coordinates" aria-pressed="true">Coordinates</button>
+          <button id="clean-view" type="button" aria-pressed="false" title="Hide editor guides and overlays">Clean View</button>
         </div>
         <button id="toggle-mode" class="focus-toggle" type="button">Focus Screen</button>
       </div>
@@ -150,6 +141,8 @@
         <div id="test-address-controls" class="tool-group test-address-tools" hidden>
           <button id="test-address-previous" type="button">Previous</button>
           <button id="test-address-next" type="button">Next</button>
+          <button id="test-address-play" type="button" aria-pressed="false">Play walk</button>
+          <select id="test-address-speed" aria-label="Address Walk speed"><option value="500">2 px/s</option><option value="125">8 px/s</option><option value="50">20 px/s</option></select>
           <label class="toolbar-field">Direct index <input id="test-address-index" type="number" min="0" step="1" value="0"></label>
           <button id="test-address-go" type="button">Go</button>
         </div>
@@ -323,7 +316,7 @@
         <div class="panel-title-row">
           <div><span class="eyebrow">DELIVERABLES</span><h1>Export Center</h1></div>
         </div>
-        <div class="export-type active"><strong>PNG Test Pattern</strong><span>Pixel-exact TestFrame output</span></div>
+        <div class="export-type active"><strong>PNG / SVG Drawings</strong><span>Screen drawings, mask and diagnostics at actual pixel resolution</span></div>
         <div class="export-type"><strong>Generic Mapping JSON</strong><span>Versioned full pixel trace</span></div>
         <div class="export-type"><strong>Generic Mapping CSV</strong><span>Fixed semantic columns</span></div>
         <div class="export-type disabled" aria-disabled="true"><strong>Vendor Hardware File</strong><span>No vendor Address Encoder is configured/supported.</span></div>
@@ -337,8 +330,8 @@
         <div class="export-scroll">
           <div id="export-result" class="export-result" role="status">No export has run in this session.</div>
           <section class="export-card">
-            <div class="export-card-heading"><div><span class="eyebrow">TEST OUTPUT</span><h3>PNG Test Pattern</h3></div><span class="format-badge">PNG</span></div>
-            <p>Renders the deterministic TestFrame directly at actual pixel resolution. Editor chrome is never captured.</p>
+            <div class="export-card-heading"><div><span class="eyebrow">COMPOSITION AND TEST OUTPUT</span><h3>PNG Images / Test Patterns</h3></div><span class="format-badge">PNG</span></div>
+            <p>Screen drawings use each Screen's saved settings. Export the whole output canvas, one Screen or all Screens. Every PNG renders at actual pixel resolution.</p>
             <div class="export-form-grid">
               <label>Pattern<select id="export-png-pattern" aria-label="Export PNG pattern"></select></label>
               <label>Scope<select id="export-png-scope" aria-label="Export PNG scope">
@@ -350,7 +343,7 @@
               <label id="export-png-screen-field" class="wide">Screen<select id="export-png-screen" aria-label="Export PNG Screen"></select></label>
             </div>
             <div id="export-png-diagnostics" class="export-inline-status"></div>
-            <div class="export-actions"><button id="export-png-run" class="primary" type="button">Export PNG</button></div>
+            <div class="export-actions"><button id="export-png-run" class="primary" type="button">Export PNG</button><button id="export-svg-run" type="button">Export drawing SVG</button></div>
           </section>
 
           <section class="export-card">
@@ -372,10 +365,10 @@
 
           <section class="export-card">
             <div class="export-card-heading"><div><span class="eyebrow">MEDIA SERVER</span><h3>Output Slices</h3></div><span class="format-badge">v5</span></div>
-            <p>Every Media Output becomes a screen of slices with input/output rects, orientations, flips and polygon masks.</p>
+            <p>LedMAP slice reference with input/output rects, orientations, flips and polygon masks. Native vendor import compatibility requires verified target files.</p>
             <div class="export-actions">
-              <button id="export-resolume-run" class="primary" type="button">Export Resolume XML</button>
-              <button id="export-hippo-run" type="button">Export Hippo CSV</button>
+              <button id="export-resolume-run" class="primary" type="button">Export slice XML</button>
+              <button id="export-hippo-run" type="button">Export slice CSV</button>
             </div>
           </section>
         </div>
@@ -396,6 +389,7 @@
       <span id="zoom-indicator" class="status-item layout-status">100%</span>
       <span id="selected-count" class="status-item layout-status">0 selected</span>
       <span id="snap-status" class="status-item layout-status">Grid off · Smart on</span>
+      <span id="composition-status" class="status-item layout-status">No composition</span>
       <span id="mapping-cursor-status" class="status-item mapping-status" hidden>Input X 0 · Y 0</span>
       <span id="mapping-zoom-indicator" class="status-item mapping-status" hidden>100%</span>
       <span id="mapping-health-status" class="status-item mapping-status" hidden>Input Canvas not configured</span>
@@ -412,18 +406,33 @@
 
     <dialog id="screen-dialog">
       <form id="screen-form" method="dialog">
-        <div class="dialog-heading"><span class="eyebrow">NEW SCREEN</span><h2>Add Screen</h2><p>Create source-backed Screen and Cabinet Grid geometry.</p></div>
+        <div class="dialog-heading"><span class="eyebrow">COMPOSITION</span><h2>Add Screen</h2><p>Set the cabinet grid and see the result on the canvas before creating it.</p></div>
         <div class="dialog-grid">
+          <div class="dialog-preset-row wide"><label>Saved LED / drawing preset<select id="new-screen-preset"><option value="">Custom settings</option></select></label><button id="new-screen-preset-delete" type="button" disabled>Delete preset</button></div>
           <label class="wide">Name<input id="new-screen-name" name="name" type="text" value="Screen" required /></label>
-          <label>X<input id="new-screen-x" name="x" type="number" min="0" step="1" value="0" required /></label>
-          <label>Y<input id="new-screen-y" name="y" type="number" min="0" step="1" value="0" required /></label>
           <label>Grid columns<input id="new-screen-columns" name="columns" type="number" min="1" step="1" value="4" required /></label>
           <label>Grid rows<input id="new-screen-rows" name="rows" type="number" min="1" step="1" value="3" required /></label>
-          <label>Module columns<input id="new-screen-module-columns" name="moduleColumns" type="number" min="1" step="1" value="1" required /></label>
-          <label>Module rows<input id="new-screen-module-rows" name="moduleRows" type="number" min="1" step="1" value="1" required /></label>
-          <label>Module width, px<input id="new-screen-module-width" name="modulePixelWidth" type="number" min="1" step="1" value="32" required /></label>
-          <label>Module height, px<input id="new-screen-module-height" name="modulePixelHeight" type="number" min="1" step="1" value="32" required /></label>
+          <label class="wide">Geometry mode<select id="new-screen-geometry-mode"><option value="basic">Cabinet size</option><option value="advanced">Module geometry</option></select></label>
+          <div id="new-screen-basic" class="dialog-subgrid wide">
+            <label>Cabinet width, px<input id="new-screen-cabinet-width" type="number" min="1" step="1" value="128" required /></label>
+            <label>Cabinet height, px<input id="new-screen-cabinet-height" type="number" min="1" step="1" value="128" required /></label>
+          </div>
+          <div id="new-screen-advanced" class="dialog-subgrid wide" hidden>
+            <label>Module columns<input id="new-screen-module-columns" name="moduleColumns" type="number" min="1" step="1" value="1" /></label>
+            <label>Module rows<input id="new-screen-module-rows" name="moduleRows" type="number" min="1" step="1" value="1" /></label>
+            <label>Module width, px<input id="new-screen-module-width" name="modulePixelWidth" type="number" min="1" step="1" value="128" /></label>
+            <label>Module height, px<input id="new-screen-module-height" name="modulePixelHeight" type="number" min="1" step="1" value="128" /></label>
+          </div>
+          <label class="wide">Placement<select id="new-screen-position-mode"><option value="auto">After existing screens</option><option value="manual">Set X and Y</option></select></label>
+          <div id="new-screen-manual" class="dialog-subgrid wide" hidden>
+            <label>X<input id="new-screen-x" name="x" type="number" min="0" step="1" value="0" /></label>
+            <label>Y<input id="new-screen-y" name="y" type="number" min="0" step="1" value="0" /></label>
+          </div>
+          <label>Drawing<select id="new-screen-palette"><option value="screen-color">Screen color</option><option value="white-grid">White grid</option><option value="checkerboard">Checkerboard</option><option value="gray-gradient">Gray gradient</option><option value="rgb-bars">RGB bars</option></select></label>
+          <label>Screen color<input id="new-screen-color" type="color" value="#284a68" /></label>
+          <label class="dialog-checkbox wide"><input id="new-screen-transparent" type="checkbox" /> Transparent Screen fill</label>
         </div>
+        <p id="new-screen-resolution" class="screen-resolution" aria-live="polite"></p>
         <p id="screen-form-error" class="form-error" role="alert" hidden></p>
         <div class="dialog-actions">
           <button id="screen-cancel" type="button">Cancel</button>

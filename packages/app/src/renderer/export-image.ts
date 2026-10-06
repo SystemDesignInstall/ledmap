@@ -9,7 +9,7 @@ export async function renderPngJob(job: PngExportJob): Promise<Uint8Array> {
     throw new Error(`PNG ${job.bounds.width}×${job.bounds.height} exceeds the safe renderer limit.`)
   }
   const canvas = document.createElement('canvas')
-  drawTestFrameAtActualPixels(canvas, job.frame, job.bounds)
+  await drawTestFrameAtActualPixels(canvas, job.frame, job.bounds)
   const blob = await new Promise<Blob>((resolve, reject) => {
     canvas.toBlob(value => value ? resolve(value) : reject(new Error('Unable to encode PNG.')), 'image/png')
   })

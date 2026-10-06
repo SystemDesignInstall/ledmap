@@ -10,7 +10,10 @@ describe('direct V2 Test reads', () => {
     const project = convertEditableProjectToV2(legacy.source)
     const oldScene = buildTestScene(legacy)
     const scene = buildV2TestScene(project)
-    expect(scene).toEqual(oldScene)
+    expect({ ...scene, cabinets: scene.cabinets.map(cabinet => ({
+      id: cabinet.id, screen: cabinet.screen, logicalOrder: cabinet.logicalOrder,
+      bounds: cabinet.bounds, hardware: cabinet.hardware,
+    })) }).toEqual(oldScene)
     for (const kind of ['composition', 'screen', 'cabinet', 'module', 'receiver', 'port'] as const) {
       expect(v2TestScopeTargets(scene, kind)).toEqual(testScopeTargets(oldScene, kind))
     }

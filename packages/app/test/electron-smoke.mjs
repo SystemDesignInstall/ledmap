@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
-import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { _electron as electron } from 'playwright'
@@ -20,6 +20,10 @@ const output = fileURLToPath(new URL('../out/smoke/', import.meta.url))
 const projectPath = resolve(output, 'document-lifecycle.ledmap')
 const exportDirectory = resolve(output, 'exports')
 const exportFiles = [
+  'screen-drawings.png',
+  'screen-drawings.svg',
+  'screen-mask.png',
+  'screen-mask.svg',
   'test-checkerboard.png',
   'test-checkerboard-Screen-1-screen-1.png',
   'test-checkerboard-Screen-2-screen-2.png',
@@ -93,10 +97,13 @@ async function addScreen(page) {
   const before = await page.evaluate(() => window.__ledmap.dump().length)
   await page.locator('#add-screen').click()
   await page.locator('#screen-dialog').waitFor({ state: 'visible' })
+  await page.locator('#new-screen-geometry-mode').selectOption('advanced')
   assert.equal(await page.locator('#new-screen-module-columns').inputValue(), '1')
   assert.equal(await page.locator('#new-screen-module-rows').inputValue(), '1')
   await page.locator('#new-screen-module-columns').fill('4')
   await page.locator('#new-screen-module-rows').fill('4')
+  await page.locator('#new-screen-module-width').fill('32')
+  await page.locator('#new-screen-module-height').fill('32')
   await page.locator('#screen-form button[type="submit"]').click()
   await page.waitForFunction(count => window.__ledmap.dump().length === count + 1, before)
 }
@@ -171,8 +178,18 @@ async function csvRowsAt(filePath, indexes) {
 }
 
 async function runExport(page, selector, resultPattern, timeout = 120000) {
+  await page.evaluate(value => {
+    const button = document.querySelector(value)
+    if (!button || button.disabled) throw new Error(`Export button ${value} is unavailable.`)
+    button.dataset.smokeStarted = 'false'
+    const observer = new MutationObserver(() => {
+      button.dataset.smokeStarted = 'true'
+      observer.disconnect()
+    })
+    observer.observe(button, { attributes: true, attributeFilter: ['disabled'] })
+  }, selector)
   await page.locator(selector).click()
-  await page.waitForFunction(value => document.querySelector(value)?.disabled === true, selector)
+  await page.waitForFunction(value => document.querySelector(value)?.dataset.smokeStarted === 'true', selector)
   await page.waitForFunction(({ value, pattern }) => {
     const button = document.querySelector(value)
     return button?.disabled === false && new RegExp(pattern).test(window.__ledmapExport.dump().lastResult)
@@ -197,6 +214,12 @@ try {
   const dump = async () => page.evaluate(() => window.__ledmap.dump())
   const documentState = async () => page.evaluate(() => window.__ledmap.document())
   const windowTitle = async () => running.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.getTitle())
+  const waitForCleanWindowTitle = async () => {
+    const deadline = Date.now() + 5000
+    while (/ \*/.test(await windowTitle()) && Date.now() < deadline) {
+      await new Promise(resolve => setTimeout(resolve, 25))
+    }
+  }
 
   assert.equal((await dump()).length, 0)
   assert.equal(await page.locator('#empty h2').innerText(), 'No screens yet')
@@ -214,15 +237,115 @@ try {
   await page.locator('#layout-mode').click()
 
   await page.locator('#new-project').click()
+  const beforeAuthoring = await documentState()
+  await page.locator('#add-screen').click()
+  assert.match(await page.locator('#new-screen-resolution').innerText(), /512 × 384 px/)
+  assert.equal(await page.locator('#project-canvas').isVisible(), true)
+  const previewPixel = await page.evaluate(() => {
+    const point = window.__ledmap.projectToPx({ x: 32, y: 32 })
+    const canvas = document.querySelector('#project-canvas')
+    const ratio = window.devicePixelRatio || 1
+    return [...canvas.getContext('2d').getImageData(Math.floor(point.x * ratio), Math.floor(point.y * ratio), 1, 1).data]
+  })
+  assert.ok(previewPixel[2] > 55)
+  assert.equal((await dump()).length, 0)
+  assert.deepEqual(await documentState(), beforeAuthoring)
+  await page.screenshot({ path: resolve(output, 'composition-create-preview.png') })
+  await page.locator('#screen-cancel').click()
+  assert.equal((await dump()).length, 0)
+  await page.locator('#add-screen').click()
+  await page.locator('#new-screen-color').fill('#ef1200')
+  await page.locator('#screen-form button[type="submit"]').click()
+  await page.waitForFunction(() => window.__ledmap.dump().length === 1)
+  await page.locator('#add-screen').click()
+  await page.locator('#new-screen-color').fill('#0033ef')
+  await page.locator('#screen-form button[type="submit"]').click()
+  await page.waitForFunction(() => window.__ledmap.dump().length === 2)
+  const authored = await dump()
+  assert.ok(authored[1].x >= authored[0].x + authored[0].width + 64)
+  const authoredColors = await page.evaluate(screens => screens.map(screen => {
+    const point = window.__ledmap.projectToPx({ x: screen.x + 32, y: screen.y + 32 })
+    const canvas = document.querySelector('#project-canvas')
+    const ratio = window.devicePixelRatio || 1
+    return [...canvas.getContext('2d').getImageData(Math.floor(point.x * ratio), Math.floor(point.y * ratio), 1, 1).data]
+  }), authored)
+  assert.deepEqual(authoredColors, [[239, 18, 0, 255], [0, 51, 239, 255]])
+  await page.locator('#undo-project').click()
+  assert.equal((await dump()).length, 1)
+  await page.locator('#redo-project').click()
+  assert.equal((await dump()).length, 2)
+  await page.locator('#project-tree [data-id="screen-2"]').click()
+  await page.locator('button[aria-label="Screen offset marker"]').click()
+  await page.locator('input[aria-label="Screen mask offset X"]').fill('12')
+  await page.locator('input[aria-label="Screen mask offset X"]').blur()
+  await page.locator('input[aria-label="New Screen preset name"]').fill('Touring wall')
+  await page.getByRole('button', { name: 'Save preset' }).click()
+  await page.locator('#add-screen').click()
+  await page.locator('#new-screen-preset').selectOption('Touring wall')
+  assert.equal(await page.locator('#new-screen-geometry-mode').inputValue(), 'advanced')
+  assert.equal(await page.locator('#new-screen-module-width').inputValue(), '128')
+  assert.equal(await page.locator('#new-screen-color').inputValue(), '#0033ef')
+  await page.locator('#new-screen-preset-delete').click()
+  assert.equal(await page.locator('#new-screen-preset option').count(), 4)
+  await page.locator('#screen-cancel').click()
+  await page.locator('#export-mode').click()
+  await page.locator('#export-png-pattern').selectOption('composition-chart')
+  await page.locator('#export-svg-run').click()
+  await page.waitForFunction(() => window.__ledmapExport.dump().lastResult.includes('Exported 1 SVG'))
+  const drawingSvg = await readFile(resolve(exportDirectory, 'screen-drawings.svg'), 'utf8')
+  assert.match(drawingSvg, /fill="#ef1200"/)
+  assert.match(drawingSvg, /fill="#0033ef"/)
+  assert.match(drawingSvg, /X 576 · Y 0/)
+  await page.locator('#export-png-pattern').selectOption('composition-mask')
+  await page.locator('#export-svg-run').click()
+  await page.waitForFunction(() => window.__ledmapExport.dump().lastResult.includes('Exported 1 SVG'))
+  const maskSvg = await readFile(resolve(exportDirectory, 'screen-mask.svg'), 'utf8')
+  assert.match(maskSvg, /x="588" y="0" width="512" height="384" fill="#ffffff"/)
+  await page.locator('#test-mode').click()
+  await page.keyboard.press('2')
+  assert.equal((await page.evaluate(() => window.__ledmapTest.dump())).pattern, 'red')
+  await page.locator('#layout-mode').click()
+  await page.locator('#add-screen').click()
+  await page.locator('#new-screen-preset').selectOption('Half-height cabinet · 128×64')
+  assert.match(await page.locator('#new-screen-resolution').innerText(), /512 × 192 px/)
+  await page.locator('#screen-form button[type="submit"]').click()
+  await page.waitForFunction(() => window.__ledmap.dump().length === 3)
+  assert.equal((await dump())[2].cabinetHeight, 64)
+  await page.locator('#new-project').click()
   await addScreen(page)
+  assert.deepEqual((await dump())[0].cabinets.slice(0, 5).map(cabinet => cabinet.label),
+    ['A1', 'A2', 'A3', 'A4', 'B1'])
+  await page.locator('#cabinet-label-mode').selectOption('column-coordinate')
+  assert.deepEqual((await dump())[0].cabinets.slice(0, 5).map(cabinet => cabinet.label),
+    ['A1', 'B1', 'C1', 'D1', 'A2'])
+  await page.locator('#cabinet-label-mode').selectOption('row-coordinate')
+  const labelScreen = (await dump())[0]
+  const cabinetPoint = await page.evaluate(screen => window.__ledmap.projectToPx({
+    x: screen.x + screen.cabinetWidth / 2, y: screen.y + screen.cabinetHeight / 2,
+  }), labelScreen)
+  await page.locator('#project-canvas').dblclick({ position: cabinetPoint })
+  assert.equal(await page.locator('#properties-title').innerText(), 'Cabinet')
+  await page.locator('input[aria-label="Cabinet custom label"]').fill('Main-left')
+  await page.locator('input[aria-label="Cabinet custom label"]').blur()
+  assert.equal((await dump())[0].cabinets[0].label, 'Main-left')
+  await page.locator('#undo-project').click()
+  assert.equal((await dump())[0].cabinets[0].label, 'A1')
+  await page.locator('#redo-project').click()
+  assert.equal((await dump())[0].cabinets[0].label, 'Main-left')
+  await page.getByRole('button', { name: 'Use automatic label' }).click()
+  assert.equal((await dump())[0].cabinets[0].label, 'A1')
+  const firstScreenFit = await page.evaluate(() => window.__ledmap.camera())
+  assert.ok(firstScreenFit.zoom > 0.02)
+  await page.locator('#fit-project').click()
+  assert.deepEqual(await page.evaluate(() => window.__ledmap.camera()), firstScreenFit)
   await addScreen(page)
   await addScreen(page)
   await addScreen(page)
   await addScreen(page)
   assert.deepEqual((await dump()).map(screen => screen.name), ['Screen 1', 'Screen 2', 'Screen 3', 'Screen 4', 'Screen 5'])
 
-  await setScreenPosition(page, 'Screen 1', -240, 80)
-  await setScreenPosition(page, 'Screen 2', 640, -120)
+  await setScreenPosition(page, 'Screen 1', 240, 80)
+  await setScreenPosition(page, 'Screen 2', 640, 120)
   await page.locator('#project-tree [data-type="screen"]').filter({ hasText: 'Screen 3' }).click()
   await page.locator('input[aria-label="Screen Columns"]').fill('5')
   await page.locator('input[aria-label="Screen Columns"]').blur()
@@ -247,10 +370,26 @@ try {
   assert.deepEqual(await page.evaluate(() => window.__ledmap.dump().map(screen => screen.cabinets.map(cabinet => cabinet.id))), idsBefore)
 
   const screenNode = name => page.locator('#project-tree [data-type="screen"]').filter({ hasText: name })
+  assert.equal(await page.locator('#layout-toolbar [data-align], #layout-toolbar [data-distribute]').count(), 0)
   await screenNode('Screen 1').click()
+  assert.equal(await page.locator('#selection-chip').innerText(), '1 Screen selected')
+  assert.equal(await page.locator('#properties-title').innerText(), 'Screen')
+  assert.equal(await page.locator('#properties [data-align], #properties [data-distribute]').count(), 0)
   await screenNode('Screen 2').click({ modifiers: ['Control'] })
+  assert.equal(await page.locator('#selection-chip').innerText(), '2 Screens selected')
+  assert.equal(await page.locator('#properties-title').innerText(), '2 Screens selected')
+  for (const heading of ['Selection', 'Arrange', 'Position', 'Size']) {
+    assert.equal(await page.locator('#properties').getByRole('heading', { name: heading, exact: true }).count(), 1)
+  }
+  assert.ok(await page.locator('#properties').getByText('Mixed', { exact: true }).count() >= 1)
+  assert.equal(await page.locator('#properties [data-align="left"]').isEnabled(), true)
+  assert.equal(await page.locator('#properties [data-distribute="horizontal"]').isDisabled(), true)
+  assert.equal(await page.locator('#properties [data-distribute="vertical"]').isDisabled(), true)
   await screenNode('Screen 3').click({ modifiers: ['Control'] })
   assert.deepEqual(await page.evaluate(() => window.__ledmap.selectedScreens()), ['screen-1', 'screen-2', 'screen-3'])
+  assert.equal(await page.locator('#selection-chip').innerText(), '3 Screens selected')
+  assert.equal(await page.locator('#properties [data-distribute="vertical"]').isEnabled(), true)
+  await page.screenshot({ path: resolve(output, 'multi-selection.png') })
   await page.locator('[data-align="left"]').click()
   let arranged = await dump()
   assert.equal(arranged[0].x, arranged[1].x)
@@ -265,10 +404,11 @@ try {
     assert.equal(arranged[index].y, beforeNudge[index].y + 10)
   }
 
-  await setScreenPosition(page, 'Screen 4', -777, 333)
-  assert.deepEqual((await dump()).slice(3, 4).map(screen => [screen.x, screen.y]), [[-777, 333]])
-  await setScreenPosition(page, 'Screen 1', -600, 0)
-  await setScreenPosition(page, 'Screen 2', 100, 0)
+  await setScreenPosition(page, 'Screen 4', 777, 333)
+  assert.deepEqual((await dump()).slice(3, 4).map(screen => [screen.x, screen.y]), [[777, 333]])
+  await setScreenPosition(page, 'Screen 1', 0, 0)
+  await setScreenPosition(page, 'Screen 2', 700, 0)
+  await setScreenPosition(page, 'Screen 3', 0, 500)
   await screenNode('Screen 1').click()
   await page.locator('#snap-grid').click()
   assert.deepEqual(await page.evaluate(() => window.__ledmap.snap()), {
@@ -294,7 +434,7 @@ try {
       guideX: target.x,
     }
   })
-  assert.equal(snapDrag.guideX, 100)
+  assert.equal(snapDrag.guideX, 700)
   await page.mouse.move(canvasBox.x + snapDrag.start.x, canvasBox.y + snapDrag.start.y)
   await page.mouse.down()
   await page.mouse.move(canvasBox.x + snapDrag.end.x, canvasBox.y + snapDrag.end.y, { steps: 5 })
@@ -302,7 +442,7 @@ try {
     window.__ledmap.guides().some(guide => guide.axis === 'x' && guide.value === guideX)
     && window.__ledmap.dump().find(screen => screen.id === 'screen-1')?.x === expectedX
   ), snapDrag)
-  assert.ok((await page.evaluate(() => window.__ledmap.guides())).some(guide => guide.axis === 'x' && guide.value === 100))
+  assert.ok((await page.evaluate(() => window.__ledmap.guides())).some(guide => guide.axis === 'x' && guide.value === 700))
   assert.equal((await dump()).find(screen => screen.id === 'screen-1')?.x, snapDrag.expectedX)
   await page.mouse.up()
   await page.waitForFunction(expectedX => (
@@ -344,15 +484,27 @@ try {
   await page.locator('#fit-project').click()
   await page.locator('#actual-size').click()
   const drawnText = await page.evaluate(() => [...new Set(window.__drawnText ?? [])].filter(text => typeof text === 'string'))
-  assert.ok(drawnText.some(text => /C\d{2}/.test(text)), 'cabinet identities render without signal order')
+  assert.ok(drawnText.some(text => /^[A-Z]+[1-9]\d*$/.test(text)), 'Cabinet display labels render without signal order')
   assert.equal(drawnText.filter(text => text.startsWith('#')).length, 0)
   await page.locator('#fit-project').click()
   await page.locator('#actual-size').click()
   assert.equal((await page.evaluate(() => window.__ledmap.camera())).zoom, 1)
   await page.locator('#zoom-in').click()
   assert.ok((await page.evaluate(() => window.__ledmap.camera())).zoom > 1)
+  await page.evaluate(() => { window.__drawnText = [] })
   await page.locator('#fit-project').click()
+  const overviewLabels = await page.evaluate(() => [...new Set(window.__drawnText ?? [])])
+  assert.ok(overviewLabels.includes('A1') && overviewLabels.includes('B1'), 'Cabinet labels remain visible in the project overview')
+  const hoverScreen = (await dump()).find(screen => screen.name === 'Stage Right')
+  const hoverPoint = await page.evaluate(screen => window.__ledmap.projectToPx({
+    x: screen.x + screen.cabinetWidth / 2, y: screen.y + screen.cabinetHeight / 2,
+  }), hoverScreen)
+  await page.locator('#project-canvas').hover({ position: hoverPoint })
+  assert.match(await page.locator('#project-canvas').getAttribute('title') ?? '', /^A1 · /)
+  await page.mouse.move(0, 0)
   assert.equal(await page.evaluate(() => window.scrollY), 0)
+  assert.equal(await page.locator('#properties-title').innerText(), 'Nothing selected')
+  assert.equal(await page.locator('#properties [data-align], #properties [data-distribute]').count(), 0)
   await page.screenshot({ path: resolve(output, 'layout-workspace.png') })
 
   const expected = await dump()
@@ -366,6 +518,7 @@ try {
   await page.locator('#save-project').click()
   await page.waitForFunction(() => window.__ledmap.document().dirty === false)
   assert.equal((await documentState()).currentFilePath, projectPath)
+  await waitForCleanWindowTitle()
   assert.doesNotMatch(await windowTitle(), / \*/)
   const stored = JSON.parse(await readFile(projectPath, 'utf8'))
   assert.equal(stored.schemaVersion, 5)
@@ -375,7 +528,7 @@ try {
     expected.map(screen => [screen.x, screen.y]),
   )
 
-  await setScreenPosition(page, 'Screen 1', -999, 999)
+  await setScreenPosition(page, 'Screen 1', 999, 999)
   assert.equal((await documentState()).dirty, true)
   await page.locator('#open-project').click()
   await page.waitForFunction(() => window.__ledmap.document().dirty === false)
@@ -388,7 +541,7 @@ try {
   await page.waitForFunction(() => window.__ledmap.dump().length === 5)
   assert.deepEqual(await dump(), expected)
 
-  await setScreenPosition(page, 'Screen 3', 333, -333)
+  await setScreenPosition(page, 'Screen 3', 333, 333)
   assert.equal((await documentState()).dirty, true)
   const closed = page.waitForEvent('close')
   await running.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.close())
@@ -477,8 +630,8 @@ try {
   mappingCamera = await mappingPage.evaluate(() => window.__ledmapMapping.camera())
   const inspectPoint = { x: 130, y: 100 }
   await mappingPage.mouse.click(
-    mappingCanvasBox.x + inspectPoint.x * mappingCamera.zoom + mappingCamera.offsetX,
-    mappingCanvasBox.y + inspectPoint.y * mappingCamera.zoom + mappingCamera.offsetY,
+    mappingCanvasBox.x + (inspectPoint.x + 0.5) * mappingCamera.zoom + mappingCamera.offsetX,
+    mappingCanvasBox.y + (inspectPoint.y + 0.5) * mappingCamera.zoom + mappingCamera.offsetY,
   )
   const inspectorText = await mappingPage.locator('#mapping-properties').innerText()
   assert.match(inspectorText, /Input X\/Y\s+130, 100/)
@@ -709,6 +862,12 @@ try {
   assert.equal(walkAfterBoundary.port, 'port-1')
   assert.equal(walkAfterBoundary.screen, 'screen-2')
   assert.ok(walkAfterBoundary.input.x !== walkBeforeBoundary.input.x || walkAfterBoundary.input.y !== walkBeforeBoundary.input.y)
+  await mappingPage.locator('#test-address-speed').selectOption('50')
+  await mappingPage.locator('#test-address-play').click()
+  await mappingPage.waitForFunction(() => window.__ledmapTest.dump().walk?.dataIndex > 65536)
+  await mappingPage.locator('#test-address-play').click()
+  const walkAfterAutoplay = (await mappingPage.evaluate(() => window.__ledmapTest.dump())).walk.dataIndex
+  assert.equal(await mappingPage.locator('#test-address-play').getAttribute('aria-pressed'), 'false')
   assert.match(await mappingPage.locator('#test-properties').innerText(), /Input[\s\S]*Screen[\s\S]*Cabinet[\s\S]*Module[\s\S]*Receiver[\s\S]*Port[\s\S]*Processor[\s\S]*dataIndex/)
   assert.equal((await mappingPage.evaluate(() => window.__ledmap.document())).dirty, false)
 
@@ -716,7 +875,7 @@ try {
   await mappingPage.locator('#mapping-mode').click()
   await mappingPage.locator('#hardware-mode').click()
   await mappingPage.locator('#test-mode').click()
-  assert.equal((await mappingPage.evaluate(() => window.__ledmapTest.dump())).walk.dataIndex, 65536)
+  assert.equal((await mappingPage.evaluate(() => window.__ledmapTest.dump())).walk.dataIndex, walkAfterAutoplay)
   assert.equal((await mappingPage.evaluate(() => window.__ledmap.document())).dirty, false)
 
   await mappingPage.locator('[data-test-pattern="white"]').click()
@@ -822,10 +981,14 @@ try {
   await outputTwoPage.waitForFunction(() => window.__ledmapOutput.dump().dataIndex === 65535)
   await mappingPage.locator('#test-address-next').click()
   await outputTwoPage.waitForFunction(() => window.__ledmapOutput.dump().dataIndex === 65536)
+  await mappingPage.locator('#test-address-speed').selectOption('50')
+  await mappingPage.locator('#test-address-play').click()
+  await outputTwoPage.waitForFunction(() => window.__ledmapOutput.dump().dataIndex > 65536)
+  await mappingPage.locator('#test-address-play').click()
   assert.deepEqual(await outputTwoPage.evaluate(() => ({
     dataIndex: window.__ledmapOutput.dump().dataIndex,
     pattern: window.__ledmapOutput.dump().pattern,
-  })), { dataIndex: 65536, pattern: 'address-walk' })
+  })).then(value => ({ ...value, dataIndex: value.dataIndex > 65536 })), { dataIndex: true, pattern: 'address-walk' })
   await outputTwoPage.screenshot({ path: resolve(output, 'live-output-window.png') })
 
   assert.equal(await mappingPage.evaluate(() => window.__ledmapLiveOutput.simulateDisplayChange('add')), true)
@@ -954,6 +1117,146 @@ try {
   await mappingPage.waitForFunction(() => window.__ledmapExport.dump().ready === true)
   await mappingPage.locator('#export-generic-scope').selectOption('composition')
   await mappingPage.screenshot({ path: resolve(output, 'export-center.png') })
+
+  await mappingPage.locator('#layout-mode').click()
+  assert.equal(await mappingPage.locator('#preview-chart, #export-chart').count(), 0)
+  assert.equal(await mappingPage.locator('.chart-controls, #chart-frame-mode').count(), 0)
+  const chartScreens = await mappingPage.evaluate(() => window.__ledmap.dump())
+  const chartScreen = chartScreens[0]
+  const chartBounds = await mappingPage.evaluate(() => window.__ledmap.bounds())
+  await mappingPage.locator('#fit-project').click()
+  await mappingPage.locator(`#project-tree [data-id="${chartScreen.id}"]`).click()
+  assert.equal(await mappingPage.locator('.screen-drawing-preview').count(), 0)
+  const revisionBeforeCleanView = (await mappingPage.evaluate(() => window.__ledmap.document())).revision
+  await mappingPage.locator('#clean-view').click()
+  assert.equal(await mappingPage.locator('#clean-view').getAttribute('aria-pressed'), 'true')
+  assert.equal((await mappingPage.evaluate(() => window.__ledmap.document())).revision, revisionBeforeCleanView)
+  const sampleDrawing = id => mappingPage.evaluate(screenId => {
+    const screen = window.__ledmap.dump().find(value => value.id === screenId)
+    const point = window.__ledmap.projectToPx({ x: screen.x + 20, y: screen.y + 60 })
+    const canvas = document.querySelector('#project-canvas')
+    const ratio = window.devicePixelRatio || 1
+    return Array.from(canvas.getContext('2d').getImageData(Math.floor(point.x * ratio), Math.floor(point.y * ratio), 1, 1).data)
+  }, id)
+  const otherDrawingBefore = await sampleDrawing(chartScreens[1].id)
+  await mappingPage.locator('#screen-drawing-color').fill('#f00f00')
+  assert.deepEqual(await sampleDrawing(chartScreen.id), [240, 15, 0, 255])
+  assert.deepEqual(await sampleDrawing(chartScreens[1].id), otherDrawingBefore)
+  await mappingPage.getByRole('button', { name: 'Transparent Screen fill' }).click()
+  assert.ok([174, 215].includes((await sampleDrawing(chartScreen.id))[0]))
+  await mappingPage.locator('#clean-view').click()
+  assert.equal(await mappingPage.locator('#clean-view').getAttribute('aria-pressed'), 'false')
+  await mappingPage.locator('#screen-drawing-palette').selectOption('white-grid')
+  await mappingPage.locator('#screen-drawing-labels').selectOption('none')
+  const logoBase64 = await mappingPage.evaluate(() => {
+    const canvas = document.createElement('canvas')
+    canvas.width = 32
+    canvas.height = 32
+    const context = canvas.getContext('2d')
+    context.fillStyle = '#ff0000'
+    context.fillRect(0, 0, 32, 32)
+    return canvas.toDataURL('image/png').split(',')[1]
+  })
+  const logoPath = resolve(output, 'chart-logo.png')
+  await writeFile(logoPath, Buffer.from(logoBase64, 'base64'))
+  await mappingPage.locator('#screen-drawing-logo-file').setInputFiles(logoPath)
+  await mappingPage.waitForFunction(() => document.querySelector('#screen-drawing-logo-summary')?.textContent === '32 × 32 px')
+  await mappingPage.waitForFunction(screenId => {
+    const screen = window.__ledmap.dump().find(value => value.id === screenId)
+    const point = window.__ledmap.projectToPx({
+      x: screen.x + screen.width - 16 - 32 + 5, y: screen.y + 16 + 5,
+    })
+    const ratio = window.devicePixelRatio || 1
+    const pixel = document.querySelector('#project-canvas').getContext('2d')
+      .getImageData(Math.floor(point.x * ratio), Math.floor(point.y * ratio), 1, 1).data
+    return pixel[0] === 255 && pixel[1] === 0 && pixel[2] === 0 && pixel[3] === 255
+  }, chartScreen.id)
+  assert.equal((await mappingPage.evaluate(() => window.__ledmap.document())).dirty, true)
+  await mappingPage.locator('#test-mode').click()
+  await mappingPage.locator('[data-test-pattern="composition-chart"]').click()
+  assert.equal((await mappingPage.evaluate(() => window.__ledmapTest.dump())).pattern, 'composition-chart')
+  await mappingPage.locator('#live-output-open').click()
+  const chartOutputCard = mappingPage.locator('[data-output-id="output-1"]')
+  await chartOutputCard.locator('select[aria-label="output-1 Windows Display"]').selectOption('sim-display-1')
+  await setOutputRegion(mappingPage, 'output-1', { x: chartBounds.left, y: chartBounds.top,
+    width: chartBounds.width, height: chartBounds.height })
+  await chartOutputCard.locator('select[aria-label="output-1 scale mode"]').selectOption('fit')
+  const chartOutputWindow = running.app.waitForEvent('window')
+  await chartOutputCard.getByRole('button', { name: 'Start', exact: true }).click()
+  const chartOutputPage = await chartOutputWindow
+  chartOutputPage.on('pageerror', error => failures.push(error.message))
+  chartOutputPage.on('console', message => { if (message.type() === 'error') failures.push(message.text()) })
+  await chartOutputPage.waitForFunction(() => window.__ledmapOutput?.dump()?.pattern === 'composition-chart')
+  await chartOutputPage.waitForFunction(({ x, y }) => {
+    const output = window.__ledmapOutput?.dump()
+    if (!output) return false
+    const canvas = document.querySelector('#output-canvas')
+    const rect = canvas.getBoundingClientRect()
+    const zoom = Math.min(rect.width / output.region.width, rect.height / output.region.height)
+    const offsetX = (rect.width - output.region.width * zoom) / 2 - output.region.x * zoom
+    const offsetY = (rect.height - output.region.height * zoom) / 2 - output.region.y * zoom
+    const dpr = canvas.width / rect.width
+    const pixel = canvas.getContext('2d').getImageData(Math.round((x * zoom + offsetX) * dpr),
+      Math.round((y * zoom + offsetY) * dpr), 1, 1).data
+    return pixel[0] > 200 && pixel[1] < 40 && pixel[2] < 40 && pixel[3] === 255
+  }, { x: chartScreen.x + chartScreen.width - 16 - 32 + 5, y: chartScreen.y + 16 + 5 })
+  const chartOutputClosed = chartOutputPage.waitForEvent('close')
+  await chartOutputCard.getByRole('button', { name: 'Stop', exact: true }).click()
+  await chartOutputClosed
+  await mappingPage.locator('#live-output-close').click()
+  await mappingPage.locator('#layout-mode').click()
+  await mappingPage.locator('#export-mode').click()
+  await mappingPage.locator('#export-png-pattern').selectOption('composition-chart')
+  assert.equal((await mappingPage.evaluate(() => window.__ledmapExport.dump())).pattern, 'composition-chart')
+  await runExport(mappingPage, '#export-png-run', 'Exported 1 PNG')
+  const chartBytes = await readFile(resolve(exportDirectory, 'screen-drawings.png'))
+  assert.deepEqual(pngSize(chartBytes), { width: chartBounds.width, height: chartBounds.height })
+  const gapX = Math.floor((chartScreen.x + chartScreen.width + chartScreens[1].x) / 2)
+  const chartPixels = await mappingPage.evaluate(async ({ base64, x, y, gapX, gapY }) => {
+    const image = new Image()
+    image.src = `data:image/png;base64,${base64}`
+    await image.decode()
+    const canvas = document.createElement('canvas')
+    canvas.width = image.width
+    canvas.height = image.height
+    const context = canvas.getContext('2d')
+    context.drawImage(image, 0, 0)
+    return { logo: [...context.getImageData(x, y, 1, 1).data], gapAlpha: context.getImageData(gapX, gapY, 1, 1).data[3] }
+  }, { base64: chartBytes.toString('base64'),
+    x: chartScreen.x + chartScreen.width - 16 - 32 + 5 - chartBounds.left,
+    y: chartScreen.y + 16 + 5 - chartBounds.top,
+    gapX: gapX - chartBounds.left, gapY: chartScreen.y + 10 - chartBounds.top })
+  assert.deepEqual(chartPixels, { logo: [255, 0, 0, 255], gapAlpha: 0 })
+  await mappingPage.locator('#export-png-pattern').selectOption('composition-mask')
+  await runExport(mappingPage, '#export-png-run', 'Exported 1 PNG')
+  const maskBytes = await readFile(resolve(exportDirectory, 'screen-mask.png'))
+  assert.deepEqual(pngSize(maskBytes), { width: chartBounds.width, height: chartBounds.height })
+  const alpha = await mappingPage.evaluate(async ({ base64, gapX, gapY, insideX, insideY }) => {
+    const image = new Image()
+    image.src = `data:image/png;base64,${base64}`
+    await image.decode()
+    const canvas = document.createElement('canvas')
+    canvas.width = image.width
+    canvas.height = image.height
+    const context = canvas.getContext('2d')
+    context.drawImage(image, 0, 0)
+    return [context.getImageData(gapX, gapY, 1, 1).data[3], context.getImageData(insideX, insideY, 1, 1).data[3]]
+  }, { base64: maskBytes.toString('base64'), gapX: gapX - chartBounds.left,
+    gapY: chartScreen.y + 10 - chartBounds.top,
+    insideX: chartScreen.x + 11 - chartBounds.left, insideY: chartScreen.y + 21 - chartBounds.top })
+  assert.deepEqual(alpha, [0, 255])
+  await mappingPage.locator('#save-project').click()
+  await mappingPage.waitForFunction(() => window.__ledmap.document().dirty === false)
+  const savedChart = JSON.parse(await readFile(projectPath, 'utf8')).extensions['ledmap.compositionChart']
+  assert.equal(savedChart.frameMode, 'fit')
+  assert.equal(savedChart.screenStyles[chartScreen.id].logo.width, 32)
+  assert.equal(savedChart.screenStyles[chartScreen.id].palette, 'white-grid')
+  await mappingPage.locator('#open-project').click()
+  await mappingPage.locator('#layout-mode').click()
+  await mappingPage.locator(`#project-tree [data-id="${chartScreen.id}"]`).click()
+  assert.equal(await mappingPage.locator('.chart-controls, #chart-frame-mode').count(), 0)
+  assert.equal(await mappingPage.locator('#screen-drawing-palette').inputValue(), 'white-grid')
+  await mappingPage.screenshot({ path: resolve(output, 'composition-chart.png') })
 
   assert.deepEqual(failures, [])
   console.log('Electron smoke passed: Composition through deterministic Export with pixel-exact PNG, byte-identical JSON/CSV and unre-based shared-Port addresses.')

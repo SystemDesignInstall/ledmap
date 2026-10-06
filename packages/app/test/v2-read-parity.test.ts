@@ -17,7 +17,9 @@ function screenSnapshot(view: LegacyScreenView | V2ScreenView) {
     screen: { id: view.screen.id, name: view.screen.name, resolution: view.screen.resolution },
     grid: { id: view.grid.id, columns: view.grid.columns, rows: view.grid.rows,
       cabinetWidth: view.grid.cabinetWidth, cabinetHeight: view.grid.cabinetHeight, ordering: view.grid.ordering },
-    config: view.config, x: view.x, y: view.y, cabinets: view.cabinets,
+    config: view.config, x: view.x, y: view.y, cabinets: view.cabinets.map(cabinet => ({
+      sourceId: cabinet.sourceId, id: cabinet.id, index: cabinet.index, column: cabinet.column, row: cabinet.row,
+    })),
     nextCabinetSerial: view.nextCabinetSerial, path: view.path, modulesPerCabinet: view.modulesPerCabinet,
     totalModules: view.totalModules, pixelCount: view.pixelCount,
   }
@@ -43,7 +45,10 @@ describe('direct V2 renderer read model parity', () => {
     expect(inspectProjectV2(canonical)).toEqual([])
     const oldScene = buildTestScene(old)
     const scene = buildV2TestScene(canonical)
-    expect(scene).toEqual(oldScene)
+    expect({ ...scene, cabinets: scene.cabinets.map(cabinet => ({
+      id: cabinet.id, screen: cabinet.screen, logicalOrder: cabinet.logicalOrder,
+      bounds: cabinet.bounds, hardware: cabinet.hardware,
+    })) }).toEqual(oldScene)
     const scope = { kind: 'composition' as const, target: null }
     const oldSpace = buildTestWalkSpace(old, oldScene, scope)
     const space = buildV2TestWalkSpace(canonical, scene, scope)

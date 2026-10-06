@@ -480,3 +480,9 @@ Final Hardware Remap answers:
 3. HardwareProfile/vendor encoding и экспортный формат производителей: профили и ёмкости закрыты ADR-025 (7E); AddressEncoder, vendor encoding и экспорт остаются отдельными contracts. Изменение размера Screen в UI закрыто ADR-026.
 4. Диагностики: типовой набор кодов валидации (перечень до UI-этапа); profile codes отделены от 7C.
 5. Нужен ли отдельный headless CLI на базе `core` (опционально).
+## ADR-028: Composition chart as an app-owned delivery view
+
+- **Status:** Implemented in `feat/composition-chart-stage1` on 2026-10-04, pending review. Unit tests, typecheck, lint, build and Electron smoke passed. Contract: [LEDMAP-COMPOSITION-CHART-001](specs/LEDMAP-COMPOSITION-CHART-001.md).
+- **Decision:** Screen placement remains in Composition and source selection remains in Mapping. Independently keyed Screen drawings are app-owned presentation settings stored under the versioned `ledmap.compositionChart` key in the existing v4 document extensions. These settings are document state for Save/Open, Undo/Redo and recovery, but do not enter core math or hardware topology. Composition shows the Screen list on the left and the selected Screen's drawing controls on the right. New projects fit the output frame to Screen bounds; previously saved fixed frames remain readable and honored.
+- **Rendering:** The same chart TestFrame supplies the Screen inspector preview, Test, Live Output and actual-pixel PNG export. The fixed output frame has its own signed origin and size. Whole-composition PNG export blocks when a Screen lies outside it.
+- **Limits:** Half cabinets and absent physical panels require a separate core contract. JSX, SVG and Resolume exporters require target-application fixtures and separate gates. The canonical workspace name remains Composition.

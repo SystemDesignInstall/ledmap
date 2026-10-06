@@ -10,6 +10,7 @@ import {
 } from '@ledmap/core'
 import { projectV2WorkspaceReadModel } from './v2-read-model.js'
 import type { Project } from './v2-view-model.js'
+import { chartSettingsFromExtensions } from '../shared/chart-settings.js'
 
 export interface ProjectSession<TProject = LedMapProjectV2> {
   readonly project: TProject
@@ -63,6 +64,7 @@ export function loadProjectSession(text: string, currentFilePath: string, docume
   const project = clampCompositionToOrigin(loaded.project)
   const normalized = project !== loaded.project
   projectV2WorkspaceReadModel(project)
+  chartSettingsFromExtensions(loaded.extensions)
   return Object.freeze({
     project,
     revision: normalized ? 1 : 0,
@@ -80,6 +82,7 @@ export function recoverProjectSession(text: string, documentId: string): Project
   const loaded = loadLedMapProject(text)
   const project = clampCompositionToOrigin(loaded.project)
   projectV2WorkspaceReadModel(project)
+  chartSettingsFromExtensions(loaded.extensions)
   return Object.freeze({ project, extensions: loaded.extensions, documentId,
     revision: 1, savedRevision: 0, stateId: 1, savedStateId: null,
     currentFilePath: null, sourceSchemaVersion: loaded.sourceSchemaVersion })
@@ -117,9 +120,17 @@ export function commitProjectV2(session: ProjectSession, command: (project: LedM
     stateId: session.revision + 1 })
 }
 
-export function restoreProjectSessionState(session: ProjectSession, project: LedMapProjectV2, stateId: number): ProjectSession {
+export function commitSessionExtensions(session: ProjectSession, command: (extensions: JsonObject) => JsonObject): ProjectSession {
+  const extensions = command(session.extensions)
+  if (sameDocumentValue(session.extensions, extensions)) return session
+  chartSettingsFromExtensions(extensions)
   if (!Number.isSafeInteger(session.revision + 1)) throw new DomainError('PROJECT_REVISION_OVERFLOW', 'Project revision exceeds the safe integer range')
-  return Object.freeze({ ...session, project, stateId, revision: session.revision + 1 })
+  return Object.freeze({ ...session, extensions, revision: session.revision + 1, stateId: session.revision + 1 })
+}
+
+export function restoreProjectSessionState(session: ProjectSession, project: LedMapProjectV2, stateId: number, extensions = session.extensions): ProjectSession {
+  if (!Number.isSafeInteger(session.revision + 1)) throw new DomainError('PROJECT_REVISION_OVERFLOW', 'Project revision exceeds the safe integer range')
+  return Object.freeze({ ...session, project, extensions, stateId, revision: session.revision + 1 })
 }
 
 export function serializeProjectSession(session: ProjectSession): string {

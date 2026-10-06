@@ -42,7 +42,8 @@ describe('composition workspace separation', () => {
     expect(canvas).not.toContain('cabinetIndex')
     expect(canvas).not.toContain('CABINET_FIRST')
     expect(canvas).not.toMatch(/#\$\{/)
-    expect(canvas).toContain('ctx.fillText(cabinet.id, p.x, p.y)')
+    expect(canvas).toContain('cabinetDisplayLabel(labelMode, shape.columns, shape.rows, cabinet)')
+    expect(canvas).toContain('ctx.fillText(visibleLabel, p.x, p.y)')
   })
 
   it('owns no Numbering, Direction or Snake controls in Composition properties', () => {

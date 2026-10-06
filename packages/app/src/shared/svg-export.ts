@@ -9,6 +9,16 @@ function rect(bounds: TestBounds, attributes: string): string {
 }
 
 function primitiveSvg(primitive: TestPrimitive, index: number): string {
+  if (primitive.kind === 'cabinet-border') {
+    const { x, y, width, height } = primitive.bounds
+    const fill = `fill="${escapeXml(primitive.color)}"`
+    return [
+      { x, y, width, height: 1 },
+      { x, y: y + height - 1, width, height: 1 },
+      { x, y, width: 1, height },
+      { x: x + width - 1, y, width: 1, height },
+    ].map(bounds => rect(bounds, fill)).join('')
+  }
   if (primitive.kind === 'rect') {
     return rect(primitive.bounds, `fill="${escapeXml(primitive.fill ?? 'none')}"${primitive.stroke ? ` stroke="${escapeXml(primitive.stroke)}" stroke-width="${primitive.lineWidth ?? 1}"` : ''}`)
   }

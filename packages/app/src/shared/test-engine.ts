@@ -107,6 +107,7 @@ export interface TestPatternConfig {
 
 export type TestPrimitive =
   | { readonly kind: 'rect'; readonly bounds: TestBounds; readonly fill?: string; readonly stroke?: string; readonly lineWidth?: number }
+  | { readonly kind: 'cabinet-border'; readonly bounds: TestBounds; readonly color: string }
   | { readonly kind: 'line'; readonly from: TestPoint; readonly to: TestPoint; readonly color: string; readonly lineWidth: number; readonly dash?: readonly number[] }
   | { readonly kind: 'text'; readonly point: TestPoint; readonly text: string; readonly color: string; readonly size: number; readonly align?: 'left' | 'center' | 'right'; readonly shadow?: boolean; readonly role?: 'screen-title' }
   | { readonly kind: 'image'; readonly bounds: TestBounds; readonly dataUrl: string }

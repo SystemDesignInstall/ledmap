@@ -5,6 +5,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { _electron as electron } from 'playwright'
+import { verifyCabinetBorders } from './cabinet-border-smoke.mjs'
 
 process.on('uncaughtException', error => {
   console.error(error)
@@ -1495,6 +1496,7 @@ try {
   assert.equal(await mappingPage.evaluate(() => window.__ledmap.projectSnapshot()), withCapacity.project)
   assert.equal((await mappingPage.evaluate(() => window.__ledmap.document())).sourceSchemaVersion, 6)
 
+  await verifyCabinetBorders(mappingPage, { output, exportDirectory, addScreen, runExport })
   assert.deepEqual(failures, [])
   console.log('Electron smoke passed: Composition through deterministic Export with pixel-exact PNG, byte-identical JSON/CSV and unre-based shared-Port addresses.')
   console.log(`Project: ${projectPath}`)

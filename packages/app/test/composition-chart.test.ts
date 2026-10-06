@@ -141,8 +141,10 @@ describe('Composition chart contract', () => {
     expect(frame.primitives).toContainEqual({ kind: 'rect', bounds: scene.screens[1]?.bounds, fill: '#ff0000' })
     expect(frame.primitives).toContainEqual({ kind: 'text', point: { x: 0, y: 120 },
       text: 'Left · 200×200', color: '#202b39', size: 24, align: 'center', shadow: false, role: 'screen-title' })
+    const borderIndex = frame.primitives.findIndex(primitive => primitive.kind === 'cabinet-border' && primitive.color === '#202b39')
+    expect(borderIndex).toBeGreaterThanOrEqual(0)
     expect(frame.primitives.findIndex(primitive => primitive.kind === 'text' && primitive.text === 'Left · 200×200'))
-      .toBeGreaterThan(frame.primitives.findIndex(primitive => primitive.kind === 'rect' && primitive.fill === '#202b39'))
+      .toBeGreaterThan(borderIndex)
     expect(frame.primitives.at(-1)).toMatchObject({ kind: 'text', role: 'screen-title', text: 'Left · 200×200' })
     expect(frame.primitives.filter(primitive => primitive.kind === 'text' && primitive.text === 'Right · 200×200')).toHaveLength(0)
     expect(() => withChartSettings({}, settings)).not.toThrow()

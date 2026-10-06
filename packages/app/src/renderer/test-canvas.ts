@@ -1,6 +1,7 @@
 import type { LiveOutputRegion } from '../shared/ipc.js'
 import type { TestBounds, TestFrame, TestPoint, TestPrimitive } from '../shared/test-engine.js'
 import type { Camera } from './canvas.js'
+import { drawCabinetBorder } from './cabinet-border.js'
 
 interface CachedImage {
   readonly image: HTMLImageElement
@@ -52,6 +53,10 @@ function point(camera: Camera, value: TestPoint): TestPoint {
 }
 
 function drawPrimitive(ctx: CanvasRenderingContext2D, camera: Camera, primitive: TestPrimitive, redraw: (() => void) | null = null): void {
+  if (primitive.kind === 'cabinet-border') {
+    drawCabinetBorder(ctx, camera, primitive.bounds, primitive.color)
+    return
+  }
   if (primitive.kind === 'rect' || primitive.kind === 'gradient') {
     const origin = point(camera, primitive.bounds)
     const width = primitive.bounds.width * camera.zoom

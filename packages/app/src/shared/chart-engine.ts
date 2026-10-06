@@ -76,18 +76,8 @@ export function buildCompositionChartFrame(
         primitives.push({ kind: 'rect', bounds: cabinet.bounds, fill: (column + row) % 2 === 0 ? '#e9edf0' : '#202b39' })
       }
       if (style.cabinetEdges) {
-        const { x, y, width, height } = cabinet.bounds
         const edge = style.palette === 'white-grid' ? '#202b39' : '#ffffff'
-        primitives.push(
-          { kind: 'rect', bounds: { x, y, width, height: 1 }, fill: edge },
-          { kind: 'rect', bounds: { x, y, width: 1, height }, fill: edge },
-        )
-        if (x + width === screen.bounds.x + screen.bounds.width) {
-          primitives.push({ kind: 'rect', bounds: { x: x + width - 1, y, width: 1, height }, fill: edge })
-        }
-        if (y + height === screen.bounds.y + screen.bounds.height) {
-          primitives.push({ kind: 'rect', bounds: { x, y: y + height - 1, width, height: 1 }, fill: edge })
-        }
+        primitives.push({ kind: 'cabinet-border', bounds: cabinet.bounds, color: edge })
       }
       if (style.labels === 'cabinet' || style.labels === 'cabinet-id' || style.labels === 'coordinates' || style.labels === 'grid-address') {
         const column = Math.round((cabinet.bounds.x - screen.bounds.x) / cabinet.bounds.width)

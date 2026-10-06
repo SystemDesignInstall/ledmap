@@ -5,6 +5,7 @@ import type { AlignmentGuide, ProjectGuide, SelectionBox } from './layout-intera
 import type { TestBounds, TestFrame } from '../shared/test-engine.js'
 import { drawFramePrimitives } from './test-canvas.js'
 import { cabinetDisplayLabel, type CabinetLabelMode } from '../shared/cabinet-labels.js'
+import { drawCabinetBorder } from './cabinet-border.js'
 
 export interface Camera {
   readonly zoom: number
@@ -278,10 +279,8 @@ function drawCabinetGrid(
         ctx.stroke()
       }
       if (overlays.cabinets) {
-        ctx.strokeStyle = id === undefined ? PENDING_EDGE : CABINET_EDGE
-        ctx.setLineDash(id === undefined ? [4, 3] : [])
-        ctx.strokeRect(x, y, cw, ch)
-        ctx.setLineDash([])
+        drawCabinetBorder(ctx, camera, { x: screen.x + column * screen.grid.cabinetWidth, y: screen.y + row * screen.grid.cabinetHeight,
+          width: screen.grid.cabinetWidth, height: screen.grid.cabinetHeight }, id === undefined ? PENDING_EDGE : CABINET_EDGE, id === undefined)
       }
     }
   }

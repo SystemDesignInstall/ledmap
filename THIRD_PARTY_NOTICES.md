@@ -1,6 +1,6 @@
 # Third-party notices — LedMAP
 
-The pinned source register and scope of the review are in [External source audit](docs/licenses/external-source-audit.md). This stage introduces dependency metadata and documentation; the complete MIT license text is the only copied upstream material.
+The pinned source register and scope of the review are in [External source audit](docs/licenses/external-source-audit.md). This stage introduces dependency metadata, CI checks and documentation; the complete MIT license text is the only copied upstream material.
 
 ## UnMapper and pixel-peeker
 

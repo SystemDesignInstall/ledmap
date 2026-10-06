@@ -21,6 +21,8 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
+      - run: npm run check:licenses
+      - run: npm audit --package-lock-only --audit-level=low
       - run: npm test
       - run: npm run typecheck
       - run: npm run lint

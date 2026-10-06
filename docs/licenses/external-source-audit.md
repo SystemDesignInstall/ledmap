@@ -20,11 +20,19 @@ A reference commit identifies the source inspected. It does not establish that a
 
 The tracked baseline was searched for repository names, author names and explicit port/adaptation markers, and Git history was searched for the three upstream names. The relevant LedMAP geometry, authoring, snapping and slice-export paths were read and compared with the pinned MIT sources above. The search found an internal P0A adaptation reference in `LEDMAP-PROJECT-MODEL-V2-C1.md`; that refers to a LedMAP commit, not an upstream repository.
 
-This stage changes dependency metadata and documentation only. It adds no application/core source, third-party algorithm, fixture, hardware database or product asset. The only copied upstream text is the MIT notice recorded above.
+This stage changes dependency metadata, CI checks and documentation. It adds no application/core source, third-party algorithm, fixture, hardware database or product asset. The only copied upstream text is the MIT notice recorded above.
 
 These checks are a scoped engineering review, not proof of the original authorship of every historical line. No blanket clean-room claim is made for the existing repository or the uncommitted WIP. The original draft audit's planned ADAPT/TAKE rows do not become completed imports merely by appearing in a table.
 
 The candidate `core/coordinates`, `capacity`, `wiring`, `diagnostics`, `resolume`, `power`, catalog and planning modules remain outside canonical `master`. Before integration, their actual origins and any adapted test fixtures must be reviewed and recorded with source and destination paths. Reference snapshots above must not be substituted for missing adaptation evidence.
+
+## Automated license and dependency checks
+
+`npm run check:licenses` checks every external package entry in the lockfile, including development, transitive and platform-optional dependencies. The baseline contains 256 entries with these declared SPDX identifiers: Apache-2.0, BSD-2-Clause, BSD-3-Clause, BlueOak-1.0.0, CC-BY-4.0, ISC and MIT. A missing or different declaration fails the gate and requires review before the policy is changed. The baseline's CC-BY-4.0 declaration belongs to the development dataset `caniuse-lite`; BlueOak-1.0.0 belongs to development `minimatch`.
+
+The same check verifies the complete retained Stoatworks Labs MIT notice against its pinned Git blob SHA, normalizing CRLF to LF. CI runs this offline check and `npm audit --package-lock-only --audit-level=low` after installation. The audit uses the current npm advisory database and fails on reported low-or-higher findings; network or registry failures also fail the step.
+
+This gate checks declared dependency license metadata and the retained reference notice. It does not establish historical authorship, validate every package's metadata against its actual license files, or produce a complete release notice bundle. Packaging attribution and distribution compatibility still require a release review, especially while LedMAP's root distribution license is undecided. Code and fixture imports must also satisfy the provenance requirements below.
 
 ## Gate for later imports
 

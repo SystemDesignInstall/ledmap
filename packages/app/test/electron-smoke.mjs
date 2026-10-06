@@ -1277,6 +1277,44 @@ try {
     gapY: chartScreen.y + 10 - chartBounds.top,
     insideX: chartScreen.x + 11 - chartBounds.left, insideY: chartScreen.y + 21 - chartBounds.top })
   assert.deepEqual(alpha, [0, 255])
+  await mappingPage.locator('#output-mapping-mode').click()
+  await mappingPage.locator('#output-add-media').click()
+  await mappingPage.locator('#output-add-mapping').click()
+  await mappingPage.getByLabel('Flip X', { exact: true }).check()
+  await mappingPage.locator('#export-mode').click()
+  assert.equal(await mappingPage.locator('#export-resolume-native-run').isDisabled(), true)
+  assert.match(await mappingPage.locator('#export-resolume-native-diagnostics').textContent(), /zero rotations\/flips/)
+  await mappingPage.locator('#export-resolume-native-run').scrollIntoViewIfNeeded()
+  await mappingPage.screenshot({ path: resolve(output, 'resolume-native-blocked.png') })
+  await mappingPage.locator('#output-mapping-mode').click()
+  await mappingPage.getByLabel('Flip X', { exact: true }).uncheck()
+  await mappingPage.locator('#export-mode').click()
+  assert.equal(await mappingPage.locator('#export-resolume-native-run').isEnabled(), true)
+  const beforeNativeExport = await mappingPage.evaluate(() => ({ project: window.__ledmap.projectSnapshot(), document: window.__ledmap.document() }))
+  assert.equal(await mappingPage.evaluate(() => window.__ledmapExport.simulateCancel()), true)
+  await runExport(mappingPage, '#export-resolume-native-run', 'ledmap-arena-preset.xml export canceled')
+  await runExport(mappingPage, '#export-resolume-native-run', 'Exported ledmap-arena-preset.xml')
+  const nativePath = resolve(exportDirectory, 'ledmap-arena-preset.xml')
+  const nativeHash = await sha256(nativePath)
+  await runExport(mappingPage, '#export-resolume-native-run', 'Exported ledmap-arena-preset.xml')
+  assert.equal(await sha256(nativePath), nativeHash)
+  const nativeXml = await readFile(nativePath, 'utf8')
+  const nativeShape = await mappingPage.evaluate(xml => {
+    const doc = new DOMParser().parseFromString(xml, 'application/xml')
+    const size = doc.querySelector('CurrentCompositionTextureSize')
+    return { malformed: doc.querySelector('parsererror') !== null, root: doc.documentElement.tagName,
+      width: Number(size.getAttribute('width')), height: Number(size.getAttribute('height')),
+      corners: [...doc.querySelectorAll('InputRect > v')].map(v => ({ x: Number(v.getAttribute('x')), y: Number(v.getAttribute('y')) })) }
+  }, nativeXml)
+  assert.deepEqual(nativeShape, { malformed: false, root: 'XmlState', width: chartBounds.width, height: chartBounds.height,
+    corners: [{ x: chartScreen.x - chartBounds.left, y: chartScreen.y - chartBounds.top },
+      { x: chartScreen.x + chartScreen.width - chartBounds.left, y: chartScreen.y - chartBounds.top },
+      { x: chartScreen.x + chartScreen.width - chartBounds.left, y: chartScreen.y + chartScreen.height - chartBounds.top },
+      { x: chartScreen.x - chartBounds.left, y: chartScreen.y + chartScreen.height - chartBounds.top }] })
+  assert.deepEqual(await mappingPage.evaluate(() => ({ project: window.__ledmap.projectSnapshot(), document: window.__ledmap.document() })), beforeNativeExport)
+  assert.match((await mappingPage.evaluate(() => window.__ledmapExport.dump())).lastResult, /has not been verified/)
+  await mappingPage.locator('#export-resolume-native-run').scrollIntoViewIfNeeded()
+  await mappingPage.screenshot({ path: resolve(output, 'resolume-native-export.png') })
   await mappingPage.locator('#save-project').click()
   await mappingPage.waitForFunction(() => window.__ledmap.document().dirty === false)
   const savedChart = JSON.parse(await readFile(projectPath, 'utf8')).extensions['ledmap.compositionChart']

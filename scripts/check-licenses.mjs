@@ -38,6 +38,12 @@ if (noticeBlob !== '2854af553a2f331bbb806636494ff4a5921db848') {
   errors.push('The retained Stoatworks Labs MIT notice differs from its pinned source blob')
 }
 
+const xmlNotice = Buffer.from(readFileSync(new URL('docs/licenses/xmldom-MIT.txt', root), 'utf8').replace(/\r\n/g, '\n'))
+const xmlNoticeBlob = createHash('sha1').update(`blob ${xmlNotice.length}\0`).update(xmlNotice).digest('hex')
+if (xmlNoticeBlob !== 'b95f5698c645e44ecf09ee09a0a44ee6437e23a1') {
+  errors.push('The retained xmldom MIT notice differs from its pinned source blob')
+}
+
 if (errors.length > 0) throw new Error(errors.join('\n'))
 
-console.log(`License check passed: ${dependencyCount} locked dependencies; pinned MIT notice intact`)
+console.log(`License check passed: ${dependencyCount} locked dependencies; pinned MIT notices intact`)

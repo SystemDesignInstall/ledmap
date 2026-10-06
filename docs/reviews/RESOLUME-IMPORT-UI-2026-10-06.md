@@ -26,11 +26,13 @@ New app shared coordinator: `resolume-import-session.ts`; renderer/file/Canvas f
 
 The dialog/controller and XML parser load dynamically on first open. Leaving the workspace invalidates a pending load request. Late File reads are guarded against newer selections, closure and reopen. Names and diagnostics use textContent; no imported HTML or script is executed. Existing XML byte/markup/element/depth/attribute, DTD/entity, strict-number and warp limits apply.
 
-Final self-review corrected global editor Canvas positioning leaking into the dialog, kept actions visible during scrolling, replaced a quadratic lattice column scan with a linear walk, limited displayed diagnostics/text and preserved special source ID raster overrides. The same external-source fixture/provenance and complete MIT notices from P0-3 remain intact. No new external code/asset/dataset/UI expression is transferred; B.L.I.N.K copied = NO.
+Final self-review corrected global editor Canvas positioning leaking into the dialog, kept actions visible during scrolling, preserved the Canvas buffer's 3:1 aspect ratio across viewport widths, replaced a quadratic lattice column scan with a linear walk, limited displayed diagnostics/text and preserved special source ID raster overrides. The same external-source fixture/provenance and complete MIT notices from P0-3 remain intact. No new external code/asset/dataset/UI expression is transferred; B.L.I.N.K copied = NO.
 
 ## Verification
 
 All local gates passed on the final implementation. Exact-head PR CI must pass before ready-for-review.
+
+The first PR #19 [CI run 37482245379](https://github.com/SystemDesignInstall/ledmap/actions/runs/37482245379) passed tests, typecheck, lint, build, license and advisory gates, then timed out at the first import inspection in Linux smoke. The test selected a file through a hidden input before the dynamically loaded dialog installed its handlers and opened. Every test open now waits for the visible modal before choosing a file, preserving all import assertions and production loading behavior. The corrective also preserves the Canvas buffer aspect ratio and refreshes all three screenshots. A fresh exact-head CI run is required.
 
 | Gate | Evidence |
 |---|---|

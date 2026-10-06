@@ -5,11 +5,13 @@ import {
 import { buildPngExportPlan, type PngExportMode } from '../shared/png-export.js'
 import { TEST_PATTERN_DEFINITIONS, type TestPatternGroup, type TestPatternId } from '../shared/test-engine.js'
 import { buildHippoCsv, buildResolumeXml } from '../shared/media-output-adapters.js'
+import { planResolumeProjectExport, type ResolumeExportPlan } from '../shared/resolume-project.js'
+import { buildResolumeNativePreset } from '../shared/resolume-export.js'
 import { renderFrameSvg } from '../shared/svg-export.js'
 import { renderPngJob } from './export-image.js'
 import type { LedMapProjectV2 } from '@ledmap/core'
 import type { TestWorkspaceSnapshot } from './test-workspace.js'
-import { defaultChartSettings, type ChartSettings } from '../shared/chart-settings.js'
+import { chartBounds, chartFrameProblem, defaultChartSettings, type ChartSettings } from '../shared/chart-settings.js'
 
 interface ExportWorkspaceOptions {
   readonly getProjectV2: () => LedMapProjectV2
@@ -72,6 +74,8 @@ export function createExportWorkspace(options: ExportWorkspaceOptions): ExportWo
   const jsonButton = element<HTMLButtonElement>('export-json-run')
   const csvButton = element<HTMLButtonElement>('export-csv-run')
   const resolumeButton = element<HTMLButtonElement>('export-resolume-run')
+  const nativeResolumeButton = element<HTMLButtonElement>('export-resolume-native-run')
+  const nativeResolumeDiagnostics = element<HTMLDivElement>('export-resolume-native-diagnostics')
   const hippoButton = element<HTMLButtonElement>('export-hippo-run')
   const genericScopeSelect = element<HTMLSelectElement>('export-generic-scope')
   const genericScreenSelect = element<HTMLSelectElement>('export-generic-screen')
@@ -90,6 +94,7 @@ export function createExportWorkspace(options: ExportWorkspaceOptions): ExportWo
   let genericScope: V2GenericMappingScope = { kind: 'composition' }
   let genericScreenId: string | null = null
   let lastResult = 'No export has run in this session.'
+  let nativeCache: { project: LedMapProjectV2; frame: string; plan: ResolumeExportPlan } | null = null
 
   for (const group of ['Basic', 'Geometry', 'LedMAP diagnostics', 'Address Walk'] as const satisfies readonly TestPatternGroup[]) {
     const optgroup = document.createElement('optgroup')
@@ -162,6 +167,20 @@ export function createExportWorkspace(options: ExportWorkspaceOptions): ExportWo
     return report
   }
 
+  function currentNativePlan(): ResolumeExportPlan {
+    const project = options.getProjectV2()
+    const scene = options.getTestSnapshot().scene
+    const settings = options.getChartSettings?.() ?? defaultChartSettings
+    const frame = chartBounds(scene, settings)
+    const problem = chartFrameProblem(scene, settings, false)
+    const key = JSON.stringify([frame, problem])
+    if (nativeCache?.project === project && nativeCache.frame === key) return nativeCache.plan
+    const plan = planResolumeProjectExport(project, frame)
+    const result = problem ? { ...plan, ready: false, diagnostics: [problem, ...plan.diagnostics], document: null } : plan
+    nativeCache = { project, frame: key, plan: result }
+    return result
+  }
+
   function render(): void {
     normalizeScreens()
     patternSelect.value = pattern
@@ -183,6 +202,11 @@ export function createExportWorkspace(options: ExportWorkspaceOptions): ExportWo
     svgButton.disabled = busy || !pngPlan.ready || (pattern !== 'composition-chart' && pattern !== 'composition-mask')
     jsonButton.disabled = busy || !report.ready
     csvButton.disabled = busy || !report.ready
+    const nativePlan = currentNativePlan()
+    nativeResolumeButton.disabled = busy || !nativePlan.ready
+    nativeResolumeDiagnostics.textContent = nativePlan.ready
+      ? `${nativePlan.document!.screens.length} virtual output(s) · Composition ${nativePlan.document!.composition!.width} × ${nativePlan.document!.composition!.height} px`
+      : nativePlan.diagnostics.join(' ')
     resultElement.textContent = lastResult
   }
 
@@ -263,6 +287,28 @@ export function createExportWorkspace(options: ExportWorkspaceOptions): ExportWo
     }
   }
 
+  async function exportNativeResolume(): Promise<void> {
+    const plan = currentNativePlan()
+    if (!plan.ready || !plan.document) return
+    busy = true
+    lastResult = 'Writing Arena preset…'
+    render()
+    options.clearError()
+    try {
+      const name = 'ledmap-arena-preset.xml'
+      const text = buildResolumeNativePreset(plan.document)
+      const result = await window.ledmapDesktop.writeExportFiles({ mode: 'single',
+        files: [{ name, bytes: new TextEncoder().encode(text) }] })
+      lastResult = result.canceled ? `${name} export canceled.` : `Exported ${name}. ${plan.compatibility}`
+    } catch (error) {
+      lastResult = error instanceof Error ? error.message : 'Unable to export Arena preset.'
+      options.showError(error, 'Unable to export Arena preset.')
+    } finally {
+      busy = false
+      render()
+    }
+  }
+
   async function exportMediaServer(kind: 'resolume' | 'hippo'): Promise<void> {
     busy = true
     lastResult = kind === 'resolume' ? 'Writing slice XML…' : 'Writing slice CSV…'
@@ -315,6 +361,7 @@ export function createExportWorkspace(options: ExportWorkspaceOptions): ExportWo
   jsonButton.addEventListener('click', () => { void exportMapping('json') })
   csvButton.addEventListener('click', () => { void exportMapping('csv') })
   resolumeButton.addEventListener('click', () => { void exportMediaServer('resolume') })
+  nativeResolumeButton.addEventListener('click', () => { void exportNativeResolume() })
   hippoButton.addEventListener('click', () => { void exportMediaServer('hippo') })
 
   const hook: ExportHook = {

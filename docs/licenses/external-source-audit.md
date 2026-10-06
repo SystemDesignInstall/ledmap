@@ -43,3 +43,9 @@ B.L.I.N.K requirements may inform independently written specifications. Its impl
 Hardware data must cite primary manufacturer documents with model/revision, document date, checked date and derivation details. Unknown values stay unknown. NDI and vendor formats require their own runtime/SDK and interoperability contracts.
 
 LedMAP has no root project LICENSE at the audited baseline. The upstream notices describe their sources; they do not choose a distribution license for LedMAP.
+
+## P0-2 implementation provenance
+
+Baseline: canonical LedMAP commit `e991bca87946463689815fa4f0794ab4567026fb` (dependency/license PR #16). The stage implements `packages/core/src/project-model/hardware-planning.ts` and V2 validation/app adapters from LedMAP's existing project types, Cabinet Engine index transforms, first-fit allocator, structural validation and serializers. Regression fixtures extend LedMAP's existing REF-001 and app Hardware tests.
+
+Candidate WIP `wiring/`, `signal-capacity/` and `diagnostics/` files were read to identify integration requirements and defects. Their implementation and test fixtures were not imported. No external source, hardware dataset or B.L.I.N.K code/asset/UI text is transferred in this stage. No vendor capacity formula is added or certified; absent transport limits remain unknown. The pinned reference notices and the scoped historical provenance limits above remain applicable.

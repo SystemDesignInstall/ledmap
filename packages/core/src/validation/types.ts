@@ -1,15 +1,20 @@
 import type { ResolveMappingInput } from '../mapping-engine/index.js'
 import type { RemapRuleDescriptor } from '../remap-engine/index.js'
+import type { LedMapProjectV2 } from '../project-model/types.js'
 
 export interface ValidateProjectInput {
   readonly mapping: ResolveMappingInput
   readonly rules: readonly RemapRuleDescriptor[]
 }
 
-export type ProjectValidationStage = 'input' | 'mapping' | 'remap'
+export interface ValidateProjectV2Input {
+  readonly project: LedMapProjectV2
+}
+
+export type ProjectValidationStage = 'input' | 'hardware' | 'mapping' | 'remap'
 
 export interface ProjectDiagnostic {
-  readonly severity: 'error'
+  readonly severity: 'error' | 'warning'
   readonly stage: ProjectValidationStage
   readonly code: string
   readonly path: readonly (string | number)[]

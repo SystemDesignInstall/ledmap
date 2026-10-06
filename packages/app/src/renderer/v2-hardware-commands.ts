@@ -1,15 +1,15 @@
 import {
   LEDMAP_GENERIC_REF001,
-  allocateHardware,
   asHardwareAssignmentId,
   asSignalRouteId,
   assertProjectV2HardwareContract,
-  cabinetOrder,
+  planProjectHardware,
+  selectProjectCabinetSignalOrder,
+  validateProject,
   createPort,
   createProcessor,
   createReceiver,
-  selectV2HardwareEngineInput,
-  type AllocationProposal,
+  type ProjectHardwarePlan,
   type CabinetId,
   type LedMapProjectV2,
 } from '@ledmap/core'
@@ -56,19 +56,7 @@ function sameIds(left: readonly string[], right: readonly string[]): boolean {
 }
 
 function orderedCabinets(project: LedMapProjectV2): readonly CabinetId[] {
-  const ordered: CabinetId[] = []
-  for (const screen of project.design.screens) {
-    for (const gridId of screen.cabinetGridOrder) {
-      const grid = project.design.cabinetGrids.find(value => value.id === gridId)
-      if (!grid) continue
-      const positions = cabinetOrder({ columns: grid.columns, rows: grid.rows, ordering: grid.ordering })
-      for (const position of positions) {
-        const cabinet = project.design.cabinets.find(value => value.gridId === grid.id && value.column === position.column && value.row === position.row)
-        if (cabinet) ordered.push(cabinet.id)
-      }
-    }
-  }
-  return ordered
+  return selectProjectCabinetSignalOrder(project)
 }
 
 export function orderedSelectedCabinetsV2(project: LedMapProjectV2, selectedIds: readonly string[]): readonly CabinetId[] {
@@ -93,6 +81,7 @@ function withChains(project: LedMapProjectV2, chains: ReadonlyMap<string, readon
           target: { kind: 'cabinet' as const, cabinetId },
           receiverId: receiver.id,
           locked: true,
+          origin: 'manual' as const,
         }
   }))
   const signalRoutes = project.hardware.receivers.flatMap(receiver => {
@@ -318,8 +307,11 @@ export function assignCabinetsV2(project: LedMapProjectV2, receiverId: string, o
   if (receiver.pixelCapacity !== undefined && used > receiver.pixelCapacity) {
     throw new Error(`Assignment uses ${used.toLocaleString('en-US')} of ${receiver.pixelCapacity.toLocaleString('en-US')} Receiver pixels.`)
   }
-  if (project.hardware.receivers.every(value => sameIds(chainOf(project, value.id), chains.get(value.id)!))) return project
-  return withChains(project, chains)
+  const promotesAuto = project.hardware.assignments.some(value => selected.has(value.target.cabinetId) && value.origin === 'auto')
+  if (!promotesAuto && project.hardware.receivers.every(value => sameIds(chainOf(project, value.id), chains.get(value.id)!))) return project
+  const changed = withChains(project, chains)
+  return { ...changed, hardware: { ...changed.hardware, assignments: changed.hardware.assignments.map(value =>
+    selected.has(value.target.cabinetId) && value.origin === 'auto' ? { ...value, locked: true, origin: 'manual' } : value) } }
 }
 
 export function unassignCabinetsV2(project: LedMapProjectV2, receiverId: string, cabinetIds: readonly string[]): LedMapProjectV2 {
@@ -387,16 +379,13 @@ export function moveCabinetToReceiverV2(project: LedMapProjectV2, cabinetId: str
   })
   return { ...project,
     hardware: { ...project.hardware, assignments: project.hardware.assignments.map(value => value === assignment
-      ? { ...value, receiverId: targetReceiver.id } : value) },
+      ? { ...value, receiverId: targetReceiver.id, ...(value.origin === 'auto' ? { locked: true, origin: 'manual' as const } : {}) } : value) },
     operations: { ...project.operations, signalRoutes },
   }
 }
 
-export function previewHardwareAllocationV2(project: LedMapProjectV2): AllocationProposal {
-  const assigned = new Set(project.hardware.assignments.map(value => value.target.cabinetId))
-  const cabinetOrder = orderedCabinets(project).filter(id => !assigned.has(id))
-  const topology = selectV2HardwareEngineInput(project)
-  return allocateHardware({ ...topology, cabinetOrder })
+export function previewHardwareAllocationV2(project: LedMapProjectV2): ProjectHardwarePlan {
+  return planProjectHardware(project)
 }
 
 export function requireCurrentHardwarePreview(
@@ -408,12 +397,13 @@ export function requireCurrentHardwarePreview(
   }
 }
 
-export function applyHardwareAllocationV2(project: LedMapProjectV2, proposal: AllocationProposal): LedMapProjectV2 {
+export function applyHardwareAllocationV2(project: LedMapProjectV2, proposal: ProjectHardwarePlan): LedMapProjectV2 {
   const fresh = previewHardwareAllocationV2(project)
-  if (JSON.stringify(fresh.topology) !== JSON.stringify(proposal.topology)) {
+  if (JSON.stringify(fresh) !== JSON.stringify(proposal)) {
     throw new Error('Hardware allocation preview is stale.')
   }
-  const chains = new Map<string, readonly CabinetId[]>(proposal.topology.receivers.map(receiver => [receiver.id, receiver.cabinets]))
-  if (project.hardware.receivers.every(receiver => sameIds(chainOf(project, receiver.id), chains.get(receiver.id) ?? []))) return project
-  return withChains(project, chains)
+  const invalid = validateProject({ project: fresh.project }).diagnostics.find(issue => issue.severity === 'error' &&
+    (issue.stage === 'input' || (issue.stage === 'hardware' && issue.code !== 'HARDWARE_UNPATCHED')))
+  if (invalid) throw new Error(invalid.message)
+  return fresh.project
 }

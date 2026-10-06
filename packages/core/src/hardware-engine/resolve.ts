@@ -1,8 +1,7 @@
-import type { Module } from '../model/module.js'
 import type { Port } from '../model/port.js'
 import type { ReceiverId } from '../model/ids.js'
 import type { HardwareTopologyInput, HardwareCabinetSpan, HardwareReceiverSpan, HardwarePortSpan, ResolvedHardwareMapping } from './types.js'
-import { resolveCabinetLayout } from './layout.js'
+import { resolveHardwareLayouts } from './layout.js'
 import { assertComplete, assertSafeInteger, claim, fail, indexEntities, reference, safeAdd } from './validation.js'
 
 export function resolveHardware(input: HardwareTopologyInput): ResolvedHardwareMapping {
@@ -58,17 +57,7 @@ export function resolveHardware(input: HardwareTopologyInput): ResolvedHardwareM
     }
   }
   assertComplete(seenCabinets, cabinets, 'Cabinet assignment')
-  const modulesByCabinet = new Map<string, Module[]>()
-  for (const module of input.modules) {
-    reference(cabinets, module.cabinet, `Module ${module.id} cabinet`)
-    const siblings = modulesByCabinet.get(module.cabinet) ?? []
-    siblings.push(module)
-    modulesByCabinet.set(module.cabinet, siblings)
-  }
-  const layouts = new Map([...cabinets.values()].map(cabinet => [
-    cabinet.id,
-    resolveCabinetLayout(cabinet, modulesByCabinet.get(cabinet.id) ?? []),
-  ] as const))
+  const layouts = resolveHardwareLayouts(input.cabinets, input.modules)
   const resolvedPorts: HardwarePortSpan[] = []
   let total = 0
   for (const processor of input.processorOrder) {

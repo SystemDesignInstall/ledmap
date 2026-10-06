@@ -21,7 +21,9 @@ describe('v1/v2/v3 production document dispatch', () => {
   })
 
   it('rejects unsupported versions without guessing their project shape', () => {
-    expect(() => loadLedMapProject('{"format":"ledmap","schemaVersion":6,"project":null,"extensions":null}'))
+    expect(() => loadLedMapProject('{"format":"ledmap","schemaVersion":7,"project":null,"extensions":null}'))
       .toThrow(/SERIALIZATION_UNSUPPORTED_VERSION/)
+    expect(() => loadLedMapProject('{"format":"ledmap","schemaVersion":6,"project":null,"extensions":null}'))
+      .toThrow(/SERIALIZATION_INVALID_SCHEMA/)
   })
 })

@@ -5,6 +5,7 @@ import {
   assertProjectV2HardwareContract,
   planProjectHardware,
   selectProjectCabinetSignalOrder,
+  selectProjectHardwareLoad,
   validateProject,
   createPort,
   createProcessor,
@@ -131,7 +132,7 @@ export function setProcessorPortCountV2(project: LedMapProjectV2, processorId: s
     .reduce((maximum, port) => Math.max(maximum, port.index + 1), 0)
   if (portCount < required) throw new Error(`Processor requires at least ${required} Ports for its current indices.`)
   return { ...project, hardware: { ...project.hardware,
-    processors: project.hardware.processors.map(value => value.id === processor.id ? updated : value),
+    processors: project.hardware.processors.map(value => value.id === processor.id ? { ...value, portCount: updated.portCount } : value),
   } }
 }
 
@@ -179,7 +180,7 @@ export function updatePortV2(
   if (updated.receiverCapacity < used) throw new Error(`Port capacity cannot be below ${used} assigned Receivers.`)
   return { ...project, hardware: { ...project.hardware,
     ports: project.hardware.ports.map(value => value.id === port.id
-      ? { id: updated.id, processorId: updated.processor, index: updated.index, receiverCapacity: updated.receiverCapacity }
+      ? { ...value, index: updated.index, receiverCapacity: updated.receiverCapacity }
       : value),
   } }
 }
@@ -291,6 +292,23 @@ function cabinetPixels(project: LedMapProjectV2, cabinetId: CabinetId): number {
   return pixels
 }
 
+function checkedTransportAssignment(before: LedMapProjectV2, after: LedMapProjectV2): LedMapProjectV2 {
+  const previous = selectProjectHardwareLoad(before)
+  const next = selectProjectHardwareLoad(after)
+  for (const port of next.ports) {
+    if (port.capacity !== null && port.used > port.capacity && port.used > previous.ports.find(value => value.portId === port.portId)!.used) {
+      throw new Error(`Port ${port.portId} assignment uses ${port.used} of ${port.capacity} pixels.`)
+    }
+  }
+  for (const processor of next.processors) {
+    if (processor.capacity !== null && processor.used > processor.capacity &&
+        processor.used > previous.processors.find(value => value.processorId === processor.processorId)!.used) {
+      throw new Error(`Processor ${processor.processorId} assignment uses ${processor.used} of ${processor.capacity} pixels.`)
+    }
+  }
+  return after
+}
+
 export function assignCabinetsV2(project: LedMapProjectV2, receiverId: string, orderedCabinetIds: readonly string[]): LedMapProjectV2 {
   const receiver = receiverOf(project, receiverId)
   const selected = new Set(orderedCabinetIds)
@@ -310,8 +328,9 @@ export function assignCabinetsV2(project: LedMapProjectV2, receiverId: string, o
   const promotesAuto = project.hardware.assignments.some(value => selected.has(value.target.cabinetId) && value.origin === 'auto')
   if (!promotesAuto && project.hardware.receivers.every(value => sameIds(chainOf(project, value.id), chains.get(value.id)!))) return project
   const changed = withChains(project, chains)
-  return { ...changed, hardware: { ...changed.hardware, assignments: changed.hardware.assignments.map(value =>
+  return checkedTransportAssignment(project, { ...changed, hardware: { ...changed.hardware, assignments: changed.hardware.assignments.map(value =>
     selected.has(value.target.cabinetId) && value.origin === 'auto' ? { ...value, locked: true, origin: 'manual' } : value) } }
+  )
 }
 
 export function unassignCabinetsV2(project: LedMapProjectV2, receiverId: string, cabinetIds: readonly string[]): LedMapProjectV2 {
@@ -377,11 +396,11 @@ export function moveCabinetToReceiverV2(project: LedMapProjectV2, cabinetId: str
     receiverId: targetReceiver.id,
     orderedCabinetIds: targetIds,
   })
-  return { ...project,
+  return checkedTransportAssignment(project, { ...project,
     hardware: { ...project.hardware, assignments: project.hardware.assignments.map(value => value === assignment
       ? { ...value, receiverId: targetReceiver.id, ...(value.origin === 'auto' ? { locked: true, origin: 'manual' as const } : {}) } : value) },
     operations: { ...project.operations, signalRoutes },
-  }
+  })
 }
 
 export function previewHardwareAllocationV2(project: LedMapProjectV2): ProjectHardwarePlan {

@@ -1,4 +1,5 @@
 import { DomainError } from '../model/errors.js'
+import { validateCapacityProfile, validatePortCapacityOverride } from './capacity-profile.js'
 import { assertProjectV2EditorStructure, assertProjectV2HardwareContract } from './validate.js'
 import type { LedMapProjectV2 } from './types.js'
 
@@ -26,11 +27,13 @@ export function validateProjectV2Structural(project: LedMapProjectV2): readonly 
     assertProjectV2EditorStructure(project)
     assertProjectV2HardwareContract(project)
     for (const processor of project.hardware.processors) {
+      if (processor.capacityProfile !== undefined) validateCapacityProfile(processor.capacityProfile)
       if (!Number.isSafeInteger(processor.portCount) || processor.portCount < 1) {
         throw new DomainError('EDITOR_INVALID_NUMBER', `Processor ${processor.id} portCount must be a positive safe integer`)
       }
     }
     for (const port of project.hardware.ports) {
+      if (port.pixelCapacityOverride !== undefined) validatePortCapacityOverride(port.pixelCapacityOverride)
       const processor = project.hardware.processors.find(value => value.id === port.processorId)!
       if (!Number.isSafeInteger(port.index) || port.index < 0 || !Number.isSafeInteger(port.receiverCapacity) || port.receiverCapacity < 1) {
         throw new DomainError('EDITOR_INVALID_NUMBER', `Port ${port.id} index and capacity must be valid safe integers`)

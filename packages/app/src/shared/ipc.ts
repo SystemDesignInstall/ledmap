@@ -61,7 +61,7 @@ export interface RecoverySnapshotRequest {
   readonly displayName: string
   readonly snapshotRevision: number
   readonly observedSavedRevision: number
-  readonly sourceSchemaVersion: 1 | 2 | 3 | 4 | 5
+  readonly sourceSchemaVersion: 1 | 2 | 3 | 4 | 5 | 6
   readonly baselineSourceSha256: string | null
 }
 
@@ -72,6 +72,7 @@ export interface RecoverySaveCommit {
   readonly currentRevision: number
   readonly sourcePath: string
   readonly baselineSourceSha256: string
+  readonly sourceSchemaVersion?: 5 | 6
 }
 
 export interface RecoverySelection {

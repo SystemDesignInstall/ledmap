@@ -5,6 +5,9 @@ import {
   resolveHardware,
   selectV2GeometryEngineInput,
   selectV2HardwareEngineInput,
+  projectHasCapacityIntent,
+  projectHardwareDiagnostics,
+  selectProjectHardwareLoad,
   unmapGeometryCabinetPixel,
   DomainError,
   type HardwareTopologyInput,
@@ -37,6 +40,7 @@ export interface GenericMappingExportInput {
   readonly hasInputCanvas: boolean
   readonly hardware: HardwareTopologyInput
   readonly remapRuleCount: number
+  readonly transportDiagnostics?: readonly V2ExportDiagnostic[]
 }
 
 export interface V2ExportDiagnostic {
@@ -95,7 +99,19 @@ export class V2ExportPreflightError extends Error {
 
 export function selectGenericMappingExportInput(project: LedMapProjectV2): GenericMappingExportInput {
   assertProjectV2EditorStructure(project)
+  let transportDiagnostics: readonly V2ExportDiagnostic[] = []
+  if (projectHasCapacityIntent(project)) {
+    try {
+      transportDiagnostics = projectHardwareDiagnostics(project, selectProjectHardwareLoad(project))
+        .filter(issue => issue.code === 'HARDWARE_PORT_PIXEL_OVER_CAPACITY' || issue.code === 'HARDWARE_PROCESSOR_PIXEL_OVER_CAPACITY')
+        .map(issue => diagnostic(issue.code, issue.message, issue.path))
+    } catch (error) {
+      if (!(error instanceof DomainError)) throw error
+      transportDiagnostics = [diagnostic(error.code, error.message)]
+    }
+  }
   return Object.freeze({
+    transportDiagnostics: Object.freeze(transportDiagnostics),
     screens: project.design.screens.map(screen => screen.id),
     grids: project.design.cabinetGrids.map(grid => ({ id: grid.id, screenId: grid.screenId })),
     regions: project.content.mappingRegions.map(region => ({
@@ -120,7 +136,7 @@ function stage(id: V2ExportStage['id'], diagnostics: readonly V2ExportDiagnostic
 function prepare(input: GenericMappingExportInput, scope: V2GenericMappingScope): PreparedExport {
   const integrityDiagnostics: V2ExportDiagnostic[] = []
   const mappingDiagnostics: V2ExportDiagnostic[] = []
-  const hardwareDiagnostics: V2ExportDiagnostic[] = []
+  const hardwareDiagnostics: V2ExportDiagnostic[] = [...input.transportDiagnostics ?? []]
   const remapDiagnostics: V2ExportDiagnostic[] = []
   const screenIds = new Set(scope.kind === 'composition' ? input.screens : [scope.screenId])
   const gridIds = new Set(input.grids.filter(grid => screenIds.has(grid.screenId)).map(grid => grid.id))

@@ -1,5 +1,6 @@
 import type { GridOrdering } from '../model/ordering.js'
 import type { Point, Size } from '../model/coordinates.js'
+import type { HardwareCapacityProfile, PortPixelCapacityOverride } from './capacity-profile.js'
 import type {
   CabinetGridId,
   CabinetId,
@@ -169,6 +170,7 @@ export interface ProjectProcessor {
   readonly id: ProcessorId
   readonly name: string
   readonly portCount: number
+  readonly capacityProfile?: HardwareCapacityProfile
 }
 
 export interface ProjectPort {
@@ -176,6 +178,7 @@ export interface ProjectPort {
   readonly processorId: ProcessorId
   readonly index: number
   readonly receiverCapacity: number
+  readonly pixelCapacityOverride?: PortPixelCapacityOverride
 }
 
 export interface ProjectReceiver {

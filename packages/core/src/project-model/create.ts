@@ -1,4 +1,5 @@
 import { DomainError } from '../model/errors.js'
+import { cloneCapacityProfile, clonePortCapacityOverride } from './capacity-profile.js'
 import type {
   LedMapProjectV2,
   MediaOutputCanvas,
@@ -121,8 +122,12 @@ export function createProjectV2(input: LedMapProjectV2): LedMapProjectV2 {
       outputMappings: Object.freeze(input.content.outputMappings.map(cloneOutputMapping)),
     }),
     hardware: Object.freeze({
-      processors: Object.freeze(input.hardware.processors.map(processor => Object.freeze({ ...processor }))),
-      ports: Object.freeze(input.hardware.ports.map(port => Object.freeze({ ...port }))),
+      processors: Object.freeze(input.hardware.processors.map(processor => Object.freeze({ ...processor,
+        ...(processor.capacityProfile === undefined ? {} : { capacityProfile: cloneCapacityProfile(processor.capacityProfile) }),
+      }))),
+      ports: Object.freeze(input.hardware.ports.map(port => Object.freeze({ ...port,
+        ...(port.pixelCapacityOverride === undefined ? {} : { pixelCapacityOverride: clonePortCapacityOverride(port.pixelCapacityOverride) }),
+      }))),
       receivers: Object.freeze(input.hardware.receivers.map(receiver => Object.freeze({ ...receiver }))),
       assignments: Object.freeze(input.hardware.assignments.map(cloneAssignment)),
       processorOrder: freezeArray(input.hardware.processorOrder),

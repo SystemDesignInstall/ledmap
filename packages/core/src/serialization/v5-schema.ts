@@ -3,6 +3,7 @@ import { canonicalArrayIndex, compareUtf16, isPlainRecord } from './json.js'
 import { assertOwnDataProperties } from './schema.js'
 import type { JsonValue } from './types.js'
 import type { ProjectV5Wire } from './v5-types.js'
+import type { ProjectV6Wire } from './v6-types.js'
 
 type Scalar = 'string' | 'boolean' | 'positive' | 'nonnegative' | 'signed' | 'finite' | 'rotation'
 type Spec = Scalar | { readonly enum: readonly string[] } | { readonly record: Readonly<Record<string, Spec>> }
@@ -16,7 +17,14 @@ const idOnly = { record: { id: 'string' } } as const
 const screenRectSpec = { record: { x: 'nonnegative', y: 'nonnegative', width: 'positive', height: 'positive' } } as const
 const outputRectSpec = { record: { x: 'signed', y: 'signed', width: 'positive', height: 'positive' } } as const
 
-function projectShapeV5(): Spec { return { record: {
+const capacityMode = { record: { frameRateHz: 'finite', bitDepth: 'finite', linkRateGbps: 'finite' } } as const
+const capacityProfile = { optional: { record: {
+  name: 'string', source: { record: { kind: { enum: ['manual', 'manufacturer'] }, reference: 'string', revision: 'string' } },
+  mode: capacityMode, portPixelCapacity: { optional: 'positive' }, processorPixelCapacity: { optional: 'positive' },
+} } } as const
+const capacityOverride = { optional: { record: { pixelCapacity: 'positive', reason: 'string', mode: capacityMode } } } as const
+
+function projectShapeV5(version: 5 | 6 = 5): Spec { return { record: {
   metadata: { record: { name: { optional: 'string' }, description: { optional: 'string' } } },
   design: { record: {
     screens: { array: { record: {
@@ -63,9 +71,12 @@ function projectShapeV5(): Spec { return { record: {
     } } },
   } },
   hardware: { record: {
-    processors: { array: { record: { id: 'string', name: 'string', portCount: 'positive' } } },
+    processors: { array: { record: { id: 'string', name: 'string', portCount: 'positive',
+      ...(version === 6 ? { capacityProfile } : {}),
+    } } },
     ports: { array: { record: {
       id: 'string', processorId: 'string', index: 'nonnegative', receiverCapacity: 'positive',
+      ...(version === 6 ? { pixelCapacityOverride: capacityOverride } : {}),
     } } },
     receivers: { array: { record: {
       id: 'string', legacyIndex: 'nonnegative', processorId: 'string', portId: 'string',
@@ -91,6 +102,7 @@ function projectShapeV5(): Spec { return { record: {
 } } }
 
 const projectShapeV5Value = projectShapeV5()
+const projectShapeV6Value = projectShapeV5(6)
 
 function fail(mode: Mode, path: SerializationPath, message: string): never {
   throw new SerializationError(mode === 'document' ? 'SERIALIZATION_INVALID_SCHEMA' : 'SERIALIZATION_INVALID_INPUT', message, path)
@@ -120,7 +132,7 @@ function checkRecord(value: unknown, fields: Readonly<Record<string, Spec>>, pat
     const actual = typeof field === 'object' && 'optional' in field ? field.optional : field
     output[name] = check(descriptor.value, actual, [...path, name], mode)
   }
-  const unknown = Object.getOwnPropertyNames(value).filter(key => !(key in fields)).sort(compareUtf16)
+  const unknown = Object.getOwnPropertyNames(value).filter(key => !Object.hasOwn(fields, key)).sort(compareUtf16)
   if (unknown.length > 0) fail(mode, [...path, unknown[0]!], `no unknown fields; found ${unknown[0]!}`)
   return output
 }
@@ -151,4 +163,8 @@ function check(value: unknown, spec: Spec, path: SerializationPath, mode: Mode):
 
 export function checkProjectV5Wire(value: unknown, mode: Mode): ProjectV5Wire {
   return check(value, projectShapeV5Value, ['project'], mode) as unknown as ProjectV5Wire
+}
+
+export function checkProjectV6Wire(value: unknown, mode: Mode): ProjectV6Wire {
+  return check(value, projectShapeV6Value, ['project'], mode) as unknown as ProjectV6Wire
 }

@@ -7,11 +7,12 @@ import type { JsonObject } from './types.js'
 import { loadProjectV3 } from './v3.js'
 import { loadProjectV4 } from './v4.js'
 import { loadProjectV5 } from './v5.js'
+import { loadProjectV6 } from './v6.js'
 
 export interface LoadedLedMapProject {
   readonly project: LedMapProjectV2
   readonly extensions: JsonObject
-  readonly sourceSchemaVersion: 1 | 2 | 3 | 4 | 5
+  readonly sourceSchemaVersion: 1 | 2 | 3 | 4 | 5 | 6
 }
 
 export function loadLedMapProject(text: string): LoadedLedMapProject {
@@ -26,6 +27,7 @@ export function loadLedMapProject(text: string): LoadedLedMapProject {
   if (version === 3) return loadProjectV3(text)
   if (version === 4) return loadProjectV4(text)
   if (version === 5) return loadProjectV5(text)
+  if (version === 6) return loadProjectV6(text)
   if (version === 1 || version === 2) {
     const loaded = loadEditableProject(text)
     return Object.freeze({

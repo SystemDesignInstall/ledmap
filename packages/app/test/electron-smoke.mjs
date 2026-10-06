@@ -718,6 +718,37 @@ try {
   assert.deepEqual(hardwareDump.receivers[1].cabinets, ['screen-2/C01', 'screen-2/C02'])
   assert.equal(hardwareDump.unassigned.length, 32)
 
+  for (const receiver of hardwareDump.receivers) {
+    await mappingPage.locator(`[data-hardware-type="receiver"][data-hardware-id="${receiver.id}"]`).click()
+    const capacity = mappingPage.getByRole('spinbutton', { name: 'Receiver pixel capacity', exact: true })
+    await capacity.fill(receiver.id === 'receiver-1' || receiver.id === 'receiver-2' ? '32768' : '16384')
+    await capacity.blur()
+  }
+  const beforePartialAllocation = await mappingPage.evaluate(() => window.__ledmapHardware.dump())
+  await mappingPage.locator('#hardware-auto-allocate').click()
+  await mappingPage.locator('#allocation-preview-dialog').waitFor({ state: 'visible' })
+  assert.match(await mappingPage.locator('#allocation-preview-body').innerText(), /25 Cabinets unassigned/)
+  assert.match(await mappingPage.locator('#allocation-preview-body').innerText(), /transport limit unknown/)
+  assert.deepEqual(await mappingPage.evaluate(() => window.__ledmapHardware.dump()), beforePartialAllocation)
+  await mappingPage.screenshot({ path: resolve(output, 'hardware-partial-allocation.png') })
+  await mappingPage.locator('#allocation-apply').click()
+  await mappingPage.waitForFunction(() => window.__ledmapHardware.dump().unassigned.length === 25)
+  const partialDump = await mappingPage.evaluate(() => window.__ledmapHardware.dump())
+  assert.deepEqual(partialDump.receivers[0].cabinets, ['screen-1/C01', 'screen-1/C02'])
+  assert.deepEqual(partialDump.receivers[1].cabinets, ['screen-2/C01', 'screen-2/C02'])
+  assert.match(await mappingPage.locator('#hardware-diagnostics').innerText(), /25 Cabinets are not assigned/)
+  await mappingPage.screenshot({ path: resolve(output, 'hardware-partial-diagnostics.png') })
+  await mappingPage.locator('#undo-project').click()
+  await mappingPage.waitForFunction(() => window.__ledmapHardware.dump().unassigned.length === 32)
+  assert.deepEqual(await mappingPage.evaluate(() => window.__ledmapHardware.dump()), beforePartialAllocation)
+  for (const receiver of hardwareDump.receivers) {
+    await mappingPage.locator(`[data-hardware-type="receiver"][data-hardware-id="${receiver.id}"]`).click()
+    const capacity = mappingPage.getByRole('spinbutton', { name: 'Receiver pixel capacity', exact: true })
+    await capacity.fill('65536')
+    await capacity.blur()
+  }
+  hardwareDump = await mappingPage.evaluate(() => window.__ledmapHardware.dump())
+
   const beforeAllocationPreview = hardwareDump
   await mappingPage.locator('#hardware-auto-allocate').click()
   await mappingPage.locator('#allocation-preview-dialog').waitFor({ state: 'visible' })
@@ -733,7 +764,8 @@ try {
   hardwareDump = await mappingPage.evaluate(() => window.__ledmapHardware.dump())
   assert.equal(hardwareDump.unassigned.length, 0)
   assert.equal(hardwareDump.receivers.every(receiver => receiver.cabinets.length <= 4), true)
-  assert.match(await mappingPage.locator('#hardware-diagnostics').innerText(), /Hardware ready/)
+  assert.match(await mappingPage.locator('#hardware-diagnostics').innerText(), /Assignments complete/)
+  assert.match(await mappingPage.locator('#hardware-health-status').innerText(), /capacity limits unknown/)
 
   const firstScreenPixel = await mappingPage.evaluate(() => window.__ledmapHardware.inspectCabinet('screen-1/C01', 0, 0))
   const secondScreenPixel = await mappingPage.evaluate(() => window.__ledmapHardware.inspectCabinet('screen-2/C01', 0, 0))

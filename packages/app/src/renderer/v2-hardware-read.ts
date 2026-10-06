@@ -1,5 +1,15 @@
-import type { LedMapProjectV2, ProjectProcessor, ProjectPort, ProjectReceiver } from '@ledmap/core'
+import { selectProjectHardwareLoad, type LedMapProjectV2, type ProjectHardwareLoad, type ProjectProcessor, type ProjectPort, type ProjectReceiver } from '@ledmap/core'
 import { orderedSelectedCabinetsV2 } from './v2-hardware-commands.js'
+
+const loads = new WeakMap<LedMapProjectV2, ProjectHardwareLoad>()
+
+export function projectHardwareLoadV2(project: LedMapProjectV2): ProjectHardwareLoad {
+  const cached = loads.get(project)
+  if (cached) return cached
+  const load = selectProjectHardwareLoad(project)
+  loads.set(project, load)
+  return load
+}
 
 export function findProcessor(project: LedMapProjectV2, id: string): ProjectProcessor | undefined {
   return project.hardware.processors.find(value => value.id === id)
@@ -35,13 +45,8 @@ export function receiverCabinetIds(project: LedMapProjectV2, receiverId: string)
 export function receiverPixelUsage(project: LedMapProjectV2, receiverId: string) {
   const receiver = findReceiver(project, receiverId)
   if (!receiver) throw new Error(`Unknown Receiver: ${receiverId}`)
-  const cabinets = new Map<string, (typeof project.design.cabinets)[number]>(project.design.cabinets.map(cabinet => [cabinet.id, cabinet]))
-  const used = receiverCabinetIds(project, receiverId).reduce((total, id) => {
-    const cabinet = cabinets.get(id)
-    if (!cabinet) throw new Error(`Unknown Cabinet: ${id}`)
-    return total + cabinet.pixelWidth * cabinet.pixelHeight
-  }, 0)
-  return { receiver, used, capacity: receiver.pixelCapacity ?? null }
+  const load = projectHardwareLoadV2(project).receivers.find(value => value.receiverId === receiver.id)!
+  return { receiver, used: load.used, capacity: load.capacity }
 }
 
 export function unassignedCabinetIds(project: LedMapProjectV2): readonly string[] {

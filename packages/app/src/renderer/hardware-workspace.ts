@@ -3,7 +3,9 @@ import {
   selectV2GeometryRead,
   selectV2HardwareRead,
   unmapGeometryCabinetPixel,
-  type AllocationProposal,
+  validateProject,
+  type ProjectHardwarePlan,
+  type ProjectValidationReport,
   type GeometryMappedPixel,
   type LedMapProjectV2,
   type MappedPixel,
@@ -25,6 +27,7 @@ import {
   receiverPixelUsage,
   unassignedCabinetIds,
   receiverCabinetIds,
+  projectHardwareLoadV2,
 } from './v2-hardware-read.js'
 import {
   addPortV2, addProcessorV2, addReceiverV2, applyHardwareAllocationV2,
@@ -199,10 +202,12 @@ export function createHardwareWorkspace(options: HardwareWorkspaceOptions): Hard
   let selection: HardwareSelection | null = null
   let selectedCabinetIds: readonly string[] = []
   let inspectedCabinet: { readonly id: string; readonly coordinate: Point } | null = null
+  let reportProject: LedMapProjectV2 | null = null
+  let cachedReport: ProjectValidationReport | null = null
   let camera: Camera = { zoom: 1, offsetX: 0, offsetY: 0 }
   let overlays: HardwareOverlays = { receiver: true, port: false, processor: false, dataFlow: true }
   let allocationPreview: {
-    readonly proposal: AllocationProposal
+    readonly proposal: ProjectHardwarePlan
     readonly documentId: string
     readonly revision: number
   } | null = null
@@ -215,6 +220,14 @@ export function createHardwareWorkspace(options: HardwareWorkspaceOptions): Hard
 
   function model(): LedMapProjectV2 {
     return options.getProjectV2()
+  }
+
+  function validationReport(source = model()): ProjectValidationReport {
+    if (reportProject !== source) {
+      reportProject = source
+      cachedReport = validateProject({ project: source })
+    }
+    return cachedReport!
   }
 
   function mutate(run: (project: LedMapProjectV2) => LedMapProjectV2, fallback: string, after?: () => void): void {
@@ -358,19 +371,22 @@ export function createHardwareWorkspace(options: HardwareWorkspaceOptions): Hard
         render()
       })
       diagnostics.append(item)
-    } else {
+    }
+    const report = validationReport()
+    const issues = report.diagnostics.filter(issue => issue.stage === 'input' || issue.stage === 'hardware')
+    for (const issue of issues.filter(issue => issue.code !== 'HARDWARE_UNPATCHED')) {
+      const item = document.createElement('p')
+      item.className = `mapping-diagnostic ${issue.severity === 'error' ? 'status-invalid' : 'status-incomplete'}`
+      item.textContent = issue.message
+      diagnostics.append(item)
+    }
+    if (unassigned.length === 0 && !issues.some(issue => issue.severity === 'error')) {
+      const healthy = document.createElement('p')
+      const unknown = issues.some(issue => issue.severity === 'warning')
+      healthy.className = unknown ? 'mapping-diagnostic status-incomplete' : 'mapping-diagnostic-ok'
       const hardware = selectV2HardwareRead(model())
-      if (hardware.status === 'ready') {
-        const healthy = document.createElement('p')
-        healthy.className = 'mapping-diagnostic-ok'
-        healthy.textContent = `Hardware ready · ${format(hardware.hardware.pixelCount)} pixels`
-        diagnostics.append(healthy)
-      } else {
-        const item = document.createElement('p')
-        item.className = 'mapping-diagnostic status-invalid'
-        item.textContent = hardware.diagnostics[0]?.message ?? 'Hardware topology is invalid.'
-        diagnostics.append(item)
-      }
+      healthy.textContent = `Assignments complete · ${format(hardware.hardware?.pixelCount ?? 0)} pixels${unknown ? ' · capacity limits unknown' : ''}`
+      diagnostics.append(healthy)
     }
   }
 
@@ -462,10 +478,12 @@ export function createHardwareWorkspace(options: HardwareWorkspaceOptions): Hard
       inspectorTitle.textContent = 'Processor'
       const ports = model().hardware.ports.filter(port => port.processorId === processor.id)
       const fields = document.createElement('div')
+      const load = projectHardwareLoadV2(model()).processors.find(value => value.processorId === processor.id)!
       fields.append(
         row('Name', textInput(processor.name, 'Processor name', value => commit(source => renameProcessorV2(source, processor.id, value), 'Unable to rename Processor.'))),
         row('Identity', processor.id),
         row('Ports used', capacityText(ports.length, processor.portCount)),
+        row('Pixel usage', `${format(load.used)} · transport limit unknown`),
         row('Port capacity', numberInput(processor.portCount, 'Processor port capacity', value => commit(source => setProcessorPortCountV2(source, processor.id, value), 'Unable to update Processor.'))),
       )
       properties.append(group('Generic Processor', fields), renderPixelInspector())
@@ -477,11 +495,13 @@ export function createHardwareWorkspace(options: HardwareWorkspaceOptions): Hard
       inspectorTitle.textContent = 'Port'
       const receiverCount = model().hardware.receivers.filter(receiver => receiver.portId === port.id).length
       const fields = document.createElement('div')
+      const load = projectHardwareLoadV2(model()).ports.find(value => value.portId === port.id)!
       fields.append(
         row('Identity', port.id),
         row('Processor', port.processorId),
         row('Index', numberInput(port.index, 'Port index', value => commit(source => updatePortV2(source, port.id, { index: value }), 'Unable to update Port.'))),
         row('Receivers used', capacityText(receiverCount, port.receiverCapacity)),
+        row('Pixel usage', `${format(load.used)} · transport limit unknown`),
         row('Receiver capacity', numberInput(port.receiverCapacity, 'Port receiver capacity', value => commit(source => updatePortV2(source, port.id, { receiverCapacity: value }), 'Unable to update Port.'))),
       )
       properties.append(group('Generic Port', fields), renderPixelInspector())
@@ -652,9 +672,12 @@ export function createHardwareWorkspace(options: HardwareWorkspaceOptions): Hard
       button.setAttribute('aria-pressed', String(overlays[key]))
     })
     const unassigned = unassignedCabinetIds(model()).length
-    healthStatus.textContent = unassigned === 0 && model().design.cabinets.length > 0
-      ? 'Hardware ready'
-      : `${unassigned} Cabinets unassigned`
+    const issues = validationReport().diagnostics.filter(issue => issue.stage === 'input' || issue.stage === 'hardware')
+    healthStatus.textContent = issues.some(issue => issue.severity === 'error' && issue.code !== 'HARDWARE_UNPATCHED')
+      ? 'Hardware issues'
+      : unassigned === 0 && model().design.cabinets.length > 0
+        ? `Assignments complete${issues.some(issue => issue.severity === 'warning') ? ' · capacity limits unknown' : ''}`
+        : `${unassigned} Cabinets unassigned`
   }
 
   function render(): void {
@@ -726,8 +749,11 @@ export function createHardwareWorkspace(options: HardwareWorkspaceOptions): Hard
     )
   }
 
-  function renderPreview(proposal: AllocationProposal): void {
+  function renderPreview(proposal: ProjectHardwarePlan): void {
     previewBody.replaceChildren()
+    const summary = document.createElement('p')
+    summary.textContent = `${format(proposal.load.assignedPixels)} / ${format(proposal.load.totalPixels)} pixels assigned · ${proposal.unpatched.length} Cabinets unassigned`
+    previewBody.append(summary)
     const before = new Map(model().hardware.receivers.map(receiver => [receiver.id, receiverCabinetIds(model(), receiver.id).length]))
     for (const receiver of proposal.topology.receivers) {
       const added = receiver.cabinets.length - (before.get(receiver.id) ?? 0)
@@ -736,7 +762,8 @@ export function createHardwareWorkspace(options: HardwareWorkspaceOptions): Hard
       const name = document.createElement('strong')
       name.textContent = receiver.id
       const detail = document.createElement('span')
-      detail.textContent = `${receiver.cabinets.length} Cabinets${added > 0 ? ` · +${added}` : ''}`
+      const load = proposal.load.receivers.find(value => value.receiverId === receiver.id)!
+      detail.textContent = `${receiver.cabinets.length} Cabinets${added > 0 ? ` · +${added}` : ''} · ${format(load.used)} / ${load.capacity === null ? 'unknown' : format(load.capacity)} pixels · headroom ${load.headroom === null ? 'unknown' : format(load.headroom)}`
       item.append(name, detail)
       previewBody.append(item)
     }
@@ -751,6 +778,25 @@ export function createHardwareWorkspace(options: HardwareWorkspaceOptions): Hard
         previewBody.append(line)
       }
     }
+    for (const port of proposal.load.ports) {
+      const line = document.createElement('p')
+      line.textContent = `Port ${port.portId}: ${format(port.used)} pixels · ${port.receiversUsed} / ${port.receiverCapacity} Receiver slots · transport limit unknown`
+      previewBody.append(line)
+    }
+    for (const processor of proposal.load.processors) {
+      const line = document.createElement('p')
+      line.textContent = `Processor ${processor.processorId}: ${format(processor.used)} pixels · ${processor.portsUsed} / ${processor.portCapacity} Port slots · transport limit unknown`
+      previewBody.append(line)
+    }
+    const report = validationReport(proposal.project)
+    for (const issue of report.diagnostics.filter(issue => issue.stage === 'input' || issue.stage === 'hardware')) {
+      const line = document.createElement('p')
+      line.className = issue.severity === 'error' ? 'status-invalid' : 'status-incomplete'
+      line.textContent = issue.message
+      previewBody.append(line)
+    }
+    applyPreviewButton.disabled = proposal.project === model() || report.diagnostics.some(issue => issue.severity === 'error' &&
+      (issue.stage === 'input' || (issue.stage === 'hardware' && issue.code !== 'HARDWARE_UNPATCHED')))
   }
 
   function previewAllocation(): void {

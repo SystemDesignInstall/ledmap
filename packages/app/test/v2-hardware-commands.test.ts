@@ -122,7 +122,7 @@ describe('direct V2 Hardware commands', () => {
     v2 = unassignCabinetsV2(v2, 'receiver-2', cabinets.slice(1, 2))
     expectTopologyParity(legacy, v2)
     expectRoutesMatchAssignments(v2)
-    expect(v2.hardware.assignments.every(value => value.locked && value.origin === undefined)).toBe(true)
+    expect(v2.hardware.assignments.every(value => value.locked && value.origin === 'manual')).toBe(true)
   })
 
   it('blocks dependent deletes without publishing a partial session and deletes empty entities', () => {
@@ -177,7 +177,8 @@ describe('direct V2 Hardware commands', () => {
     v2 = assignCabinetsV2(v2, 'receiver-1', orderedSelectedCabinetsV2(v2, ordered.slice(0, 2)))
     const legacyPreview = previewHardwareAllocation(legacy)
     const v2Preview = previewHardwareAllocationV2(v2)
-    expect(v2Preview).toEqual(legacyPreview)
+    expect(v2Preview.topology).toEqual(legacyPreview.topology)
+    expect(v2Preview.diagnostics).toEqual(legacyPreview.diagnostics)
     legacy = applyHardwareAllocation(legacy, legacyPreview)
     v2 = applyHardwareAllocationV2(v2, v2Preview)
     expectTopologyParity(legacy, v2)
@@ -423,6 +424,71 @@ describe('direct V2 Hardware commands', () => {
     expect(chainFor(allocated, 'receiver-1').slice(0, 3)).toEqual([fourth, first, seventh])
     expect(allocated.hardware.assignments.find(value => value.target.cabinetId === first)).toEqual(assignment)
     expectRoutesMatchAssignments(allocated)
+  })
+
+  it('applies partial allocation as one undoable transaction and retains it through save/load', () => {
+    const original = withReceivers(1)
+    const cabinet = original.design.cabinets[0]!
+    const project = updateReceiverV2(original, 'receiver-1', { pixelCapacity: cabinet.pixelWidth * cabinet.pixelHeight })
+    const plan = previewHardwareAllocationV2(project)
+    expect(plan.unpatched.length).toBeGreaterThan(0)
+    expect(plan.project.hardware.assignments.length).toBeGreaterThan(0)
+    const document = new ProjectDocumentController(() => 'partial-document')
+    document.replace({ ...createProjectSession('partial-document'), project })
+    document.transactV2(source => applyHardwareAllocationV2(source, plan))
+    expect(document.historyDepth).toBe(1)
+    const allocated = document.session.project
+    expectRoutesMatchAssignments(allocated)
+    expect(allocated.hardware.assignments.every(value => value.origin === 'auto' && !value.locked)).toBe(true)
+    const reopened = loadProjectSession(serializeProjectSession(document.session), 'partial.ledmap', 'reopened')
+    expect(reopened.project).toEqual(allocated)
+    expect(previewHardwareAllocationV2(reopened.project).unpatched).toEqual(plan.unpatched)
+    expect(document.undo()).toBe(true)
+    expect(document.session.project).toEqual(project)
+    expect(document.redo()).toBe(true)
+    expect(document.session.project).toEqual(allocated)
+  })
+
+  it('rejects tampered allocation intent and unpatched lists without publishing a transaction', () => {
+    const original = withReceivers(1)
+    const cabinet = original.design.cabinets[0]!
+    const project = updateReceiverV2(original, 'receiver-1', { pixelCapacity: cabinet.pixelWidth * cabinet.pixelHeight })
+    const plan = previewHardwareAllocationV2(project)
+    const session = { ...createProjectSession('tampered'), project }
+    const changedIntent = { ...plan, project: { ...plan.project, hardware: { ...plan.project.hardware,
+      assignments: plan.project.hardware.assignments.map(value => ({ ...value, locked: true })),
+    } } }
+    expect(() => commitProjectV2(session, source => applyHardwareAllocationV2(source, changedIntent))).toThrow(/stale/)
+    expect(() => commitProjectV2(session, source => applyHardwareAllocationV2(source, { ...plan, unpatched: [] }))).toThrow(/stale/)
+    expect(session.project).toBe(project)
+    expect(session.revision).toBe(0)
+  })
+
+  it('blocks applying a preserved overloaded manual assignment while keeping it assigned', () => {
+    let project = withReceivers(1)
+    const id = project.design.cabinets[0]!.id
+    project = assignCabinetsV2(project, 'receiver-1', [id])
+    project = { ...project, hardware: { ...project.hardware,
+      receivers: project.hardware.receivers.map(receiver => ({ ...receiver, pixelCapacity: 1 })),
+    } }
+    const plan = previewHardwareAllocationV2(project)
+    expect(plan.project.hardware.assignments).toEqual(project.hardware.assignments)
+    expect(plan.unpatched).not.toContain(id)
+    expect(() => applyHardwareAllocationV2(project, plan)).toThrow(/uses .* of 1 pixels/)
+  })
+
+  it('marks explicit reassignment of auto intent as manual while preserving its identity', () => {
+    let project = withReceivers(2)
+    project = applyHardwareAllocationV2(project, previewHardwareAllocationV2(project))
+    const assignment = project.hardware.assignments[0]!
+    const manual = assignCabinetsV2(project, assignment.receiverId, [assignment.target.cabinetId])
+    expect(manual.hardware.assignments.find(value => value.id === assignment.id)).toMatchObject({
+      locked: true, origin: 'manual', receiverId: assignment.receiverId,
+    })
+    const planned = previewHardwareAllocationV2(manual)
+    expect(planned.project.hardware.assignments.find(value => value.id === assignment.id)).toEqual(
+      manual.hardware.assignments.find(value => value.id === assignment.id),
+    )
   })
 })
 

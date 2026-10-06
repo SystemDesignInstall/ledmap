@@ -72,7 +72,7 @@ interface LedmapHook {
   projectToPx(point: Point): Point
   preview(): ResizePreview | null
   resizeHandlesPx(id: string): ReadonlyArray<{ readonly handle: ResizeHandle; readonly x: number; readonly y: number }>
-  document(): { readonly dirty: boolean; readonly currentFilePath: string | null; readonly sourceSchemaVersion: 1 | 2 | 3 | 4 | 5;
+  document(): { readonly dirty: boolean; readonly currentFilePath: string | null; readonly sourceSchemaVersion: 1 | 2 | 3 | 4 | 5 | 6;
     readonly revision: number; readonly savedRevision: number }
   projectSnapshot(): string
   selectedScreens(): readonly string[]
@@ -274,7 +274,7 @@ function syncDocumentState(): void {
     currentFilePath: session.currentFilePath,
     dirty,
   })
-  saveProjectButton.disabled = !dirty && session.sourceSchemaVersion === 5
+  saveProjectButton.disabled = !dirty && session.sourceSchemaVersion >= 5
   undoProjectButton.disabled = !documentController.canUndo
   redoProjectButton.disabled = !documentController.canRedo
 }

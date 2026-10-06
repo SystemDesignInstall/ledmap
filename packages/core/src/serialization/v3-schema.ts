@@ -119,7 +119,7 @@ function checkRecord(value: unknown, fields: Readonly<Record<string, Spec>>, pat
     const actual = typeof field === 'object' && 'optional' in field ? field.optional : field
     output[name] = check(descriptor.value, actual, [...path, name], mode)
   }
-  const unknown = Object.getOwnPropertyNames(value).filter(key => !(key in fields)).sort(compareUtf16)
+  const unknown = Object.getOwnPropertyNames(value).filter(key => !Object.hasOwn(fields, key)).sort(compareUtf16)
   if (unknown.length > 0) fail(mode, [...path, unknown[0]!], `no unknown fields; found ${unknown[0]!}`)
   return output
 }

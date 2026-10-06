@@ -73,7 +73,7 @@ async function promptLegacyUpgrade(window: BrowserWindow): Promise<LegacyUpgrade
     type: 'warning',
     title: 'Upgrade LedMAP project',
     message: 'This project uses an older LedMAP file format.',
-    detail: 'Saving will upgrade it to schema version 4. Older versions of LedMAP may no longer be able to open this file.',
+    detail: 'Saving will upgrade the project format to preserve its current features. Older LedMAP versions may not be able to open it. Save a separate copy to keep the original file.',
     buttons: ['Upgrade File', 'Save As…', 'Cancel'],
     defaultId: 1,
     cancelId: 2,

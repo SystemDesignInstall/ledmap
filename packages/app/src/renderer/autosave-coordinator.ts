@@ -1,5 +1,5 @@
 import type { RecoverySaveCommit, RecoverySnapshotRequest } from '../shared/ipc.js'
-import { serializeProjectSession, sessionDirty, type ProjectSession } from './project-session.js'
+import { projectSessionSchemaVersion, serializeProjectSession, sessionDirty, type ProjectSession } from './project-session.js'
 
 interface RecoveryTransport {
   writeRecovery(request: RecoverySnapshotRequest): Promise<void>
@@ -130,7 +130,7 @@ export class AutosaveCoordinator {
         if (!sourcePath || this.active !== active) return
         await this.transport.reconcileRecovery({ recoveryId: active.recoveryId, sessionEpoch: active.sessionEpoch,
           savedRevision: snapshot.revision, currentRevision: current.revision, sourcePath,
-          baselineSourceSha256: sha256 })
+          baselineSourceSha256: sha256, sourceSchemaVersion: projectSessionSchemaVersion(snapshot) })
       }).catch(error => { this.diagnostic(error) })
     }
     let timeout: ReturnType<typeof setTimeout> | undefined

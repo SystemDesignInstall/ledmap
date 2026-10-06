@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { createProjectSession, recoverProjectSession, serializeProjectSession } from '../src/renderer/project-session.js'
 import { RecoveryStore, parseRecoveryManifest, sha256, type RecoverySnapshotRequest } from '../src/main/recovery-store.js'
 import { StagedProjectWriter } from '../src/main/staged-project-write.js'
-import { createEmptyProjectV2, serializeProjectV3 } from '@ledmap/core'
+import { asProcessorId, createEmptyProjectV2, createProjectV2, serializeProjectV3 } from '@ledmap/core'
 
 const directories: string[] = []
 const id = '11111111-1111-4111-8111-111111111111'
@@ -30,6 +30,31 @@ afterEach(async () => {
 })
 
 describe('RecoveryStore', () => {
+  it('retains v6 profile intent through manifest discovery and recovery', async () => {
+    const { root, source } = await fixture()
+    const project = createEmptyProjectV2()
+    const processorId = asProcessorId('capacity-processor')
+    const candidate = createProjectV2({ ...project, hardware: { ...project.hardware,
+      processors: [{ id: processorId, name: 'Declared controller', portCount: 1, capacityProfile: {
+        name: 'Recovery mode', source: { kind: 'manual', reference: 'Recovery fixture', revision: '1' },
+        mode: { frameRateHz: 50, bitDepth: 12, linkRateGbps: 10 }, portPixelCapacity: 1000, processorPixelCapacity: 1000,
+      } }], processorOrder: [processorId],
+    } })
+    const payload = serializeProjectSession({ ...createProjectSession('capacity'), project: candidate })
+    const store = new RecoveryStore(root)
+    await store.writeSnapshot(snapshot({ text: payload, sourceSchemaVersion: 6 }))
+    const recovered = (await store.candidates())[0]!
+    expect(recovered.manifest.sourceSchemaVersion).toBe(6)
+    expect(recoverProjectSession(recovered.text, 'restored').project).toEqual(candidate)
+    const malformed = JSON.parse(payload)
+    malformed.project.hardware.processors[0].capacityProfile.mode.bitDepth = 9
+    await expect(store.writeSnapshot(snapshot({ text: JSON.stringify(malformed), sourceSchemaVersion: 6, snapshotRevision: 2 }))).rejects.toThrow(/Capacity mode/)
+    expect((await store.candidates())[0]!.text).toBe(payload)
+    await store.reconcileSave({ recoveryId: id, sessionEpoch: epoch, savedRevision: 0, currentRevision: 1,
+      sourcePath: source, baselineSourceSha256: sha256(Buffer.from(payload)), sourceSchemaVersion: 6 })
+    expect(parseRecoveryManifest(await readFile(join(root, 'manifests', `${id}.json`), 'utf8')).sourceSchemaVersion).toBe(6)
+  })
+
   it('commits one verified V5 payload behind a versioned manifest', async () => {
     const { root } = await fixture()
     const store = new RecoveryStore(root)

@@ -37,6 +37,7 @@ import {
   reorderSignalRouteV2, unassignCabinetsV2, updatePortV2, updateReceiverV2,
 } from './v2-hardware-commands.js'
 import type { Project } from './v2-view-model.js'
+import { capacityModeText, portCapacityEditor, processorCapacityEditor } from './hardware-capacity-editor.js'
 
 interface HardwareWorkspaceOptions {
   readonly getProject: () => Project
@@ -382,8 +383,8 @@ export function createHardwareWorkspace(options: HardwareWorkspaceOptions): Hard
     }
     if (unassigned.length === 0 && !issues.some(issue => issue.severity === 'error')) {
       const healthy = document.createElement('p')
-      const unknown = issues.some(issue => issue.severity === 'warning')
-      healthy.className = unknown ? 'mapping-diagnostic status-incomplete' : 'mapping-diagnostic-ok'
+      const unknown = issues.some(issue => issue.code === 'HARDWARE_CAPACITY_UNKNOWN' || issue.code === 'HARDWARE_TRANSPORT_CAPACITY_UNKNOWN')
+      healthy.className = issues.some(issue => issue.severity === 'warning') ? 'mapping-diagnostic status-incomplete' : 'mapping-diagnostic-ok'
       const hardware = selectV2HardwareRead(model())
       healthy.textContent = `Assignments complete · ${format(hardware.hardware?.pixelCount ?? 0)} pixels${unknown ? ' · capacity limits unknown' : ''}`
       diagnostics.append(healthy)
@@ -483,10 +484,19 @@ export function createHardwareWorkspace(options: HardwareWorkspaceOptions): Hard
         row('Name', textInput(processor.name, 'Processor name', value => commit(source => renameProcessorV2(source, processor.id, value), 'Unable to rename Processor.'))),
         row('Identity', processor.id),
         row('Ports used', capacityText(ports.length, processor.portCount)),
-        row('Pixel usage', `${format(load.used)} · transport limit unknown`),
+        row('Pixel usage', load.capacity === null ? `${format(load.used)} · transport limit unknown` : `${capacityText(load.used, load.capacity)} px`),
+        row('Pixel headroom', load.headroom === null ? 'unknown' : `${format(load.headroom)} px`),
         row('Port capacity', numberInput(processor.portCount, 'Processor port capacity', value => commit(source => setProcessorPortCountV2(source, processor.id, value), 'Unable to update Processor.'))),
       )
-      properties.append(group('Generic Processor', fields), renderPixelInspector())
+      if (processor.capacityProfile) {
+        const profile = processor.capacityProfile
+        const source = `${profile.source.kind} · ${profile.source.reference} · ${profile.source.revision}`
+        const sourceRow = row('Capacity source', source)
+        sourceRow.title = source
+        fields.append(row('Capacity profile', profile.name), row('Signal mode', capacityModeText(profile.mode)),
+          sourceRow)
+      }
+      properties.append(group('Processor', fields), processorCapacityEditor(model(), processor.id, command => commit(command, 'Unable to apply capacity profile.')), renderPixelInspector())
       return
     }
     if (selection.type === 'port') {
@@ -501,10 +511,11 @@ export function createHardwareWorkspace(options: HardwareWorkspaceOptions): Hard
         row('Processor', port.processorId),
         row('Index', numberInput(port.index, 'Port index', value => commit(source => updatePortV2(source, port.id, { index: value }), 'Unable to update Port.'))),
         row('Receivers used', capacityText(receiverCount, port.receiverCapacity)),
-        row('Pixel usage', `${format(load.used)} · transport limit unknown`),
+        row('Pixel usage', load.capacity === null ? `${format(load.used)} · transport limit unknown` : `${capacityText(load.used, load.capacity)} px`),
+        row('Pixel headroom', load.headroom === null ? 'unknown' : `${format(load.headroom)} px`),
         row('Receiver capacity', numberInput(port.receiverCapacity, 'Port receiver capacity', value => commit(source => updatePortV2(source, port.id, { receiverCapacity: value }), 'Unable to update Port.'))),
       )
-      properties.append(group('Generic Port', fields), renderPixelInspector())
+      properties.append(group('Port', fields), portCapacityEditor(model(), port.id, command => commit(command, 'Unable to apply Port override.')), renderPixelInspector())
       return
     }
     const receiver = findReceiver(model(), selection.id)
@@ -676,7 +687,8 @@ export function createHardwareWorkspace(options: HardwareWorkspaceOptions): Hard
     healthStatus.textContent = issues.some(issue => issue.severity === 'error' && issue.code !== 'HARDWARE_UNPATCHED')
       ? 'Hardware issues'
       : unassigned === 0 && model().design.cabinets.length > 0
-        ? `Assignments complete${issues.some(issue => issue.severity === 'warning') ? ' · capacity limits unknown' : ''}`
+        ? `Assignments complete${issues.some(issue => issue.severity === 'warning') ?
+          issues.some(issue => issue.code === 'HARDWARE_CAPACITY_UNKNOWN' || issue.code === 'HARDWARE_TRANSPORT_CAPACITY_UNKNOWN') ? ' · capacity limits unknown' : ' · warnings present' : ''}`
         : `${unassigned} Cabinets unassigned`
   }
 
@@ -780,12 +792,14 @@ export function createHardwareWorkspace(options: HardwareWorkspaceOptions): Hard
     }
     for (const port of proposal.load.ports) {
       const line = document.createElement('p')
-      line.textContent = `Port ${port.portId}: ${format(port.used)} pixels · ${port.receiversUsed} / ${port.receiverCapacity} Receiver slots · transport limit unknown`
+      line.textContent = `Port ${port.portId}: ${format(port.used)} pixels · ${port.receiversUsed} / ${port.receiverCapacity} Receiver slots · ` +
+        (port.capacity === null ? 'transport limit unknown' : `limit ${format(port.capacity)} px · headroom ${format(port.headroom!)} px`)
       previewBody.append(line)
     }
     for (const processor of proposal.load.processors) {
       const line = document.createElement('p')
-      line.textContent = `Processor ${processor.processorId}: ${format(processor.used)} pixels · ${processor.portsUsed} / ${processor.portCapacity} Port slots · transport limit unknown`
+      line.textContent = `Processor ${processor.processorId}: ${format(processor.used)} pixels · ${processor.portsUsed} / ${processor.portCapacity} Port slots · ` +
+        (processor.capacity === null ? 'transport limit unknown' : `limit ${format(processor.capacity)} px · headroom ${format(processor.headroom!)} px`)
       previewBody.append(line)
     }
     const report = validationReport(proposal.project)

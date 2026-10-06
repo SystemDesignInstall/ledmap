@@ -8,6 +8,8 @@ export { loadProjectV4, parseProjectV4Document, serializeProjectV4 } from './v4.
 export type { LedMapDocumentV4, ProjectV4Wire } from './v4-types.js'
 export { loadProjectV5, parseProjectV5Document, serializeProjectV5 } from './v5.js'
 export type { LedMapDocumentV5, ProjectV5Wire } from './v5-types.js'
+export { loadProjectV6, parseProjectV6Document, serializeProjectV6 } from './v6.js'
+export type { LedMapDocumentV6, ProjectV6Wire } from './v6-types.js'
 export { loadLedMapProject } from './dispatch.js'
 export type { LoadedLedMapProject } from './dispatch.js'
 export type { SerializationErrorCode, SerializationPath } from './errors.js'

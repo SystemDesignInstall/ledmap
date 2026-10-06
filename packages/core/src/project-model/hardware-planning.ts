@@ -1,4 +1,5 @@
 import { cabinetIndex } from '../cabinet-engine/index.js'
+import { portPixelCapacity, sameCapacityMode } from './capacity-profile.js'
 import type { AllocationDiagnostic, AllocationProposal } from '../hardware-engine/allocate.js'
 import { assertSafeInteger, safeAdd, safeProduct } from '../hardware-engine/validation.js'
 import { DomainError } from '../model/errors.js'
@@ -94,8 +95,10 @@ export function selectProjectHardwareLoad(project: LedMapProjectV2): ProjectHard
   const ports = project.hardware.ports.map(port => {
     assertSafeInteger(`Port ${port.id} capacity`, port.receiverCapacity, 1)
     const group = receiverGroups.get(port.id) ?? []
-    return Object.freeze({ portId: port.id, used: sum(group.map(receiver => receiver.used)), capacity: null,
-      headroom: null, receiversUsed: group.length, receiverCapacity: port.receiverCapacity })
+    const used = sum(group.map(receiver => receiver.used))
+    const capacity = portPixelCapacity(project, port)
+    return Object.freeze({ portId: port.id, used, capacity,
+      headroom: capacity === null ? null : capacity - used, receiversUsed: group.length, receiverCapacity: port.receiverCapacity })
   })
   const portsById = new Map(ports.map(port => [port.portId, port]))
   const portGroups = new Map<string, ProjectPortLoad[]>()
@@ -107,8 +110,10 @@ export function selectProjectHardwareLoad(project: LedMapProjectV2): ProjectHard
   const processors = project.hardware.processors.map(processor => {
     assertSafeInteger(`Processor ${processor.id} capacity`, processor.portCount, 1)
     const group = portGroups.get(processor.id) ?? []
-    return Object.freeze({ processorId: processor.id, used: sum(group.map(port => port.used)), capacity: null,
-      headroom: null, portsUsed: group.length, portCapacity: processor.portCount })
+    const used = sum(group.map(port => port.used))
+    const capacity = processor.capacityProfile?.processorPixelCapacity ?? null
+    return Object.freeze({ processorId: processor.id, used, capacity,
+      headroom: capacity === null ? null : capacity - used, portsUsed: group.length, portCapacity: processor.portCount })
   })
   return Object.freeze({ totalPixels: sum([...pixels.values()]), assignedPixels: sum(receivers.map(receiver => receiver.used)),
     unpatchedPixels: sum(unpatched.map(id => pixels.get(id)!)), unpatched: Object.freeze(unpatched),
@@ -131,15 +136,27 @@ export function projectHardwareDiagnostics(project: LedMapProjectV2, load: Proje
       `Receiver ${receiver.receiverId} uses ${receiver.used} of ${receiver.capacity} pixels`)
   })
   load.ports.forEach((port, index) => {
+    if (port.capacity !== null && port.used > port.capacity) issue('HARDWARE_PORT_PIXEL_OVER_CAPACITY', ['hardware', 'ports', index],
+      `Port ${port.portId} uses ${port.used} of ${port.capacity} pixels`)
+    const source = project.hardware.ports[index]!
+    const profile = project.hardware.processors.find(value => value.id === source.processorId)?.capacityProfile
+    if (source.pixelCapacityOverride && (!profile || !sameCapacityMode(source.pixelCapacityOverride.mode, profile.mode))) {
+      issue('HARDWARE_CAPACITY_OVERRIDE_INACTIVE', ['hardware', 'ports', index, 'pixelCapacityOverride'],
+        `Port ${port.portId} override is inactive because its mode does not match a configured Processor profile`, 'warning')
+    }
     if (port.receiversUsed > port.receiverCapacity) issue('HARDWARE_PORT_OVER_CAPACITY', ['hardware', 'ports', index],
       `Port ${port.portId} uses ${port.receiversUsed} of ${port.receiverCapacity} Receiver slots`)
   })
   load.processors.forEach((processor, index) => {
+    if (processor.capacity !== null && processor.used > processor.capacity) issue('HARDWARE_PROCESSOR_PIXEL_OVER_CAPACITY', ['hardware', 'processors', index],
+      `Processor ${processor.processorId} uses ${processor.used} of ${processor.capacity} pixels`)
     if (processor.portsUsed > processor.portCapacity) issue('HARDWARE_PROCESSOR_OVER_CAPACITY', ['hardware', 'processors', index],
       `Processor ${processor.processorId} uses ${processor.portsUsed} of ${processor.portCapacity} Port slots`)
   })
-  if (project.hardware.ports.length > 0) issue('HARDWARE_TRANSPORT_CAPACITY_UNKNOWN', ['hardware'],
-    'Port and Processor transport pixel limits are not configured; pixel headroom is unknown', 'warning')
+  if (load.ports.some(value => value.capacity === null) || load.processors.some(value => value.capacity === null)) {
+    issue('HARDWARE_TRANSPORT_CAPACITY_UNKNOWN', ['hardware'],
+      'Some Port or Processor transport pixel limits are unknown; configure an explicit mode/profile to calculate headroom', 'warning')
+  }
   const orderedProcessors = new Set(project.hardware.processorOrder)
   project.hardware.processors.forEach((processor, index) => {
     if (!orderedProcessors.has(processor.id)) issue('HARDWARE_INCOMPLETE', ['hardware', 'processors', index], `Processor ${processor.id} is missing from Processor order`)
@@ -175,15 +192,29 @@ export function planProjectHardware(project: LedMapProjectV2): ProjectHardwarePl
   const orders = new Map(project.hardware.receiverOrder.map(order => [order.portId, order.receiverIds]))
   const traversal = ports.flatMap(port => orders.get(port.id)!.map(id => receiverById.get(id)!))
   const used = new Map(before.receivers.map(receiver => [receiver.receiverId, receiver.used]))
+  const portLoads = new Map(before.ports.map(port => [port.portId, { ...port }]))
+  const processorLoads = new Map(before.processors.map(processor => [processor.processorId, { ...processor }]))
+  const profiled = new Set(project.hardware.processors.filter(value => value.capacityProfile !== undefined).map(value => value.id))
   const chains = new Map(project.operations.signalRoutes.map(route => [route.receiverId, [...route.orderedCabinetIds]]))
   const pixels = new Map(project.design.cabinets.map(cabinet => [cabinet.id, cabinet.pixelWidth * cabinet.pixelHeight]))
   const assignments = [...project.hardware.assignments]
   const assignmentIds = new Set(assignments.map(assignment => assignment.id as string))
   for (const cabinetId of before.unpatched) {
     const count = pixels.get(cabinetId)!
-    const receiver = traversal.find(value => value.pixelCapacity !== undefined && count <= value.pixelCapacity - used.get(value.id)!)
+    const receiver = traversal.find(value => {
+      const port = portLoads.get(value.portId)!
+      const processor = processorLoads.get(value.processorId)!
+      const configured = profiled.has(value.processorId)
+      return value.pixelCapacity !== undefined && count <= value.pixelCapacity - used.get(value.id)! &&
+        (port.capacity === null ? !configured : count <= port.capacity - port.used) &&
+        (processor.capacity === null ? !configured : count <= processor.capacity - processor.used)
+    })
     if (!receiver) continue
     used.set(receiver.id, safeAdd('Receiver pixel load', used.get(receiver.id)!, count))
+    const portLoad = portLoads.get(receiver.portId)!
+    const processorLoad = processorLoads.get(receiver.processorId)!
+    portLoad.used = safeAdd('Port pixel load', portLoad.used, count)
+    processorLoad.used = safeAdd('Processor pixel load', processorLoad.used, count)
     const chain = chains.get(receiver.id) ?? []
     chain.push(cabinetId)
     chains.set(receiver.id, chain)

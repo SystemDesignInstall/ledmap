@@ -12,6 +12,12 @@ interface CachedImage {
 }
 
 const imageCache = new Map<string, CachedImage>()
+const MAX_CACHED_IMAGES = 32
+
+function evictOldestImage(): void {
+  const oldest = imageCache.keys().next()
+  if (!oldest.done) imageCache.delete(oldest.value)
+}
 
 function chartImage(dataUrl: string, redraw: (() => void) | null, canvas?: HTMLCanvasElement): CachedImage {
   const cached = imageCache.get(dataUrl)
@@ -29,10 +35,15 @@ function chartImage(dataUrl: string, redraw: (() => void) | null, canvas?: HTMLC
       entry.redraws.clear()
       resolve()
     }
-    image.onerror = () => reject(new Error('Unable to decode Screen logo.'))
+    image.onerror = () => {
+      imageCache.delete(dataUrl)
+      entry.redraws.clear()
+      reject(new Error('Unable to decode Screen logo.'))
+    }
     image.src = dataUrl
   })
   void entry.loaded.catch(() => undefined)
+  if (imageCache.size >= MAX_CACHED_IMAGES) evictOldestImage()
   imageCache.set(dataUrl, entry)
   return entry
 }

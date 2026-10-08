@@ -35,7 +35,12 @@ export class PresetLibraryStore {
       }
       throw error
     }
-    const stored = JSON.parse(text) as Record<string, unknown>
+    let stored: Record<string, unknown>
+    try {
+      stored = JSON.parse(text) as Record<string, unknown>
+    } catch (error) {
+      throw new Error('Preset library is corrupted.', { cause: error })
+    }
     if (!Array.isArray(stored['drawings'])) throw new Error('Preset library drawings are invalid.')
     const drawings = await Promise.all(stored['drawings'].map(async (entry: unknown) => {
       if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) throw new Error('Drawing preset is invalid.')

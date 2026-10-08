@@ -3,6 +3,12 @@ import type { PixelCoordinate } from '../model/coordinates.js'
 import type { InputPixel, MappedPixel, MappingCabinetCell, ResolvedPixelMap } from './types.js'
 import { assertCoordinate, assertReference, fail, safeResult } from './validation.js'
 
+function cellForCabinet(mapping: ResolvedPixelMap, cabinet: string): MappingCabinetCell {
+  const cell = mapping.cells.find(value => value.cabinet === cabinet)
+  if (!cell) fail('UNKNOWN_REFERENCE', `Cabinet ${cabinet}`)
+  return cell
+}
+
 function mappedPixel(mapping: ResolvedPixelMap, cell: MappingCabinetCell, cabinetCoordinate: PixelCoordinate): MappedPixel {
   const screenCoordinate = Object.freeze({
     x: safeResult('Screen pixel x', cell.column * mapping.cabinetPixelSize.width + cabinetCoordinate.x),
@@ -36,6 +42,6 @@ export function mapInputPixel(mapping: ResolvedPixelMap, inputPixel: InputPixel)
 
 export function unmapHardwarePixel(mapping: ResolvedPixelMap, key: PortPixelKey): MappedPixel {
   const located = locatePixel(mapping.hardware, key)
-  const cell = mapping.cells.find(value => value.cabinet === located.cabinet)!
+  const cell = cellForCabinet(mapping, located.cabinet)
   return mappedPixel(mapping, cell, located.cabinetCoordinate)
 }

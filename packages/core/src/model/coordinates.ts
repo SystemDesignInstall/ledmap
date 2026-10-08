@@ -20,13 +20,13 @@ export interface GridPosition {
 }
 
 export function assertPositiveInteger(name: string, value: number): void {
-  if (!Number.isInteger(value) || value <= 0) {
+  if (!Number.isSafeInteger(value) || value <= 0) {
     throw new DomainError('INVALID_DIMENSION', `${name} must be a positive integer, got ${value}`)
   }
 }
 
 export function assertNonNegativeInteger(name: string, value: number): void {
-  if (!Number.isInteger(value) || value < 0) {
+  if (!Number.isSafeInteger(value) || value < 0) {
     throw new DomainError('INVALID_COORDINATE', `${name} must be a non-negative integer, got ${value}`)
   }
 }

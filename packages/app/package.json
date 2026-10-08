@@ -12,12 +12,14 @@
   "scripts": {
     "dev": "electron-vite dev --ignoreConfigWarning",
     "build": "electron-vite build",
+    "package:win-portable": "electron-builder --win --x64",
     "test:smoke": "node test/electron-smoke.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "devDependencies": {
     "@types/node": "^24.13.6",
-    "electron": "^44.4.5",
+    "electron": "44.4.5",
+    "electron-builder": "^26.15.3",
     "electron-vite": "^5.0.0",
     "playwright": "^1.63.0",
     "vite": "^7.3.6"

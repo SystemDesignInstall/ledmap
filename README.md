@@ -31,4 +31,14 @@ npm run test:smoke
 
 `build` создаёт Electron main и renderer в `packages/app/out`. `test:smoke` запускает сборку в Electron через Playwright. Скриншоты и контрольные PNG сохраняются в `packages/app/out/smoke` и не коммитятся. Для smoke нужен доступный графический сеанс.
 
+## Portable (Windows x64)
+
+```sh
+npm run package
+```
+
+Создаёт один файл `packages/app/dist/LedMAP-<version>-win-x64-portable.exe` (~96 МБ, Electron внутри, Node.js не нужен). Рядом с exe приложение создаёт папку `LedMAP-Data` — recovery, preset-library и настройки живут там; носитель можно переносить между машинами. Если папка недоступна для записи (read-only носитель), данные падают в стандартный `%APPDATA%`.
+
+Известные ограничения Alpha: сборка без подписи — SmartScreen покажет предупреждение; временные `appId` (`com.ledmap.app`) и иконка-заглушка (`packages/app/build/icon.ico`, генерируется `node scripts/make-placeholder-icon.mjs`) — заменить на бренд перед публичным релизом. Ассоциация `.ledmap` не регистрируется (открытие через диалог в приложении); регистрация — за будущим NSIS-установщиком.
+
 Архитектурные ограничения и решения: [ARCHITECTURE](ARCHITECTURE.md), [DECISIONS](docs/DECISIONS.md).

@@ -11,14 +11,30 @@ const acceptedLicenses = new Set([
   'CC-BY-4.0',
   'ISC',
   'MIT',
+  // Build-tooling only (electron-builder transitives, never shipped in the app bundle):
+  // 0BSD (tslib), Python-2.0 (argparse), WTFPL (truncate-utf8-bytes). All permissive, no copyleft.
+  '0BSD',
+  'Python-2.0',
+  'WTFPL',
 ])
 const errors = []
 let dependencyCount = 0
 
+function isAcceptedLicense(declaration) {
+  if (typeof declaration !== 'string') return false
+  // SPDX dual licensing (e.g. "(MIT OR CC0-1.0)"): accept when any alternative is accepted.
+  return declaration
+    .replace(/[()]/g, ' ')
+    .split(/\s+OR\s+/)
+    .map(part => part.trim())
+    .filter(part => part.length > 0)
+    .some(part => acceptedLicenses.has(part))
+}
+
 for (const [path, entry] of Object.entries(lockfile.packages)) {
   if (!path.includes('node_modules/') || entry.link) continue
   dependencyCount += 1
-  if (!acceptedLicenses.has(entry.license)) {
+  if (!isAcceptedLicense(entry.license)) {
     errors.push(`${path}: unreviewed license ${entry.license ?? '(missing)'}`)
   }
 }

@@ -1,4 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, type WebContents } from 'electron'
+import { mkdirSync } from 'node:fs'
 import { readFile, realpath } from 'node:fs/promises'
 import { basename, extname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -38,6 +39,23 @@ let presetLibraryStore: PresetLibraryStore | null = null
 
 const smokeUserData = process.env['LEDMAP_SMOKE_USER_DATA']
 if (smokeUserData) app.setPath('userData', smokeUserData)
+else {
+  const portableDir = portableDataDir()
+  if (portableDir) {
+    try {
+      mkdirSync(portableDir, { recursive: true })
+      app.setPath('userData', portableDir)
+    } catch {
+      console.warn(`Portable data dir ${portableDir} is not writable; falling back to default userData.`)
+    }
+  }
+}
+
+function portableDataDir(): string | null {
+  const exeDir = process.env['PORTABLE_EXECUTABLE_DIR']
+  if (!exeDir) return null
+  return join(exeDir, 'LedMAP-Data')
+}
 
 function stateFor(contents: WebContents): WindowState | undefined {
   return windowStates.get(contents.id)

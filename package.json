@@ -15,12 +15,14 @@
     "dev": "npm run dev -w @ledmap/app",
     "test:smoke": "npm run test:smoke -w @ledmap/app",
     "build": "npm run build --workspaces --if-present",
+    "package": "npm run package:win-portable -w @ledmap/app",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "vitest run",
     "test:core": "vitest run packages/core/test",
     "test:watch": "vitest",
     "lint": "eslint .",
-    "check:licenses": "node scripts/check-licenses.mjs"
+    "check:licenses": "node scripts/check-licenses.mjs",
+    "check:audit": "node scripts/check-audit.mjs"
   },
   "devDependencies": {
     "eslint": "^10.11.0",

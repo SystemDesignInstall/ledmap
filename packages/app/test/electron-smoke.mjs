@@ -6,6 +6,8 @@ import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { _electron as electron } from 'playwright'
 import { verifyCabinetBorders } from './cabinet-border-smoke.mjs'
+import { verifyCabinetLabelOverlays } from './cabinet-label-overlay-smoke.mjs'
+import { verifyCompositionAuthoring } from './composition-authoring-smoke.mjs'
 
 process.on('uncaughtException', error => {
   console.error(error)
@@ -53,7 +55,7 @@ delete env['ELECTRON_RENDERER_URL']
 const failures = []
 
 async function launch() {
-  const app = await electron.launch({ args: [appRoot], env })
+  const app = await electron.launch({ args: [appRoot, '--no-sandbox', '--disable-gpu'], env })
   const page = await app.firstWindow()
   page.on('pageerror', error => failures.push(error.message))
   page.on('console', message => { if (message.type() === 'error') failures.push(message.text()) })
@@ -241,6 +243,11 @@ try {
   await page.locator('#new-project').click()
   const beforeAuthoring = await documentState()
   await page.locator('#add-screen').click()
+  assert.equal(await page.locator('#new-screen-position-mode option').first().innerText(), 'At origin (0, 0)')
+  await page.locator('#new-screen-palette').selectOption('checkerboard')
+  assert.equal(await page.locator('#new-screen-color-field').isHidden(), true)
+  await page.locator('#new-screen-palette').selectOption('screen-color')
+  assert.equal(await page.locator('#new-screen-color-field').isVisible(), true)
   assert.match(await page.locator('#new-screen-resolution').innerText(), /512 × 384 px/)
   assert.equal(await page.locator('#project-canvas').isVisible(), true)
   const previewPixel = await page.evaluate(() => {
@@ -278,17 +285,40 @@ try {
   assert.equal((await dump()).length, 2)
   await page.locator('#project-tree [data-id="screen-2"]').click()
   await page.locator('button[aria-label="Screen offset marker"]').click()
-  await page.locator('input[aria-label="Screen mask offset X"]').fill('12')
-  await page.locator('input[aria-label="Screen mask offset X"]').blur()
-  await page.locator('input[aria-label="New Screen preset name"]').fill('Touring wall')
-  await page.getByRole('button', { name: 'Save preset' }).click()
+  const inspectorSections = await page.locator('#properties .properties-body').evaluate(body =>
+    [...body.children].map(section => section.querySelector(':scope > h3, :scope > summary')?.textContent).filter(Boolean))
+  assert.equal(inspectorSections.indexOf('Saved LED'), inspectorSections.indexOf('Cabinet Grid') + 1)
+  assert.ok(inspectorSections.indexOf('Drawing preset') > inspectorSections.indexOf('Screen drawing'))
+  assert.equal(inspectorSections.includes('Mask and caption'), false)
+  await page.locator('details.property-disclosure').filter({ has: page.locator('input[aria-label="New Saved LED name"]') }).locator('summary').click()
+  await page.locator('input[aria-label="New Saved LED name"]').fill('Touring LED')
+  await page.getByRole('button', { name: 'Save new Saved LED' }).click()
+  await page.waitForFunction(async () => (await window.ledmapDesktop.loadPresetLibrary(null)).cabinets.some(value => value.name === 'Touring LED'))
+  await page.locator('details.property-disclosure').filter({ has: page.locator('input[aria-label="New Drawing preset name"]') }).locator('summary').click()
+  await page.locator('input[aria-label="New Drawing preset name"]').fill('Touring drawing')
+  await page.getByRole('button', { name: 'Save new Drawing preset' }).click()
+  await page.waitForFunction(async () => (await window.ledmapDesktop.loadPresetLibrary(null)).drawings.some(value => value.name === 'Touring drawing'))
+  const library = await page.evaluate(() => window.ledmapDesktop.loadPresetLibrary(null))
+  assert.equal(library.cabinets.find(value => value.name === 'Touring LED').legacyGrid, undefined)
+  assert.equal(library.drawings.find(value => value.name === 'Touring drawing').drawing.fill, '#0033ef')
   await page.locator('#add-screen').click()
-  await page.locator('#new-screen-preset').selectOption('Touring wall')
+  await page.locator('#new-screen-columns').fill('7')
+  await page.locator('#new-screen-led-preset').selectOption({ label: 'Touring LED' })
+  await page.locator('#new-screen-drawing-preset').selectOption({ label: 'Touring drawing' })
   assert.equal(await page.locator('#new-screen-geometry-mode').inputValue(), 'advanced')
   assert.equal(await page.locator('#new-screen-module-width').inputValue(), '128')
+  assert.equal(await page.locator('#new-screen-columns').inputValue(), '7')
   assert.equal(await page.locator('#new-screen-color').inputValue(), '#0033ef')
-  await page.locator('#new-screen-preset-delete').click()
-  assert.equal(await page.locator('#new-screen-preset option').count(), 4)
+  await page.locator('#new-screen-drawing-delete').click()
+  assert.equal((await page.evaluate(() => window.ledmapDesktop.loadPresetLibrary(null))).drawings.length, 1)
+  await page.locator('#new-screen-drawing-delete').click()
+  await page.waitForFunction(async () => (await window.ledmapDesktop.loadPresetLibrary(null)).drawings.length === 0)
+  await page.locator('#new-screen-led-preset').selectOption({ label: 'Touring LED' })
+  await page.locator('#new-screen-led-delete').click()
+  assert.equal((await page.evaluate(() => window.ledmapDesktop.loadPresetLibrary(null))).cabinets.length, 1)
+  await page.locator('#new-screen-led-delete').click()
+  await page.waitForFunction(async () => (await window.ledmapDesktop.loadPresetLibrary(null)).cabinets.length === 0)
+  assert.equal(await page.locator('#new-screen-led-preset option').count(), 4)
   await page.locator('#screen-cancel').click()
   await page.locator('#export-mode').click()
   await page.locator('#export-png-pattern').selectOption('composition-chart')
@@ -302,13 +332,13 @@ try {
   await page.locator('#export-svg-run').click()
   await page.waitForFunction(() => window.__ledmapExport.dump().lastResult.includes('Exported 1 SVG'))
   const maskSvg = await readFile(resolve(exportDirectory, 'screen-mask.svg'), 'utf8')
-  assert.match(maskSvg, /x="588" y="0" width="512" height="384" fill="#ffffff"/)
+  assert.match(maskSvg, /x="576" y="0" width="512" height="384" fill="#ffffff"/)
   await page.locator('#test-mode').click()
   await page.keyboard.press('2')
   assert.equal((await page.evaluate(() => window.__ledmapTest.dump())).pattern, 'red')
   await page.locator('#layout-mode').click()
   await page.locator('#add-screen').click()
-  await page.locator('#new-screen-preset').selectOption('Half-height cabinet · 128×64')
+  await page.locator('#new-screen-led-preset').selectOption('Half-height cabinet · 128×64')
   assert.match(await page.locator('#new-screen-resolution').innerText(), /512 × 192 px/)
   await page.locator('#screen-form button[type="submit"]').click()
   await page.waitForFunction(() => window.__ledmap.dump().length === 3)
@@ -412,6 +442,28 @@ try {
   await setScreenPosition(page, 'Screen 2', 700, 0)
   await setScreenPosition(page, 'Screen 3', 0, 500)
   await screenNode('Screen 1').click()
+  await page.locator('#toggle-mode').click()
+  await screenNode('Screen 2').click()
+  assert.equal(await page.evaluate(() => window.__ledmap.viewMode()), 'active')
+  const focusedCenter = await page.evaluate(() => {
+    const screen = window.__ledmap.dump().find(value => value.id === 'screen-2')
+    const point = window.__ledmap.projectToPx({ x: screen.x + screen.width / 2, y: screen.y + screen.height / 2 })
+    const canvas = document.querySelector('#project-canvas')
+    return { ...point, width: canvas.clientWidth, height: canvas.clientHeight }
+  })
+  assert.ok(focusedCenter.x > 0 && focusedCenter.x < focusedCenter.width)
+  assert.ok(focusedCenter.y > 0 && focusedCenter.y < focusedCenter.height)
+  await page.locator('#toggle-mode').click()
+  await setScreenPosition(page, 'Screen 2', 0, 0)
+  await screenNode('Screen 1').click()
+  await page.locator('#toggle-mode').click()
+  const overlapCenter = await page.evaluate(() => window.__ledmap.screenCenterPx('screen-1'))
+  const focusCanvas = await page.locator('#project-canvas').boundingBox()
+  await page.mouse.click(focusCanvas.x + overlapCenter.x, focusCanvas.y + overlapCenter.y)
+  assert.deepEqual(await page.evaluate(() => window.__ledmap.selectedScreens()), ['screen-1'])
+  await page.locator('#toggle-mode').click()
+  await setScreenPosition(page, 'Screen 2', 700, 0)
+  await screenNode('Screen 1').click()
   await page.locator('#snap-grid').click()
   assert.deepEqual(await page.evaluate(() => window.__ledmap.snap()), {
     enabled: true, sources: { grid: true, edges: true, centers: true, guides: true }, step: 10,
@@ -463,10 +515,12 @@ try {
   await page.locator('#duplicate-screen').click()
   assert.equal((await dump()).length, 6)
   assert.equal((await dump())[5].name, 'Stage Right Copy')
+  assert.ok((await dump())[5].x >= Math.max(...(await dump()).slice(0, 5).map(screen => screen.x + screen.width)) + 64)
   await page.locator('#delete-screen').click()
   assert.equal((await dump()).length, 5)
 
   await page.locator('[data-overlay="modules"]').click()
+  await page.locator('[data-overlay="editorLabels"]').click()
   assert.equal(await page.locator('[data-overlay="modules"]').getAttribute('aria-pressed'), 'true')
   assert.equal(await page.locator('[data-overlay="signal"]').count(), 0)
   await page.evaluate(() => {
@@ -508,7 +562,15 @@ try {
   assert.equal(await page.locator('#properties-title').innerText(), 'Nothing selected')
   assert.equal(await page.locator('#properties [data-align], #properties [data-distribute]').count(), 0)
   await page.screenshot({ path: resolve(output, 'layout-workspace.png') })
+  await page.locator('[data-overlay="editorLabels"]').click()
 
+  await page.locator('#guide-add-v').click()
+  const savedGuides = await page.evaluate(() => window.__ledmap.projectGuides())
+  assert.equal(savedGuides.length, 1)
+  await page.locator('#undo-project').click()
+  assert.deepEqual(await page.evaluate(() => window.__ledmap.projectGuides()), [])
+  await page.locator('#redo-project').click()
+  assert.deepEqual(await page.evaluate(() => window.__ledmap.projectGuides()), savedGuides)
   const expected = await dump()
   assert.equal(expected.length, 5)
   assert.equal(expected[2].columns, 5)
@@ -525,6 +587,7 @@ try {
   const stored = JSON.parse(await readFile(projectPath, 'utf8'))
   assert.equal(stored.schemaVersion, 5)
   assert.equal(stored.project.design.screens.length, 5)
+  assert.deepEqual(stored.extensions['ledmap.compositionGuides'].guides, savedGuides)
   assert.deepEqual(
     stored.project.design.composition.placements.map(entry => [entry.x, entry.y]),
     expected.map(screen => [screen.x, screen.y]),
@@ -538,10 +601,12 @@ try {
 
   await page.locator('#new-project').click()
   await page.waitForFunction(() => window.__ledmap.dump().length === 0)
+  assert.deepEqual(await page.evaluate(() => window.__ledmap.projectGuides()), [])
   assert.equal((await documentState()).currentFilePath, null)
   await page.locator('#open-project').click()
   await page.waitForFunction(() => window.__ledmap.dump().length === 5)
   assert.deepEqual(await dump(), expected)
+  assert.deepEqual(await page.evaluate(() => window.__ledmap.projectGuides()), savedGuides)
 
   await setScreenPosition(page, 'Screen 3', 333, 333)
   assert.equal((await documentState()).dirty, true)
@@ -554,6 +619,7 @@ try {
   await running.page.locator('#open-project').click()
   await running.page.waitForFunction(() => window.__ledmap.dump().length === 5)
   assert.deepEqual(await running.page.evaluate(() => window.__ledmap.dump()), expected)
+  assert.deepEqual(await running.page.evaluate(() => window.__ledmap.projectGuides()), savedGuides)
 
   const mappingPage = running.page
   await mappingPage.locator('#new-project').click()
@@ -1182,6 +1248,7 @@ try {
   assert.equal(await mappingPage.locator('#clean-view').getAttribute('aria-pressed'), 'false')
   await mappingPage.locator('#screen-drawing-palette').selectOption('white-grid')
   await mappingPage.locator('#screen-drawing-labels').selectOption('none')
+  await mappingPage.locator('#screen-drawing-name').click()
   const logoBase64 = await mappingPage.evaluate(() => {
     const canvas = document.createElement('canvas')
     canvas.width = 32
@@ -1193,6 +1260,7 @@ try {
   })
   const logoPath = resolve(output, 'chart-logo.png')
   await writeFile(logoPath, Buffer.from(logoBase64, 'base64'))
+  await mappingPage.locator('details.property-disclosure').filter({ has: mappingPage.locator('#screen-drawing-logo-file') }).locator('summary').click()
   await mappingPage.locator('#screen-drawing-logo-file').setInputFiles(logoPath)
   await mappingPage.waitForFunction(() => document.querySelector('#screen-drawing-logo-summary')?.textContent === '32 × 32 px')
   await mappingPage.waitForFunction(screenId => {
@@ -1497,6 +1565,8 @@ try {
   assert.equal((await mappingPage.evaluate(() => window.__ledmap.document())).sourceSchemaVersion, 6)
 
   await verifyCabinetBorders(mappingPage, { output, exportDirectory, addScreen, runExport })
+  await verifyCabinetLabelOverlays(mappingPage, { output, addScreen, setScreenPosition })
+  await verifyCompositionAuthoring(mappingPage, { output, projectPath, exportDirectory, runExport })
   assert.deepEqual(failures, [])
   console.log('Electron smoke passed: Composition through deterministic Export with pixel-exact PNG, byte-identical JSON/CSV and unre-based shared-Port addresses.')
   console.log(`Project: ${projectPath}`)

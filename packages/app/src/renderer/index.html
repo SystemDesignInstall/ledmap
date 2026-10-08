@@ -51,8 +51,17 @@
           <span class="tool-label">Overlays</span>
           <button type="button" data-overlay="cabinets" aria-pressed="true">Cabinets</button>
           <button type="button" data-overlay="modules" aria-pressed="false">Modules</button>
-          <button type="button" data-overlay="coordinates" aria-pressed="true">Coordinates</button>
+          <button type="button" data-overlay="editorLabels" aria-pressed="false" title="Show editor Screen tags and fallback Cabinet IDs">Editor labels</button>
+          <button type="button" data-overlay="coordinates" aria-pressed="false">Coordinates</button>
           <button id="clean-view" type="button" aria-pressed="false" title="Hide editor guides and overlays">Clean View</button>
+        </div>
+        <div class="tool-group canvas-tools" aria-label="Canvas size tools">
+          <span id="canvas-frame-size" class="canvas-frame-size"></span>
+          <span id="canvas-crop-status" class="canvas-crop-status" role="status" hidden></span>
+          <button id="canvas-auto" type="button" title="Canvas follows all Screen bounds">Auto Canvas</button>
+          <button id="canvas-fit-all" type="button" title="Set Canvas size from all Screens">Canvas All</button>
+          <button id="canvas-fit-selection" type="button" title="Set Canvas from selection; Canvas exports crop Screens outside it. Shift+Enter">Canvas Selection</button>
+          <label class="toolbar-field"><span>Move</span><input id="arrow-step" type="number" min="1" max="8192" step="1" value="1" aria-label="Arrow move step" title="Arrow move step. Hold Shift for ×10." /><span>px</span></label>
         </div>
         <button id="toggle-mode" class="focus-toggle" type="button">Focus Screen</button>
       </div>
@@ -419,7 +428,7 @@
       <form id="screen-form" method="dialog">
         <div class="dialog-heading"><span class="eyebrow">COMPOSITION</span><h2>Add Screen</h2><p>Set the cabinet grid and see the result on the canvas before creating it.</p></div>
         <div class="dialog-grid">
-          <div class="dialog-preset-row wide"><label>Saved LED / drawing preset<select id="new-screen-preset"><option value="">Custom settings</option></select></label><button id="new-screen-preset-delete" type="button" disabled>Delete preset</button></div>
+          <div class="dialog-preset-row wide"><label>Saved LED<select id="new-screen-led-preset"><option value="">Custom cabinet</option></select></label><button id="new-screen-led-delete" type="button" disabled>Delete</button></div>
           <label class="wide">Name<input id="new-screen-name" name="name" type="text" value="Screen" required /></label>
           <label>Grid columns<input id="new-screen-columns" name="columns" type="number" min="1" step="1" value="4" required /></label>
           <label>Grid rows<input id="new-screen-rows" name="rows" type="number" min="1" step="1" value="3" required /></label>
@@ -434,14 +443,15 @@
             <label>Module width, px<input id="new-screen-module-width" name="modulePixelWidth" type="number" min="1" step="1" value="128" /></label>
             <label>Module height, px<input id="new-screen-module-height" name="modulePixelHeight" type="number" min="1" step="1" value="128" /></label>
           </div>
-          <label class="wide">Placement<select id="new-screen-position-mode"><option value="auto">After existing screens</option><option value="manual">Set X and Y</option></select></label>
+          <label class="wide">Position in Composition<select id="new-screen-position-mode"><option value="auto">After existing screens</option><option value="manual">Set X and Y</option></select></label>
           <div id="new-screen-manual" class="dialog-subgrid wide" hidden>
             <label>X<input id="new-screen-x" name="x" type="number" min="0" step="1" value="0" /></label>
             <label>Y<input id="new-screen-y" name="y" type="number" min="0" step="1" value="0" /></label>
           </div>
+          <div class="dialog-preset-row wide"><label>Drawing preset<select id="new-screen-drawing-preset"><option value="">Custom drawing</option></select></label><button id="new-screen-drawing-delete" type="button" disabled>Delete</button></div>
           <label>Drawing<select id="new-screen-palette"><option value="screen-color">Screen color</option><option value="white-grid">White grid</option><option value="checkerboard">Checkerboard</option><option value="gray-gradient">Gray gradient</option><option value="rgb-bars">RGB bars</option></select></label>
-          <label>Screen color<input id="new-screen-color" type="color" value="#284a68" /></label>
-          <label class="dialog-checkbox wide"><input id="new-screen-transparent" type="checkbox" /> Transparent Screen fill</label>
+          <label id="new-screen-color-field">Screen color<input id="new-screen-color" type="color" value="#284a68" /></label>
+          <label id="new-screen-transparent-field" class="dialog-checkbox wide"><input id="new-screen-transparent" type="checkbox" /> Transparent Screen fill</label>
         </div>
         <p id="new-screen-resolution" class="screen-resolution" aria-live="polite"></p>
         <p id="screen-form-error" class="form-error" role="alert" hidden></p>

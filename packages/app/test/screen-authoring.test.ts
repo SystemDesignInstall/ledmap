@@ -50,11 +50,18 @@ describe('Screen authoring', () => {
     const project = addScreenV2(new ProjectDocumentController(() => 'preset').session.project)
     const screen = projectV2WorkspaceReadModel(project).screens[0]!
     const style = { ...screenChartStyle(chartSettingsFromExtensions({}), screen.screen.id),
-      fill: '#123456', caption: 'Wall A', cabinetLabelMode: 'column-coordinate' as const }
+      fill: '#123456', caption: 'Wall A', cabinetLineColor: '#dc517b', cabinetLabelMode: 'column-coordinate' as const }
     const preset = makeScreenPreset('  Touring wall  ', screen, style)
     const list = upsertScreenPreset([], preset)
     expect(parseScreenPresets(JSON.stringify(list))).toEqual([{ ...preset, name: 'Touring wall' }])
     expect(preset.drawing.cabinetLabelMode).toBe('column-coordinate')
+    expect(preset.drawing.cabinetLineColor).toBe('#dc517b')
+    expect({ columns: preset.columns, rows: preset.rows }).toEqual({ columns: screen.grid.columns, rows: screen.grid.rows })
+    const legacy = { ...preset }
+    delete legacy.columns
+    delete legacy.rows
+    expect(parseScreenPresets(JSON.stringify([legacy]))).toEqual([legacy])
+    expect(parseScreenPresets(JSON.stringify([{ ...preset, rows: undefined }]))).toEqual([])
     expect(upsertScreenPreset(list, { ...preset, modulePixelWidth: 64 })).toHaveLength(1)
     expect(parseScreenPresets('[{"name":"Broken"}]')).toEqual([])
   })

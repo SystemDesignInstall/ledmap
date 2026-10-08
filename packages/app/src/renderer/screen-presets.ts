@@ -1,16 +1,17 @@
-import type { ScreenChartStyle } from '../shared/chart-settings.js'
+import { validateScreenChartStyle, type ScreenChartStyle } from '../shared/chart-settings.js'
 import type { ScreenView } from './v2-view-model.js'
-import { CABINET_LABEL_MODES, type CabinetLabelMode } from '../shared/cabinet-labels.js'
 
 export const SCREEN_PRESETS_KEY = 'ledmap.screenPresets.v1'
 
 export interface ScreenPreset {
   readonly name: string
+  readonly columns?: number
+  readonly rows?: number
   readonly moduleColumns: number
   readonly moduleRows: number
   readonly modulePixelWidth: number
   readonly modulePixelHeight: number
-  readonly drawing: Pick<ScreenChartStyle, 'palette' | 'labels' | 'fill' | 'cabinetEdges' | 'textShadow' | 'caption' | 'offsetMarkers' | 'maskOffsetX' | 'maskOffsetY' | 'cabinetLabelMode'>
+  readonly drawing: Omit<ScreenChartStyle, 'logo'>
 }
 
 const standardDrawing: ScreenPreset['drawing'] = {
@@ -34,16 +35,13 @@ export function makeScreenPreset(name: string, screen: ScreenView, style: Screen
   if (!normalized || normalized.length > 40) throw new Error('Preset name must be 1–40 characters.')
   return {
     name: normalized,
+    columns: screen.grid.columns,
+    rows: screen.grid.rows,
     moduleColumns: screen.config.moduleColumns,
     moduleRows: screen.config.moduleRows,
     modulePixelWidth: screen.config.modulePixelWidth,
     modulePixelHeight: screen.config.modulePixelHeight,
-    drawing: {
-      palette: style.palette, labels: style.labels, fill: style.fill,
-      cabinetEdges: style.cabinetEdges, textShadow: style.textShadow, caption: style.caption,
-      offsetMarkers: style.offsetMarkers ?? false, maskOffsetX: style.maskOffsetX ?? 0, maskOffsetY: style.maskOffsetY ?? 0,
-      cabinetLabelMode: style.cabinetLabelMode ?? 'row-coordinate',
-    },
+    drawing: Object.fromEntries(Object.entries(validateScreenChartStyle(style)).filter(([key]) => key !== 'logo')) as ScreenPreset['drawing'],
   }
 }
 
@@ -56,19 +54,19 @@ export function parseScreenPresets(raw: string | null): ScreenPreset[] {
       if (value === null || typeof value !== 'object') return false
       const preset = value as Partial<ScreenPreset>
       const drawing = preset.drawing
-      return typeof preset.name === 'string' && preset.name.trim().length > 0 && preset.name.length <= 40 &&
+      try {
+        validateScreenChartStyle({ ...drawing, logo: null }, 'Screen preset')
+      } catch {
+        return false
+      }
+      const hasGrid = preset.columns !== undefined || preset.rows !== undefined
+      const validGrid = !hasGrid || Number.isSafeInteger(preset.columns) && Number.isSafeInteger(preset.rows) &&
+        (preset.columns ?? 0) > 0 && (preset.rows ?? 0) > 0
+      return validGrid && typeof preset.name === 'string' && preset.name.trim().length > 0 && preset.name.length <= 40 &&
         !builtInScreenPresets.some(builtIn => builtIn.name.toLocaleLowerCase() === preset.name?.toLocaleLowerCase()) &&
         (['moduleColumns', 'moduleRows', 'modulePixelWidth', 'modulePixelHeight'] as const).every(field =>
           Number.isSafeInteger(preset[field]) && (preset[field] ?? 0) > 0) &&
-        drawing !== undefined &&
-        ['screen-color', 'white-grid', 'checkerboard', 'gray-gradient', 'rgb-bars'].includes(drawing.palette) &&
-        ['none', 'screen', 'cabinet', 'cabinet-id', 'coordinates', 'grid-address'].includes(drawing.labels) &&
-        (drawing.cabinetLabelMode === undefined || CABINET_LABEL_MODES.includes(drawing.cabinetLabelMode as CabinetLabelMode)) &&
-        (drawing.fill === 'transparent' || /^#[0-9a-fA-F]{6}$/.test(drawing.fill)) &&
-        typeof drawing.cabinetEdges === 'boolean' && typeof drawing.textShadow === 'boolean' &&
-        typeof drawing.caption === 'string' && drawing.caption.length <= 80 &&
-        (drawing.offsetMarkers === undefined || typeof drawing.offsetMarkers === 'boolean') &&
-        [drawing.maskOffsetX ?? 0, drawing.maskOffsetY ?? 0].every(offset => Number.isSafeInteger(offset) && Math.abs(offset) <= 8192)
+        drawing !== undefined
     })
   } catch {
     return []

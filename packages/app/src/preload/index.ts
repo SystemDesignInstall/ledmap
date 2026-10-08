@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import type { PresetLibrary } from '../shared/preset-library.js'
 import {
   ipcChannels,
   type DesktopDocumentState,
@@ -16,6 +17,8 @@ import {
 const api: LedmapDesktopApi = {
   openProject: () => ipcRenderer.invoke(ipcChannels.openProject),
   saveProject: (request: SaveProjectRequest) => ipcRenderer.invoke(ipcChannels.saveProject, request),
+  loadPresetLibrary: (legacyRaw: string | null) => ipcRenderer.invoke(ipcChannels.loadPresetLibrary, legacyRaw),
+  savePresetLibrary: (library: PresetLibrary) => ipcRenderer.invoke(ipcChannels.savePresetLibrary, library),
   confirmUnsavedChanges: () => ipcRenderer.invoke(ipcChannels.confirmUnsaved),
   confirmLegacyUpgrade: () => ipcRenderer.invoke(ipcChannels.confirmLegacyUpgrade),
   setDocumentState: (state: DesktopDocumentState) => ipcRenderer.send(ipcChannels.setDocumentState, state),

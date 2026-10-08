@@ -1,7 +1,9 @@
 import type { ChartSettings } from './chart-settings.js'
-import { chartBounds, screenChartStyle } from './chart-settings.js'
+import { chartBounds, chartLogoBounds, screenChartStyle, screenNameVisible } from './chart-settings.js'
 import type { TestBounds, TestFrame, TestPrimitive, TestScene, TestScope } from './test-engine.js'
 import { cabinetDisplayLabel } from './cabinet-labels.js'
+import { buildChartGuides } from './chart-guides.js'
+import { buildChartInformation } from './chart-information.js'
 
 function selectedScreens(scene: TestScene, scope: TestScope) {
   if (scope.kind === 'composition') return scene.screens
@@ -48,9 +50,7 @@ export function buildCompositionChartFrame(
   for (const screen of screens) {
     const style = screenChartStyle(settings, screen.id)
     if (mask) {
-      primitives.push({ kind: 'rect', bounds: {
-        ...screen.bounds, x: screen.bounds.x + (style.maskOffsetX ?? 0), y: screen.bounds.y + (style.maskOffsetY ?? 0),
-      }, fill: '#ffffff' })
+      primitives.push({ kind: 'rect', bounds: screen.bounds, fill: '#ffffff' })
       continue
     }
     if (style.palette === 'screen-color' && style.fill !== 'transparent') {
@@ -58,25 +58,33 @@ export function buildCompositionChartFrame(
     } else if (style.palette === 'white-grid') {
       primitives.push({ kind: 'rect', bounds: screen.bounds, fill: '#ffffff' })
     } else if (style.palette === 'gray-gradient') {
-      primitives.push({ kind: 'gradient', bounds: screen.bounds, direction: 'horizontal', from: '#000000', to: '#ffffff' })
+      primitives.push({ kind: 'gradient', bounds: screen.bounds, direction: style.patternDirection ?? 'horizontal',
+        from: style.gradientFrom ?? '#000000', to: style.gradientTo ?? '#ffffff' })
     } else if (style.palette === 'rgb-bars') {
-      const colors = ['#ff0000', '#00ff00', '#0000ff']
-      for (let index = 0; index < 3; index += 1) {
-        const left = screen.bounds.x + Math.floor(screen.bounds.width * index / 3)
-        const right = screen.bounds.x + Math.floor(screen.bounds.width * (index + 1) / 3)
-        primitives.push({ kind: 'rect', bounds: { x: left, y: screen.bounds.y, width: right - left, height: screen.bounds.height }, fill: colors[index]! })
+      const colors = style.bandColors ?? ['#ff0000', '#00ff00', '#0000ff']
+      const horizontal = style.patternDirection !== 'vertical'
+      const size = horizontal ? screen.bounds.width : screen.bounds.height
+      for (let index = 0; index < colors.length; index += 1) {
+        const start = Math.floor(size * index / colors.length)
+        const end = Math.floor(size * (index + 1) / colors.length)
+        primitives.push({ kind: 'rect', bounds: horizontal
+          ? { x: screen.bounds.x + start, y: screen.bounds.y, width: end - start, height: screen.bounds.height }
+          : { x: screen.bounds.x, y: screen.bounds.y + start, width: screen.bounds.width, height: end - start }, fill: colors[index]!, pixelAligned: true })
       }
     } else if (style.palette === 'checkerboard') {
       primitives.push({ kind: 'rect', bounds: screen.bounds, fill: '#161b23' })
     }
+    const cabinetLabels: TestPrimitive[] = []
     for (const cabinet of cabinets.filter(value => value.screen === screen.id)) {
       if (style.palette === 'checkerboard') {
         const column = Math.round((cabinet.bounds.x - screen.bounds.x) / cabinet.bounds.width)
         const row = Math.round((cabinet.bounds.y - screen.bounds.y) / cabinet.bounds.height)
-        primitives.push({ kind: 'rect', bounds: cabinet.bounds, fill: (column + row) % 2 === 0 ? '#e9edf0' : '#202b39' })
+        const colors = style.checkerColors ?? ['#e9edf0', '#202b39']
+        const index = colors.length === 4 ? row % 2 * 2 + column % 2 : (column + row) % colors.length
+        primitives.push({ kind: 'rect', bounds: cabinet.bounds, fill: colors[index]!, pixelAligned: true })
       }
       if (style.cabinetEdges) {
-        const edge = style.palette === 'white-grid' ? '#202b39' : '#ffffff'
+        const edge = style.cabinetLineColor ?? (style.palette === 'white-grid' ? '#202b39' : '#ffffff')
         primitives.push({ kind: 'cabinet-border', bounds: cabinet.bounds, color: edge })
       }
       if (style.labels === 'cabinet' || style.labels === 'cabinet-id' || style.labels === 'coordinates' || style.labels === 'grid-address') {
@@ -84,24 +92,35 @@ export function buildCompositionChartFrame(
         const row = Math.round((cabinet.bounds.y - screen.bounds.y) / cabinet.bounds.height)
         const columns = Math.round(screen.bounds.width / cabinet.bounds.width)
         const rows = Math.round(screen.bounds.height / cabinet.bounds.height)
-        primitives.push({ kind: 'text', point: { x: cabinet.bounds.x + cabinet.bounds.width / 2, y: cabinet.bounds.y + cabinet.bounds.height / 2 },
+        cabinetLabels.push({ kind: 'text', point: { x: cabinet.bounds.x + cabinet.bounds.width / 2, y: cabinet.bounds.y + cabinet.bounds.height / 2 },
           text: style.labels === 'cabinet' ? cabinetDisplayLabel(style.cabinetLabelMode ?? 'row-coordinate', columns, rows,
             { id: cabinet.id, label: cabinet.label, column, row })
             : style.labels === 'cabinet-id' ? cabinet.id
             : style.labels === 'coordinates' ? `${cabinet.bounds.x},${cabinet.bounds.y}`
               : `${columnLetter(column)}${row + 1}`,
-          color: style.palette === 'white-grid' ? '#202b39' : '#ffffff', size: 16, align: 'center', shadow: style.textShadow })
+          color: style.textColor ?? (style.palette === 'white-grid' ? '#202b39' : '#ffffff'), size: 16, align: 'center', shadow: style.textShadow,
+          role: 'cabinet-label', cellBounds: cabinet.bounds })
       }
     }
-    if (style.labels === 'screen') {
-      screenTitles.push({ kind: 'text', point: { x: screen.bounds.x + screen.bounds.width / 2, y: screen.bounds.y + screen.bounds.height / 2 },
-        text: `${screen.name} · ${screen.bounds.width}×${screen.bounds.height}`, color: style.palette === 'white-grid' ? '#202b39' : '#ffffff',
-        size: 24, align: 'center', shadow: style.textShadow, role: 'screen-title' })
+    if (style.guides) primitives.push(...buildChartGuides(screen.bounds, style.guides))
+    primitives.push(...cabinetLabels)
+    if (screenNameVisible(style)) {
+      const labeledCabinets = style.labels !== 'none' && style.labels !== 'screen'
+      const heights = cabinets.filter(value => value.screen === screen.id).map(value => value.bounds.height)
+      const cabinetHeight = heights.length > 0 ? Math.min(...heights) : screen.bounds.height
+      const inset = Math.min(24, cabinetHeight * 0.2)
+      const titleSize = labeledCabinets ? Math.min(style.screenNameSize ?? 24, Math.floor(cabinetHeight - 2 * inset - 14)) : style.screenNameSize ?? 24
+      if (!labeledCabinets || titleSize >= 10) {
+        screenTitles.push({ kind: 'text', point: labeledCabinets
+          ? { x: screen.bounds.x + 12, y: screen.bounds.y + inset }
+          : { x: screen.bounds.x + screen.bounds.width / 2, y: screen.bounds.y + screen.bounds.height / 2 },
+        text: `${screen.name} · ${screen.bounds.width}×${screen.bounds.height}`, color: style.textColor ?? (style.palette === 'white-grid' ? '#202b39' : '#ffffff'),
+        size: titleSize, align: labeledCabinets ? 'left' : 'center', shadow: style.textShadow, role: 'screen-title',
+        ...(labeledCabinets ? { cellBounds: { ...screen.bounds, height: cabinetHeight } } : {}) })
+      }
     }
-    if (style.caption) {
-      primitives.push({ kind: 'text', point: { x: screen.bounds.x + 16, y: screen.bounds.y + 20 }, text: style.caption,
-        color: style.palette === 'white-grid' ? '#202b39' : '#ffffff', size: 16, align: 'left', shadow: style.textShadow })
-    }
+    if (style.information) primitives.push(...buildChartInformation(screen, cabinets.filter(value => value.screen === screen.id),
+      style.information, style.textColor ?? (style.palette === 'white-grid' ? '#202b39' : '#ffffff')))
     if (style.offsetMarkers && screen.bounds.width >= 80 && screen.bounds.height >= 40) {
       const { x, y, height } = screen.bounds
       primitives.push(
@@ -112,11 +131,8 @@ export function buildCompositionChartFrame(
       )
     }
     if (style.logo) {
-      primitives.push({ kind: 'image', bounds: {
-        x: screen.bounds.x + screen.bounds.width - style.logo.width - 16,
-        y: screen.bounds.y + 16,
-        width: style.logo.width, height: style.logo.height,
-      }, dataUrl: style.logo.dataUrl })
+      primitives.push({ kind: 'image', bounds: chartLogoBounds(screen.bounds, style.logo, style.logoLayout),
+        dataUrl: style.logo.dataUrl, ...(style.logoLayout ? { opacity: style.logoLayout.opacity / 100 } : {}) })
     }
   }
   if (!mask) {

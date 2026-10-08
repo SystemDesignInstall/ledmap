@@ -142,15 +142,16 @@ export interface ProjectGuide {
   readonly locked: boolean
 }
 
-let guideSerial = 1
-
 export function addGuide(
   guides: readonly ProjectGuide[],
   orientation: ProjectGuide['orientation'],
   position: number,
 ): readonly ProjectGuide[] {
+  const used = new Set(guides.map(guide => guide.id))
+  let serial = guides.length + 1
+  while (used.has(`guide-${serial}`)) serial += 1
   const guide: ProjectGuide = {
-    id: `guide-${guideSerial++}`,
+    id: `guide-${serial}`,
     orientation,
     position: integerCoordinate(position),
     locked: false,

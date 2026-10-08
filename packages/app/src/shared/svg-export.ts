@@ -20,10 +20,13 @@ function primitiveSvg(primitive: TestPrimitive, index: number): string {
     ].map(bounds => rect(bounds, fill)).join('')
   }
   if (primitive.kind === 'rect') {
-    return rect(primitive.bounds, `fill="${escapeXml(primitive.fill ?? 'none')}"${primitive.stroke ? ` stroke="${escapeXml(primitive.stroke)}" stroke-width="${primitive.lineWidth ?? 1}"` : ''}`)
+    return rect(primitive.bounds, `fill="${escapeXml(primitive.fill ?? 'none')}"${primitive.opacity === undefined ? '' : ` opacity="${primitive.opacity}"`}${primitive.stroke ? ` stroke="${escapeXml(primitive.stroke)}" stroke-width="${primitive.lineWidth ?? 1}"` : ''}`)
   }
   if (primitive.kind === 'gradient') {
     return rect(primitive.bounds, `fill="url(#gradient-${index})"`)
+  }
+  if (primitive.kind === 'circle') {
+    return `<circle cx="${primitive.center.x}" cy="${primitive.center.y}" r="${primitive.radius}" fill="none" stroke="${escapeXml(primitive.color)}" stroke-width="${primitive.lineWidth}"/>`
   }
   if (primitive.kind === 'line') {
     return `<line x1="${primitive.from.x}" y1="${primitive.from.y}" x2="${primitive.to.x}" y2="${primitive.to.y}" stroke="${escapeXml(primitive.color)}" stroke-width="${primitive.lineWidth}"${primitive.dash ? ` stroke-dasharray="${primitive.dash.join(' ')}"` : ''}/>`
@@ -33,7 +36,7 @@ function primitiveSvg(primitive: TestPrimitive, index: number): string {
     return `<text x="${primitive.point.x}" y="${primitive.point.y}" fill="${escapeXml(primitive.color)}" font-family="Segoe UI, sans-serif" font-size="${primitive.size}" text-anchor="${anchor}" dominant-baseline="middle"${primitive.shadow ? ' filter="url(#text-shadow)"' : ''}>${escapeXml(primitive.text)}</text>`
   }
   if (primitive.kind === 'image') {
-    return `<image x="${primitive.bounds.x}" y="${primitive.bounds.y}" width="${primitive.bounds.width}" height="${primitive.bounds.height}" href="${escapeXml(primitive.dataUrl)}"/>`
+    return `<image x="${primitive.bounds.x}" y="${primitive.bounds.y}" width="${primitive.bounds.width}" height="${primitive.bounds.height}"${primitive.opacity === undefined ? '' : ` opacity="${primitive.opacity}"`} href="${escapeXml(primitive.dataUrl)}"/>`
   }
   return rect({ x: primitive.point.x, y: primitive.point.y, width: 1, height: 1 }, `fill="${escapeXml(primitive.color)}"`)
 }

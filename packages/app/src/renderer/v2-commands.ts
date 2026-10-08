@@ -181,11 +181,16 @@ export function addScreenV2(project: LedMapProjectV2, draft: Draft = initialDraf
   return rebuildGrid(staged, snapshot.screen.id, draft)
 }
 
-export function duplicateScreenV2(project: LedMapProjectV2, screenId: string): LedMapProjectV2 {
+export function duplicateScreenV2(project: LedMapProjectV2, screenId: string, placementMode: 'near-source' | 'after-screens' = 'near-source'): LedMapProjectV2 {
   const screen = screenOf(project, screenId)
   const placement = placementOf(project, screenId)
+  const right = Math.max(...project.design.screens.map(existing =>
+    placementOf(project, existing.id).x + existing.resolution.width))
+  const x = placementMode === 'after-screens' ? right + 64 : placement.x + 32
+  const y = placementMode === 'after-screens' ? placement.y : placement.y + 32
+  if (!Number.isSafeInteger(x) || !Number.isSafeInteger(y)) throw new Error('No safe position remains for a Screen copy.')
   const duplicated = addScreenV2(project, draftFromGrid(project, screenId), {
-    name: `${screen.name} Copy`, position: { x: placement.x + 32, y: placement.y + 32 },
+    name: `${screen.name} Copy`, position: { x, y },
   })
   const sourceGrid = gridOf(project, screenId)
   const targetGrid = gridOf(duplicated, duplicated.design.screens.at(-1)!.id)

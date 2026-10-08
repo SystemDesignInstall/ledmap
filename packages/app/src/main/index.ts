@@ -18,6 +18,7 @@ import {
 import { LiveOutputManager } from './live-output.js'
 import { ExportFileService } from './export-files.js'
 import { StagedProjectWriter } from './staged-project-write.js'
+import { PresetLibraryStore } from './preset-library-store.js'
 import { RecoveryStore, sha256 } from './recovery-store.js'
 
 interface WindowState {
@@ -33,6 +34,7 @@ let liveOutputManager: LiveOutputManager | null = null
 const exportFileService = new ExportFileService()
 const projectWriter = new StagedProjectWriter()
 let recoveryStore: RecoveryStore | null = null
+let presetLibraryStore: PresetLibraryStore | null = null
 
 const smokeUserData = process.env['LEDMAP_SMOKE_USER_DATA']
 if (smokeUserData) app.setPath('userData', smokeUserData)
@@ -83,6 +85,15 @@ async function promptLegacyUpgrade(window: BrowserWindow): Promise<LegacyUpgrade
 }
 
 function registerIpc(): void {
+  ipcMain.handle(ipcChannels.loadPresetLibrary, (event, legacyRaw: unknown) => {
+    if (!BrowserWindow.fromWebContents(event.sender) || !presetLibraryStore) throw new Error('Preset library is unavailable.')
+    if (legacyRaw !== null && typeof legacyRaw !== 'string') throw new Error('Legacy preset data is invalid.')
+    return presetLibraryStore.load(legacyRaw)
+  })
+  ipcMain.handle(ipcChannels.savePresetLibrary, (event, library: unknown) => {
+    if (!BrowserWindow.fromWebContents(event.sender) || !presetLibraryStore) throw new Error('Preset library is unavailable.')
+    return presetLibraryStore.save(library)
+  })
   ipcMain.handle(ipcChannels.openProject, async event => {
     const window = BrowserWindow.fromWebContents(event.sender)
     if (!window) throw new Error('Project window is unavailable.')
@@ -317,6 +328,7 @@ registerIpc()
 
 app.whenReady().then(async () => {
   recoveryStore = new RecoveryStore(join(app.getPath('userData'), 'recovery', 'v1'))
+  presetLibraryStore = new PresetLibraryStore(join(app.getPath('userData'), 'preset-library', 'v1'))
   liveOutputManager = new LiveOutputManager()
   liveOutputManager.attachDisplayEvents()
   await createWindow()

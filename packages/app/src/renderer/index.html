@@ -46,6 +46,7 @@
           <label class="toolbar-field"><input id="grid-step" type="number" min="1" step="1" value="10" aria-label="Grid snap step" /><span>px</span></label>
           <button id="guide-add-v" type="button" title="Add vertical guide at viewport center">+ V-Guide</button>
           <button id="guide-add-h" type="button" title="Add horizontal guide at viewport center">+ H-Guide</button>
+          <label class="toolbar-field"><span>Move</span><input id="arrow-step" type="number" min="1" max="8192" step="1" value="1" aria-label="Arrow move step" title="Arrow move step. Hold Shift for ×10." /><span>px</span></label>
         </div>
         <div class="tool-group overlay-tools" aria-label="Canvas overlays">
           <span class="tool-label">Overlays</span>
@@ -54,14 +55,6 @@
           <button type="button" data-overlay="editorLabels" aria-pressed="false" title="Show editor Screen tags and fallback Cabinet IDs">Editor labels</button>
           <button type="button" data-overlay="coordinates" aria-pressed="false">Coordinates</button>
           <button id="clean-view" type="button" aria-pressed="false" title="Hide editor guides and overlays">Clean View</button>
-        </div>
-        <div class="tool-group canvas-tools" aria-label="Canvas size tools">
-          <span id="canvas-frame-size" class="canvas-frame-size"></span>
-          <span id="canvas-crop-status" class="canvas-crop-status" role="status" hidden></span>
-          <button id="canvas-auto" type="button" title="Canvas follows all Screen bounds">Auto Canvas</button>
-          <button id="canvas-fit-all" type="button" title="Set Canvas size from all Screens">Canvas All</button>
-          <button id="canvas-fit-selection" type="button" title="Set Canvas from selection; Canvas exports crop Screens outside it. Shift+Enter">Canvas Selection</button>
-          <label class="toolbar-field"><span>Move</span><input id="arrow-step" type="number" min="1" max="8192" step="1" value="1" aria-label="Arrow move step" title="Arrow move step. Hold Shift for ×10." /><span>px</span></label>
         </div>
         <button id="toggle-mode" class="focus-toggle" type="button">Focus Screen</button>
       </div>

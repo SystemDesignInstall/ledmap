@@ -5,22 +5,6 @@ import { resolve } from 'node:path'
 export async function verifyCompositionAuthoring(page, { output, projectPath, exportDirectory, runExport }) {
   const first = (await page.evaluate(() => window.__ledmap.dump()))[0]
   assert.ok(first)
-  assert.equal(await page.locator('#canvas-crop-status').isHidden(), true)
-  await page.locator('#canvas-fit-all').click()
-  assert.match(await page.locator('#canvas-frame-size').innerText(), /1,152.*384/)
-  await page.locator('#canvas-fit-selection').click()
-  assert.match(await page.locator('#canvas-frame-size').innerText(), /512.*384/)
-  assert.match(await page.locator('#canvas-crop-status').innerText(), /1 Screen clipped/)
-  assert.match(await page.locator('#canvas-crop-status').getAttribute('title'), /PNG\/SVG export: 512 x 384 px/)
-  await page.locator('#undo-project').click()
-  assert.match(await page.locator('#canvas-frame-size').innerText(), /1,152.*384/)
-  assert.match(await page.locator('#canvas-crop-status').innerText(), /0 Screens clipped/)
-  await page.locator('#redo-project').click()
-  assert.match(await page.locator('#canvas-frame-size').innerText(), /512.*384/)
-  await page.locator('#canvas-auto').click()
-  assert.equal(await page.locator('#canvas-auto').getAttribute('aria-pressed'), 'true')
-  assert.equal(await page.locator('#canvas-crop-status').isHidden(), true)
-
   await page.locator('#arrow-step').fill('7')
   await page.locator('#arrow-step').blur()
   await page.keyboard.press('ArrowRight')
@@ -261,5 +245,5 @@ export async function verifyCompositionAuthoring(page, { output, projectPath, ex
   await page.locator('#new-screen-drawing-delete').click()
   await page.waitForFunction(async () => (await window.ledmapDesktop.loadPresetLibrary(null)).drawings.length === 0)
   await page.locator('#screen-cancel').click()
-  console.log('Composition authoring passed: Canvas sizes, arrow step, palette, guides, information, logo, save/open, PNG/SVG, preset save/apply.')
+  console.log('Composition authoring passed: arrow step, palette, guides, information, logo, save/open, PNG/SVG, preset save/apply.')
 }

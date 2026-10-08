@@ -188,7 +188,6 @@ export function guideHitTest(
 ): ProjectGuide | null {
   for (let index = guides.length - 1; index >= 0; index -= 1) {
     const guide = guides[index]!
-    if (guide.locked) continue
     const distance = guide.orientation === 'vertical'
       ? Math.abs(point.x - guide.position)
       : Math.abs(point.y - guide.position)

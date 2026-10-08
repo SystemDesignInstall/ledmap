@@ -27,7 +27,7 @@ import {
   type AlignMode, type AlignmentGuide, type DistributeAxis, type LayoutPoint, type LayoutRect,
   type ProjectGuide, type SelectionBox, type SnapSources,
 } from './layout-interaction.js'
-import { projectGuidesFromExtensions, withProjectGuides } from './project-guides.js'
+import { MAX_PROJECT_GUIDES, projectGuidesFromExtensions, withProjectGuides } from './project-guides.js'
 import { createMappingWorkspace, type MappingWorkspace } from './mapping-workspace.js'
 import { createOutputMappingWorkspace, type OutputMappingWorkspace } from './output-mapping-workspace.js'
 import { createHardwareWorkspace, type HardwareWorkspace } from './hardware-workspace.js'
@@ -40,7 +40,7 @@ import type { TestFrame } from '../shared/test-engine.js'
 import { createLiveOutputController, type LiveOutputController } from './live-output.js'
 import { createExportWorkspace, type ExportWorkspace } from './export-workspace.js'
 import { selectCompositionGeometry, type Direction, type Numbering } from '@ledmap/core'
-import { chartBounds, chartLogoBounds, chartSettingsFromExtensions, screenChartStyle, screenNameVisible, screenCabinetLabels, defaultChartGuides, defaultChartInformation, withChartSettings, withChartFrameBounds, type ChartSettings, type ChartPalette, type ChartLabels, type ChartAnchor, type ScreenChartStyle } from '../shared/chart-settings.js'
+import { chartBounds, chartLogoBounds, chartSettingsFromExtensions, screenChartStyle, screenNameVisible, screenCabinetLabels, defaultChartGuides, defaultChartInformation, withChartSettings, type ChartSettings, type ChartPalette, type ChartLabels, type ChartAnchor, type ScreenChartStyle } from '../shared/chart-settings.js'
 import { cabinetDisplayLabel, duplicateCabinetLabel, physicalCabinetLabel, type CabinetLabelMode } from '../shared/cabinet-labels.js'
 
 interface LedmapHook {
@@ -117,11 +117,6 @@ const snapCentersButton = element<HTMLButtonElement>('snap-centers')
 const snapGuidesButton = element<HTMLButtonElement>('snap-guides')
 const gridStepInput = element<HTMLInputElement>('grid-step')
 const arrowStepInput = element<HTMLInputElement>('arrow-step')
-const canvasAutoButton = element<HTMLButtonElement>('canvas-auto')
-const canvasFitAllButton = element<HTMLButtonElement>('canvas-fit-all')
-const canvasFitSelectionButton = element<HTMLButtonElement>('canvas-fit-selection')
-const canvasFrameSize = element<HTMLSpanElement>('canvas-frame-size')
-const canvasCropStatus = element<HTMLSpanElement>('canvas-crop-status')
 const guideAddV = element<HTMLButtonElement>('guide-add-v')
 const guideAddH = element<HTMLButtonElement>('guide-add-h')
 const selectedCount = element<HTMLSpanElement>('selected-count')
@@ -590,20 +585,8 @@ function renderStatus(): void {
     .map(source => source[0]!.toUpperCase() + source.slice(1))
   snapStatus.textContent = snapEnabled ? `Snap on: ${activeSources.join('+')}` : 'Snap off'
   fitSelectionButton.disabled = selectedScreenIds.length === 0
-  canvasFitSelectionButton.disabled = selectedScreenIds.length === 0
-  canvasFitAllButton.disabled = currentProject().screens.length === 0
-  canvasAutoButton.disabled = currentProject().screens.length === 0
-  const drawing = compositionDrawing()
-  canvasFrameSize.textContent = `Canvas ${format.format(drawing.bounds.width)} × ${format.format(drawing.bounds.height)}`
-  canvasAutoButton.setAttribute('aria-pressed', String(chartSettings().frameMode === 'fit'))
-  const cropping = chartSettings().frameMode === 'fixed' && chartSettings().allowFrameCrop
-  const bounds = drawing.bounds
-  const clipped = cropping ? layoutRects().filter(screen => screen.x < bounds.x || screen.y < bounds.y ||
-    screen.x + screen.width > bounds.x + bounds.width || screen.y + screen.height > bounds.y + bounds.height).length : 0
-  canvasCropStatus.hidden = !cropping
-  canvasCropStatus.textContent = `Export crop: ${clipped} Screen${clipped === 1 ? '' : 's'} clipped`
-  canvasCropStatus.title = `PNG/SVG export: ${format.format(bounds.width)} x ${format.format(bounds.height)} px. ${clipped} Screen${clipped === 1 ? '' : 's'} outside the Canvas frame.`
-  canvasFrameSize.title = cropping ? canvasCropStatus.title : 'Canvas image size'
+  guideAddV.disabled = projectGuides.length >= MAX_PROJECT_GUIDES
+  guideAddH.disabled = projectGuides.length >= MAX_PROJECT_GUIDES
   renameScreenButton.disabled = selectedScreenIds.length !== 1
   duplicateScreenButton.disabled = selectedScreenIds.length === 0
   deleteScreenButton.disabled = selectedScreenIds.length === 0
@@ -614,19 +597,6 @@ function renderStatus(): void {
   cleanViewButton.setAttribute('aria-pressed', String(cleanView))
 }
 
-function fitCanvasFrame(selected: boolean): void {
-  const bounds = selectionBounds(layoutRects(selected ? selectedScreenIds : currentProject().screens.map(screen => screen.screen.id)))
-  if (!bounds) return
-  try {
-    applyChartSettings(withChartFrameBounds(chartSettings(), bounds, selected))
-  } catch (error) {
-    showDocumentError(error, 'Unable to set Canvas size.')
-  }
-}
-
-canvasFitAllButton.addEventListener('click', () => fitCanvasFrame(false))
-canvasFitSelectionButton.addEventListener('click', () => fitCanvasFrame(true))
-canvasAutoButton.addEventListener('click', () => applyChartSettings({ ...chartSettings(), frameMode: 'fit', allowFrameCrop: false }))
 arrowStepInput.addEventListener('change', () => {
   const value = Number(arrowStepInput.value)
   if (!arrowStepInput.value.trim() || !Number.isSafeInteger(value) || value < 1 || value > 8192) {
@@ -764,7 +734,7 @@ function renderGuideProperties(guide: ProjectGuide): void {
   container.className = 'properties-body'
   const positionInput = numberField(guide.position, 'Guide Position', value => {
     applyProjectGuides(moveGuide(projectGuides, guide.id, value))
-  })
+  }, value => Number.isSafeInteger(value) ? null : 'Guide position must be a safe whole number.')
   positionInput.removeAttribute('min')
   const box = document.createElement('div')
   box.append(
@@ -779,6 +749,8 @@ function renderGuideProperties(guide: ProjectGuide): void {
   remove.type = 'button'
   remove.textContent = 'Delete Guide'
   remove.setAttribute('aria-label', 'Delete Guide')
+  remove.disabled = guide.locked
+  if (guide.locked) remove.title = 'Unlock this guide before deleting it.'
   remove.addEventListener('click', () => deleteSelectedGuide())
   container.append(remove)
   properties.append(container)
@@ -1748,6 +1720,10 @@ function resizeTargetAt(px: Point): { screen: ScreenView; handle: ResizeHandle }
   return handle ? { screen: target.screen, handle } : null
 }
 
+function guideTargetAt(px: Point): ProjectGuide | null {
+  return cleanView ? null : guideHitTest(projectGuides, toProject(camera, px), 5 / camera.zoom)
+}
+
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
 }
@@ -1793,6 +1769,7 @@ canvas.addEventListener('pointerdown', event => {
     const { screen, handle } = resizeTarget
     selection = { type: 'screen', id: screen.screen.id }
     selectedScreenIds = [screen.screen.id]
+    selectedGuideId = null
     activeScreenId = screen.screen.id
     pointerMode = 'resize'
     resizeGesture = {
@@ -1806,6 +1783,21 @@ canvas.addEventListener('pointerdown', event => {
     }
     canvas.classList.add('dragging')
     canvas.setPointerCapture(event.pointerId)
+    render()
+    return
+  }
+  const guide = !additive ? guideTargetAt(px) : null
+  if (guide) {
+    selection = null
+    selectedScreenIds = []
+    selectedGuideId = guide.id
+    if (!guide.locked) {
+      guideGesture = { id: guide.id, previous: guide.position, moved: false }
+      pointerMode = 'guide'
+      canvas.classList.add('dragging')
+      canvas.style.cursor = ''
+      canvas.setPointerCapture(event.pointerId)
+    }
     render()
     return
   }
@@ -1844,23 +1836,13 @@ canvas.addEventListener('pointerdown', event => {
     }
     canvas.setPointerCapture(event.pointerId)
   } else {
-    const guide = !additive ? guideHitTest(projectGuides, projectPoint, 8 / camera.zoom) : null
-    if (guide) {
-      selection = null
-      selectedScreenIds = []
-      selectedGuideId = guide.id
-      guideGesture = { id: guide.id, previous: guide.position, moved: false }
-      pointerMode = 'guide'
-      canvas.setPointerCapture(event.pointerId)
-    } else {
-      selection = null
-      selectedScreenIds = additive ? selectedScreenIds : []
-      selectedGuideId = null
-      pointerMode = 'marquee'
-      marqueeGesture = { start: projectPoint, baseSelection: additive ? [...selectedScreenIds] : [] }
-      marqueeBox = normalizeSelectionBox(projectPoint, projectPoint)
-      canvas.setPointerCapture(event.pointerId)
-    }
+    selection = null
+    selectedScreenIds = additive ? selectedScreenIds : []
+    selectedGuideId = null
+    pointerMode = 'marquee'
+    marqueeGesture = { start: projectPoint, baseSelection: additive ? [...selectedScreenIds] : [] }
+    marqueeBox = normalizeSelectionBox(projectPoint, projectPoint)
+    canvas.setPointerCapture(event.pointerId)
   }
   render()
 })
@@ -1876,14 +1858,18 @@ canvas.addEventListener('dblclick', event => {
 })
 
 canvas.addEventListener('pointermove', event => {
-  const cursor = toProject(camera, viewportPoint(event))
-  const hovered = !cleanView && pointerMode === 'none' ? hitTest(visibleProject(), cursor) : null
   const position = viewportPoint(event)
+  const cursor = toProject(camera, position)
+  const target = pointerMode === 'none' ? resizeTargetAt(position) : null
+  const hoveredGuide = pointerMode === 'none' && !target ? guideTargetAt(position) : null
+  const hovered = !cleanView && pointerMode === 'none' ? hitTest(visibleProject(), cursor) : null
   const informationBadge = compactInformationBadges(compositionDrawing(), camera).find(badge =>
     position.x >= badge.bounds.x && position.x <= badge.bounds.x + badge.bounds.width &&
     position.y >= badge.bounds.y && position.y <= badge.bounds.y + badge.bounds.height)
   if (informationBadge) {
     canvas.title = informationBadge.title
+  } else if (hoveredGuide) {
+    canvas.title = `${hoveredGuide.orientation === 'vertical' ? 'Vertical' : 'Horizontal'} guide · ${hoveredGuide.orientation === 'vertical' ? 'X' : 'Y'} ${hoveredGuide.position} px${hoveredGuide.locked ? ' · locked' : ''}`
   } else if (hovered?.cabinet && (viewMode === 'all' || hovered.screen.screen.id === activeScreenId)) {
     const mode = screenChartStyle(chartSettings(), hovered.screen.screen.id).cabinetLabelMode ?? 'row-coordinate'
     const label = cabinetDisplayLabel(mode, hovered.screen.grid.columns, hovered.screen.grid.rows, hovered.cabinet)
@@ -1987,8 +1973,7 @@ canvas.addEventListener('pointermove', event => {
     render()
     return
   }
-  const target = resizeTargetAt(viewportPoint(event))
-  canvas.style.cursor = target ? resizeHandleCursor(target.handle) : ''
+  canvas.style.cursor = target ? resizeHandleCursor(target.handle) : hoveredGuide ? hoveredGuide.locked ? 'pointer' : 'grab' : ''
 })
 
 canvas.addEventListener('pointerleave', () => {
@@ -2369,16 +2354,20 @@ snapCentersButton.addEventListener('click', () => toggleSnapSource('centers'))
 snapGuidesButton.addEventListener('click', () => toggleSnapSource('guides'))
 
 function addGuideAtCenter(orientation: ProjectGuide['orientation']): void {
-  const rect = canvas.getBoundingClientRect()
-  const center = toProject(camera, { x: rect.width / 2, y: rect.height / 2 })
-  const position = orientation === 'vertical' ? center.x : center.y
-  const next = addGuide(projectGuides, orientation, position)
-  applyProjectGuides(next)
-  const created = projectGuides[projectGuides.length - 1]!
-  selection = null
-  selectedScreenIds = []
-  selectedGuideId = created.id
-  render()
+  if (projectGuides.length >= MAX_PROJECT_GUIDES) return
+  try {
+    const rect = canvas.getBoundingClientRect()
+    const center = toProject(camera, { x: rect.width / 2, y: rect.height / 2 })
+    const position = orientation === 'vertical' ? center.x : center.y
+    applyProjectGuides(addGuide(projectGuides, orientation, position))
+    const created = projectGuides[projectGuides.length - 1]!
+    selection = null
+    selectedScreenIds = []
+    selectedGuideId = created.id
+    render()
+  } catch (error) {
+    showDocumentError(error, 'Unable to add guide.')
+  }
 }
 
 guideAddV.addEventListener('click', () => addGuideAtCenter('vertical'))
@@ -2673,11 +2662,6 @@ window.addEventListener('keydown', event => {
     const step = arrowStep * (event.shiftKey ? 10 : 1)
     const positions = nudgePositions(selectedPositions(), selectedScreenIds, direction[0] * step, direction[1] * step)
     if (applyScreenPositions(positions, arrowHistoryGroupId)) render()
-    event.preventDefault()
-    return
-  }
-  if (event.shiftKey && event.key === 'Enter') {
-    fitCanvasFrame(true)
     event.preventDefault()
     return
   }

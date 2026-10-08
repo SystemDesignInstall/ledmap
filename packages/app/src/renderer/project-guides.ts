@@ -2,11 +2,12 @@ import type { JsonObject, JsonValue } from '@ledmap/core'
 import type { ProjectGuide } from './layout-interaction.js'
 
 export const PROJECT_GUIDES_EXTENSION_KEY = 'ledmap.compositionGuides'
+export const MAX_PROJECT_GUIDES = 1024
 
 function validateGuides(value: unknown): readonly ProjectGuide[] {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new Error('Composition guides are invalid.')
   const record = value as Record<string, unknown>
-  if (record['version'] !== 1 || !Array.isArray(record['guides']) || record['guides'].length > 1024) {
+  if (record['version'] !== 1 || !Array.isArray(record['guides']) || record['guides'].length > MAX_PROJECT_GUIDES) {
     throw new Error('Composition guides need version 1 and at most 1024 guides.')
   }
   const used = new Set<string>()

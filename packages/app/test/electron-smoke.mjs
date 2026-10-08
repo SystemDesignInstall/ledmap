@@ -565,12 +565,52 @@ try {
   await page.locator('[data-overlay="editorLabels"]').click()
 
   await page.locator('#guide-add-v').click()
-  const savedGuides = await page.evaluate(() => window.__ledmap.projectGuides())
-  assert.equal(savedGuides.length, 1)
+  assert.equal((await page.evaluate(() => window.__ledmap.projectGuides())).length, 1)
   await page.locator('#undo-project').click()
   assert.deepEqual(await page.evaluate(() => window.__ledmap.projectGuides()), [])
   await page.locator('#redo-project').click()
-  assert.deepEqual(await page.evaluate(() => window.__ledmap.projectGuides()), savedGuides)
+  const guidePickBox = await page.locator('#project-canvas').boundingBox()
+  await page.locator('#project-canvas').click({ position: { x: guidePickBox.width / 2, y: 10 } })
+  assert.equal(await page.locator('#properties-title').innerText(), 'Guide')
+  const firstGuideScreen = (await dump())[0]
+  const guideX = firstGuideScreen.x + 100
+  const positionInput = page.locator('input[aria-label="Guide Position"]')
+  await positionInput.fill(String(guideX))
+  await positionInput.blur()
+  const guideBeforeInvalid = await page.evaluate(() => window.__ledmap.projectGuides())
+  const revisionBeforeInvalid = (await documentState()).revision
+  await positionInput.fill(String(Number.MAX_SAFE_INTEGER + 1))
+  await positionInput.blur()
+  assert.equal(await positionInput.getAttribute('aria-invalid'), 'true')
+  assert.equal(await positionInput.inputValue(), String(guideX))
+  assert.equal((await documentState()).revision, revisionBeforeInvalid)
+  assert.deepEqual(await page.evaluate(() => window.__ledmap.projectGuides()), guideBeforeInvalid)
+  await page.locator('button[aria-label="Guide Locked"]').click()
+  assert.equal(await page.locator('button[aria-label="Delete Guide"]').isDisabled(), true)
+  await page.keyboard.press('Escape')
+  const guideOnScreen = await page.evaluate(screen => window.__ledmap.projectToPx({
+    x: screen.x + 100, y: screen.y + 100,
+  }), firstGuideScreen)
+  const guideCanvasBox = await page.locator('#project-canvas').boundingBox()
+  await page.mouse.move(guideCanvasBox.x + guideOnScreen.x, guideCanvasBox.y + guideOnScreen.y)
+  await page.mouse.down()
+  await page.mouse.move(guideCanvasBox.x + guideOnScreen.x + 30, guideCanvasBox.y + guideOnScreen.y, { steps: 3 })
+  await page.mouse.up()
+  assert.equal(await page.locator('#properties-title').innerText(), 'Guide')
+  assert.equal(await page.locator('button[aria-label="Guide Locked"]').getAttribute('aria-pressed'), 'true')
+  assert.deepEqual(await page.evaluate(() => window.__ledmap.projectGuides()), [
+    { ...guideBeforeInvalid[0], locked: true },
+  ])
+  assert.deepEqual((await dump())[0], firstGuideScreen)
+  await page.locator('button[aria-label="Guide Locked"]').click()
+  assert.equal(await page.locator('button[aria-label="Delete Guide"]').isEnabled(), true)
+  await page.locator('button[aria-label="Delete Guide"]').click()
+  assert.deepEqual(await page.evaluate(() => window.__ledmap.projectGuides()), [])
+  await page.locator('#undo-project').click()
+  await page.locator('#project-canvas').click({ position: guideOnScreen })
+  await page.locator('button[aria-label="Guide Locked"]').click()
+  const savedGuides = await page.evaluate(() => window.__ledmap.projectGuides())
+  assert.deepEqual(savedGuides, [{ ...guideBeforeInvalid[0], locked: true }])
   const expected = await dump()
   assert.equal(expected.length, 5)
   assert.equal(expected[2].columns, 5)
@@ -607,6 +647,15 @@ try {
   await page.waitForFunction(() => window.__ledmap.dump().length === 5)
   assert.deepEqual(await dump(), expected)
   assert.deepEqual(await page.evaluate(() => window.__ledmap.projectGuides()), savedGuides)
+  const reopenedGuidePoint = await page.evaluate(screen => window.__ledmap.projectToPx({
+    x: screen.x + 100, y: screen.y + 100,
+  }), firstGuideScreen)
+  await page.locator('#project-canvas').click({ position: reopenedGuidePoint })
+  assert.equal(await page.locator('#properties-title').innerText(), 'Guide')
+  assert.equal(await page.locator('button[aria-label="Guide Locked"]').getAttribute('aria-pressed'), 'true')
+  await page.locator('button[aria-label="Guide Locked"]').click()
+  assert.equal(await page.locator('button[aria-label="Guide Locked"]').getAttribute('aria-pressed'), 'false')
+  await page.locator('button[aria-label="Guide Locked"]').click()
 
   await setScreenPosition(page, 'Screen 3', 333, 333)
   assert.equal((await documentState()).dirty, true)
@@ -1567,6 +1616,23 @@ try {
   await verifyCabinetBorders(mappingPage, { output, exportDirectory, addScreen, runExport })
   await verifyCabinetLabelOverlays(mappingPage, { output, addScreen, setScreenPosition })
   await verifyCompositionAuthoring(mappingPage, { output, projectPath, exportDirectory, runExport })
+  const guideLimitFixture = structuredClone(stored)
+  guideLimitFixture.extensions['ledmap.compositionGuides'] = {
+    version: 1,
+    guides: Array.from({ length: 1023 }, (_, index) => ({
+      id: `guide-${index + 1}`, orientation: 'vertical', position: index, locked: false,
+    })),
+  }
+  await writeFile(projectPath, JSON.stringify(guideLimitFixture))
+  await mappingPage.locator('#layout-mode').click()
+  await mappingPage.locator('#open-project').click()
+  await mappingPage.waitForFunction(() => window.__ledmap.projectGuides().length === 1023)
+  assert.equal(await mappingPage.locator('#guide-add-v').isEnabled(), true)
+  assert.equal(await mappingPage.locator('#guide-add-h').isEnabled(), true)
+  await mappingPage.locator('#guide-add-h').click()
+  assert.equal((await mappingPage.evaluate(() => window.__ledmap.projectGuides())).length, 1024)
+  assert.equal(await mappingPage.locator('#guide-add-v').isDisabled(), true)
+  assert.equal(await mappingPage.locator('#guide-add-h').isDisabled(), true)
   assert.deepEqual(failures, [])
   console.log('Electron smoke passed: Composition through deterministic Export with pixel-exact PNG, byte-identical JSON/CSV and unre-based shared-Port addresses.')
   console.log(`Project: ${projectPath}`)

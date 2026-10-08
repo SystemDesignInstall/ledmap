@@ -2,6 +2,7 @@ import type { LiveOutputRegion } from '../shared/ipc.js'
 import type { TestBounds, TestFrame, TestPoint, TestPrimitive } from '../shared/test-engine.js'
 import type { Camera } from './canvas.js'
 import { drawCabinetBorder } from './cabinet-border.js'
+import { drawViewportCabinetLabel } from './cabinet-label-renderer.js'
 
 interface CachedImage {
   readonly image: HTMLImageElement
@@ -52,12 +53,36 @@ function point(camera: Camera, value: TestPoint): TestPoint {
   return { x: value.x * camera.zoom + camera.offsetX, y: value.y * camera.zoom + camera.offsetY }
 }
 
-function drawPrimitive(ctx: CanvasRenderingContext2D, camera: Camera, primitive: TestPrimitive, redraw: (() => void) | null = null): void {
+function fillPixelAlignedRect(ctx: CanvasRenderingContext2D, camera: Camera, bounds: TestBounds): void {
+  const transform = ctx.getTransform()
+  const origin = point(camera, bounds)
+  if (transform.b !== 0 || transform.c !== 0 || transform.a <= 0 || transform.d <= 0) {
+    ctx.fillRect(origin.x, origin.y, bounds.width * camera.zoom, bounds.height * camera.zoom)
+    return
+  }
+  const left = Math.round(origin.x * transform.a + transform.e)
+  const top = Math.round(origin.y * transform.d + transform.f)
+  const right = Math.round(((bounds.x + bounds.width) * camera.zoom + camera.offsetX) * transform.a + transform.e)
+  const bottom = Math.round(((bounds.y + bounds.height) * camera.zoom + camera.offsetY) * transform.d + transform.f)
+  if (right <= left || bottom <= top) return
+  ctx.save()
+  ctx.setTransform(1, 0, 0, 1, 0, 0)
+  ctx.shadowColor = 'transparent'
+  ctx.shadowBlur = 0
+  ctx.shadowOffsetX = 0
+  ctx.shadowOffsetY = 0
+  ctx.fillRect(left, top, right - left, bottom - top)
+  ctx.restore()
+}
+
+function drawPrimitive(ctx: CanvasRenderingContext2D, camera: Camera, primitive: TestPrimitive, redraw: (() => void) | null = null, viewportLabels = false): void {
   if (primitive.kind === 'cabinet-border') {
     drawCabinetBorder(ctx, camera, primitive.bounds, primitive.color)
     return
   }
   if (primitive.kind === 'rect' || primitive.kind === 'gradient') {
+    ctx.save()
+    if (primitive.kind === 'rect') ctx.globalAlpha *= primitive.opacity ?? 1
     const origin = point(camera, primitive.bounds)
     const width = primitive.bounds.width * camera.zoom
     const height = primitive.bounds.height * camera.zoom
@@ -70,22 +95,49 @@ function drawPrimitive(ctx: CanvasRenderingContext2D, camera: Camera, primitive:
       gradient.addColorStop(1, primitive.to)
       ctx.fillStyle = gradient
       ctx.fillRect(origin.x, origin.y, width, height)
+      ctx.restore()
       return
     }
     if (primitive.fill) {
       ctx.fillStyle = primitive.fill
-      ctx.fillRect(origin.x, origin.y, width, height)
+      if (primitive.pixelAligned) fillPixelAlignedRect(ctx, camera, primitive.bounds)
+      else ctx.fillRect(origin.x, origin.y, width, height)
     }
     if (primitive.stroke) {
       ctx.strokeStyle = primitive.stroke
       ctx.lineWidth = Math.max(1, (primitive.lineWidth ?? 1) * camera.zoom)
       ctx.strokeRect(origin.x, origin.y, width, height)
     }
+    ctx.restore()
+    return
+  }
+  if (primitive.kind === 'circle') {
+    const center = point(camera, primitive.center)
+    ctx.strokeStyle = primitive.color
+    ctx.lineWidth = Math.max(1, primitive.lineWidth * camera.zoom)
+    ctx.beginPath()
+    ctx.arc(center.x, center.y, primitive.radius * camera.zoom, 0, Math.PI * 2)
+    ctx.stroke()
     return
   }
   if (primitive.kind === 'line') {
     const from = point(camera, primitive.from)
     const to = point(camera, primitive.to)
+    if (viewportLabels && primitive.role === 'screen-center-guide') {
+      ctx.save()
+      ctx.beginPath()
+      ctx.moveTo(from.x, from.y)
+      ctx.lineTo(to.x, to.y)
+      ctx.setLineDash([8, 5])
+      ctx.strokeStyle = '#15181a'
+      ctx.lineWidth = 4
+      ctx.stroke()
+      ctx.strokeStyle = primitive.color
+      ctx.lineWidth = Math.max(2, primitive.lineWidth * camera.zoom)
+      ctx.stroke()
+      ctx.restore()
+      return
+    }
     ctx.strokeStyle = primitive.color
     ctx.lineWidth = Math.max(1, primitive.lineWidth * camera.zoom)
     ctx.setLineDash(primitive.dash?.map(value => value * camera.zoom) ?? [])
@@ -97,7 +149,14 @@ function drawPrimitive(ctx: CanvasRenderingContext2D, camera: Camera, primitive:
     return
   }
   if (primitive.kind === 'text') {
+    if (viewportLabels && primitive.role === 'screen-title' && primitive.cellBounds && primitive.cellBounds.height * camera.zoom < 48) return
     const position = point(camera, primitive.point)
+    if (viewportLabels && primitive.role === 'cabinet-label' && primitive.cellBounds) {
+      drawViewportCabinetLabel(ctx, primitive.text, position.x, position.y,
+        primitive.cellBounds.width * camera.zoom, primitive.cellBounds.height * camera.zoom,
+        primitive.color, primitive.shadow)
+      return
+    }
     ctx.save()
     ctx.fillStyle = primitive.color
     if (primitive.shadow) {
@@ -106,7 +165,7 @@ function drawPrimitive(ctx: CanvasRenderingContext2D, camera: Camera, primitive:
       ctx.shadowOffsetX = 1
       ctx.shadowOffsetY = 1
     }
-    ctx.font = `600 ${Math.max(8, Math.min(48, primitive.size * camera.zoom))}px "Segoe UI", sans-serif`
+    ctx.font = `600 ${primitive.role === 'screen-information' ? Math.min(48, primitive.size * camera.zoom) : Math.max(8, Math.min(48, primitive.size * camera.zoom))}px "Segoe UI", sans-serif`
     ctx.textAlign = primitive.align ?? 'left'
     ctx.textBaseline = 'middle'
     ctx.fillText(primitive.text, position.x, position.y)
@@ -117,7 +176,10 @@ function drawPrimitive(ctx: CanvasRenderingContext2D, camera: Camera, primitive:
     const cached = chartImage(primitive.dataUrl, redraw, ctx.canvas)
     if (!cached.ready) return
     const origin = point(camera, primitive.bounds)
+    ctx.save()
+    ctx.globalAlpha *= primitive.opacity ?? 1
     ctx.drawImage(cached.image, origin.x, origin.y, primitive.bounds.width * camera.zoom, primitive.bounds.height * camera.zoom)
+    ctx.restore()
     return
   }
   const position = point(camera, primitive.point)
@@ -126,18 +188,72 @@ function drawPrimitive(ctx: CanvasRenderingContext2D, camera: Camera, primitive:
   ctx.fillRect(position.x - size / 2, position.y - size / 2, size, size)
 }
 
+interface CompactInformationBadge {
+  readonly rect: TestPrimitive & { readonly kind: 'rect' }
+  readonly texts: readonly (TestPrimitive & { readonly kind: 'text' })[]
+  readonly bounds: TestBounds
+  readonly title: string
+}
+
+export function compactInformationBadges(frame: TestFrame, camera: Camera): readonly CompactInformationBadge[] {
+  const badges: CompactInformationBadge[] = []
+  for (let index = 0; index < frame.primitives.length; index += 1) {
+    const rect = frame.primitives[index]
+    if (rect?.kind !== 'rect' || rect.role !== 'screen-information') continue
+    const texts: (TestPrimitive & { readonly kind: 'text' })[] = []
+    for (let next = index + 1; next < frame.primitives.length; next += 1) {
+      const value = frame.primitives[next]
+      if (value?.kind !== 'text' || value.role !== 'screen-information') break
+      texts.push(value)
+    }
+    if (!texts[0] || texts[0].size * camera.zoom >= 10) continue
+    const origin = point(camera, rect.bounds)
+    const availableWidth = rect.bounds.width * camera.zoom
+    const availableHeight = rect.bounds.height * camera.zoom
+    if (availableWidth < 18 || availableHeight < 14) continue
+    badges.push({ rect, texts, bounds: { x: origin.x, y: origin.y,
+      width: Math.min(48, availableWidth), height: Math.min(20, availableHeight) },
+    title: texts.map(value => value.text).join('\n') })
+  }
+  return badges
+}
+
+function drawCompactInformationBadge(ctx: CanvasRenderingContext2D, badge: CompactInformationBadge): void {
+  const { x, y, width, height } = badge.bounds
+  ctx.save()
+  ctx.fillStyle = '#f7941e'
+  ctx.fillRect(x, y, width, height)
+  ctx.fillStyle = '#15181a'
+  ctx.font = '600 12px "Segoe UI", sans-serif'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillText(width >= 40 ? 'Info' : 'i', x + width / 2, y + height / 2)
+  ctx.restore()
+}
+
 export function drawFramePrimitives(
   ctx: CanvasRenderingContext2D,
   frame: TestFrame,
   camera: Camera,
   redraw: (() => void) | null = null,
-  layer: 'all' | 'regular' | 'screen-title' = 'all',
+  layer: 'all' | 'regular' | 'screen-title' | 'screen-information' | 'screen-guide' = 'all',
+  viewportLabels = false,
+  showCabinetBorders = true,
 ): void {
+  const badges = layer === 'screen-information' ? compactInformationBadges(frame, camera) : []
+  const compactPrimitives = new Set<TestPrimitive>(badges.flatMap(badge => [badge.rect, ...badge.texts]))
   for (const primitive of frame.primitives) {
+    if (!showCabinetBorders && primitive.kind === 'cabinet-border') continue
+    if (compactPrimitives.has(primitive)) continue
     const title = primitive.kind === 'text' && primitive.role === 'screen-title'
-    if (layer === 'regular' && title || layer === 'screen-title' && !title) continue
-    drawPrimitive(ctx, camera, primitive, redraw)
+    const information = (primitive.kind === 'text' || primitive.kind === 'rect') && primitive.role === 'screen-information'
+    const guide = (primitive.kind === 'line' || primitive.kind === 'circle' || primitive.kind === 'rect') &&
+      (primitive.role === 'screen-guide' || primitive.role === 'screen-center-guide')
+    if (layer === 'regular' && (title || information || guide) || layer === 'screen-title' && !title ||
+        layer === 'screen-information' && !information || layer === 'screen-guide' && !guide) continue
+    drawPrimitive(ctx, camera, primitive, redraw, viewportLabels)
   }
+  for (const badge of badges) drawCompactInformationBadge(ctx, badge)
 }
 
 export function drawTestFrame(canvas: HTMLCanvasElement, frame: TestFrame, camera: Camera): void {

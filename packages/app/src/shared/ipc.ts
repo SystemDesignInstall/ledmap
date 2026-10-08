@@ -1,9 +1,12 @@
 import type { TestFrame } from './test-engine.js'
+import type { PresetLibrary } from './preset-library.js'
 import type { GenericMappingExportInput, V2GenericMappingFormat, V2GenericMappingScope } from './v2-export-engine.js'
 
 export const ipcChannels = {
   openProject: 'project:open',
   saveProject: 'project:save',
+  loadPresetLibrary: 'preset-library:load',
+  savePresetLibrary: 'preset-library:save',
   confirmUnsaved: 'project:confirm-unsaved',
   confirmLegacyUpgrade: 'project:confirm-legacy-upgrade',
   setDocumentState: 'project:set-document-state',
@@ -170,6 +173,8 @@ export interface ExportWriteResult {
 export interface LedmapDesktopApi {
   openProject(): Promise<OpenProjectResult>
   saveProject(request: SaveProjectRequest): Promise<SaveProjectResult>
+  loadPresetLibrary(legacyRaw: string | null): Promise<PresetLibrary>
+  savePresetLibrary(library: PresetLibrary): Promise<PresetLibrary>
   confirmUnsavedChanges(): Promise<UnsavedChoice>
   confirmLegacyUpgrade(): Promise<LegacyUpgradeChoice>
   setDocumentState(state: DesktopDocumentState): void

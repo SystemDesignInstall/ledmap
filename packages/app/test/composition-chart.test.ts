@@ -3,7 +3,7 @@ import { addScreenV2 } from '../src/renderer/v2-commands.js'
 import { ProjectDocumentController } from '../src/renderer/document.js'
 import { loadProjectSession, serializeProjectSession, sessionDirty } from '../src/renderer/project-session.js'
 import {
-  chartFrameProblem, chartSettingsFromExtensions, defaultChartSettings, withChartSettings,
+  chartFrameProblem, chartLogoBounds, chartSettingsFromExtensions, defaultChartSettings, defaultChartGuides, defaultChartInformation, screenChartStyle, withChartSettings, withChartFrameBounds,
 } from '../src/shared/chart-settings.js'
 import { buildPngExportPlan } from '../src/shared/png-export.js'
 import { buildCompositionChartFrame } from '../src/shared/chart-engine.js'
@@ -24,6 +24,130 @@ const scene: TestScene = {
 }
 
 describe('Composition chart contract', () => {
+  it('makes intentional Canvas cropping explicit while keeping document geometry and Undo atomic', () => {
+    const document = new ProjectDocumentController(() => 'frame')
+    document.transactV2(addScreenV2)
+    const geometry = document.session.project
+    const settings = withChartFrameBounds(defaultChartSettings, scene.screens[0]!.bounds, true)
+    expect(chartFrameProblem(scene, settings)).toBeNull()
+    expect(chartFrameProblem(scene, { ...settings, allowFrameCrop: false })).toMatch(/outside/)
+    document.transactExtensions(extensions => withChartSettings(extensions, settings))
+    expect(document.session.project).toBe(geometry)
+    expect(chartSettingsFromExtensions(document.session.extensions).frame).toEqual(scene.screens[0]!.bounds)
+    document.undo()
+    expect(chartSettingsFromExtensions(document.session.extensions)).toEqual(defaultChartSettings)
+    document.redo()
+    expect(chartSettingsFromExtensions(document.session.extensions).allowFrameCrop).toBe(true)
+    const before = document.session
+    expect(() => document.transactExtensions(extensions => withChartSettings(extensions,
+      withChartFrameBounds(settings, { ...settings.frame, width: 0 })))).toThrow()
+    expect(document.session).toBe(before)
+  })
+
+  it('saves an information block and proportionally positions a translucent logo', () => {
+    const dataUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9rkT8AAAAASUVORK5CYII='
+    const style = { palette: 'screen-color' as const, labels: 'none' as const, fill: '#284a68',
+      cabinetEdges: false, textShadow: false, caption: '', logo: { dataUrl, width: 1, height: 1 },
+      showScreenName: false, logoLayout: { position: 'bottom-left' as const, width: 80, opacity: 50 },
+      information: { ...defaultChartInformation, enabled: true, position: 'top-left' as const,
+        aspectRatio: false, cabinetSize: false, grid: false, canvasPosition: false } }
+    const saved = chartSettingsFromExtensions(withChartSettings({}, { ...defaultChartSettings, screenStyles: { right: style } }))
+    const frame = buildCompositionChartFrame(scene, { kind: 'screen', target: 'right' }, saved)
+    expect(frame.primitives.filter(value => value.kind === 'text').map(value => value.text)).toEqual([
+      'Resolution: 200×200 px', 'Cabinets: 1',
+    ])
+    expect(frame.primitives).toContainEqual({ kind: 'image', bounds: { x: 216, y: 124, width: 80, height: 80 },
+      dataUrl, opacity: 0.5 })
+    expect(frame.primitives).toContainEqual(expect.objectContaining({ kind: 'rect', opacity: 0.85 }))
+    const svg = renderFrameSvg(frame, frame.bounds)
+    expect(svg).toContain('opacity="0.5"')
+    expect(svg).toContain('opacity="0.85"')
+    expect(svg).toContain('Resolution: 200×200 px')
+    expect(chartLogoBounds({ x: 0, y: 0, width: 120, height: 80 }, { dataUrl, width: 2, height: 1 },
+      { position: 'bottom-right', width: 160, opacity: 50 })).toEqual({ x: 16, y: 20, width: 88, height: 44 })
+    expect(() => withChartSettings({}, { ...saved, screenStyles: { right: {
+      ...style, information: { ...style.information, enabled: 'yes' as unknown as boolean },
+    } } })).toThrow(/enabled/)
+    expect(() => withChartSettings({}, { ...saved, screenStyles: { right: {
+      ...style, logoLayout: { ...style.logoLayout, opacity: 101 },
+    } } })).toThrow(/opacity/)
+  })
+
+  it('shares saved graphics across Canvas and SVG without changing cabinet geometry', () => {
+    const style = { palette: 'screen-color' as const, labels: 'none' as const, fill: '#284a68',
+      cabinetEdges: false, textShadow: false, caption: '', logo: null,
+      guides: { ...defaultChartGuides, diagonals: true, centralCircle: true, cornerCircles: true,
+        horizontalCenter: true, verticalCenter: true, outerBorder: true, thickness: 2, color: '#abcdef' } }
+    const before = structuredClone(scene)
+    const settings = chartSettingsFromExtensions(withChartSettings({}, { ...defaultChartSettings, screenStyles: { right: style } }))
+    const frame = buildCompositionChartFrame(scene, { kind: 'screen', target: 'right' }, settings)
+    expect(frame.primitives.filter(value => value.kind === 'circle')).toHaveLength(5)
+    expect(frame.primitives).toContainEqual({ kind: 'circle', center: { x: 300, y: 120 }, radius: 99, color: '#abcdef', lineWidth: 2, role: 'screen-guide' })
+    expect(frame.primitives).toContainEqual({ kind: 'line', from: { x: 201, y: 120 }, to: { x: 399, y: 120 }, color: '#abcdef', lineWidth: 2, role: 'screen-center-guide' })
+    expect(frame.primitives).toContainEqual({ kind: 'line', from: { x: 300, y: 21 }, to: { x: 300, y: 219 }, color: '#abcdef', lineWidth: 2, role: 'screen-center-guide' })
+    expect(renderFrameSvg(frame, frame.bounds)).toContain('<circle cx="300" cy="120" r="99"')
+    expect(scene).toEqual(before)
+    expect(frame.scopedCabinets).toEqual(['right/C01'])
+    expect(() => withChartSettings({}, { ...settings, screenStyles: { right: { ...style, guides: { ...style.guides, thickness: 0 } } } }))
+      .toThrow(/thickness/)
+  })
+
+  it('round-trips custom palettes and partitions color bands without pixel gaps', () => {
+    const style = { palette: 'rgb-bars' as const, labels: 'none' as const, fill: '#284a68',
+      cabinetEdges: false, textShadow: false, caption: '', logo: null,
+      bandColors: ['#ff0000', '#00ff00', '#0000ff'], patternDirection: 'vertical' as const }
+    const settings = chartSettingsFromExtensions(withChartSettings({}, { ...defaultChartSettings, screenStyles: { right: style } }))
+    const frame = buildCompositionChartFrame(scene, { kind: 'screen', target: 'right' }, settings)
+    expect(frame.primitives).toEqual([
+      { kind: 'rect', bounds: { x: 200, y: 20, width: 200, height: 66 }, fill: '#ff0000', pixelAligned: true },
+      { kind: 'rect', bounds: { x: 200, y: 86, width: 200, height: 67 }, fill: '#00ff00', pixelAligned: true },
+      { kind: 'rect', bounds: { x: 200, y: 153, width: 200, height: 67 }, fill: '#0000ff', pixelAligned: true },
+    ])
+    const gradient = buildCompositionChartFrame(scene, { kind: 'screen', target: 'right' }, {
+      ...settings, screenStyles: { right: { ...style, palette: 'gray-gradient', gradientFrom: '#123456', gradientTo: '#abcdef' } },
+    })
+    expect(renderFrameSvg(gradient, gradient.bounds)).toContain('y2="100%"')
+    expect(gradient.primitives[0]).toMatchObject({ kind: 'gradient', from: '#123456', to: '#abcdef', direction: 'vertical' })
+    for (const bandColors of [[], ['#ffffff'], Array(11).fill('#ffffff'), ['red', '#ffffff']]) {
+      expect(() => withChartSettings({}, { ...settings, screenStyles: { right: { ...style, bandColors } } })).toThrow()
+    }
+  })
+
+  it('uses four checkerboard colors as repeating two by two cells', () => {
+    const cabinets = Array.from({ length: 16 }, (_, index) => ({ id: `right/C${index}`, screen: 'right', logicalOrder: index,
+      bounds: { x: 200 + index % 4 * 50, y: 20 + Math.floor(index / 4) * 50, width: 50, height: 50 }, hardware: null }))
+    const style = { palette: 'checkerboard' as const, labels: 'none' as const, fill: '#284a68',
+      cabinetEdges: false, textShadow: false, caption: '', logo: null, checkerColors: ['#ff0000', '#00ff00', '#0000ff', '#ffffff'] }
+    const frame = buildCompositionChartFrame({ ...scene, cabinets }, { kind: 'screen', target: 'right' }, {
+      ...defaultChartSettings, screenStyles: { right: style },
+    })
+    expect(frame.primitives.slice(1).map(value => value.kind === 'rect' ? value.fill : null)).toEqual([
+      '#ff0000', '#00ff00', '#ff0000', '#00ff00', '#0000ff', '#ffffff', '#0000ff', '#ffffff',
+      '#ff0000', '#00ff00', '#ff0000', '#00ff00', '#0000ff', '#ffffff', '#0000ff', '#ffffff',
+    ])
+  })
+
+  it('keeps legacy title behavior and independently saves screen names and cabinet labels', () => {
+    const style = { palette: 'screen-color' as const, labels: 'cabinet' as const, fill: '#284a68',
+      cabinetEdges: false, textShadow: false, caption: '', logo: null,
+      showScreenName: true, screenNameSize: 32, textColor: '#fedcba' }
+    const saved = chartSettingsFromExtensions(withChartSettings({}, { ...defaultChartSettings, screenStyles: { right: style } }))
+    const frame = buildCompositionChartFrame(scene, { kind: 'screen', target: 'right' }, saved)
+    expect(frame.primitives.filter(value => value.kind === 'text')).toMatchObject([
+      { text: 'A1', role: 'cabinet-label', color: '#fedcba' },
+      { text: 'Right · 200×200', role: 'screen-title', size: 32, color: '#fedcba',
+        point: { x: 212, y: 40 }, align: 'left' },
+    ])
+    const hidden = buildCompositionChartFrame(scene, { kind: 'screen', target: 'right' }, {
+      ...saved, screenStyles: { right: { ...style, showScreenName: false } },
+    })
+    expect(hidden.primitives.filter(value => value.kind === 'text')).toHaveLength(1)
+    expect(buildCompositionChartFrame(scene, { kind: 'screen', target: 'right' }, defaultChartSettings).primitives.at(-1))
+      .toMatchObject({ role: 'screen-title', text: 'Right · 200×200' })
+    expect(() => withChartSettings({}, { ...saved, screenStyles: { right: { ...style, screenNameSize: 0 } } })).toThrow(/size/)
+    expect(() => withChartSettings({}, { ...saved, screenStyles: { right: { ...style, textColor: 'white' } } })).toThrow(/color/)
+  })
+
   it('preserves app chart settings through document save, open, undo and redo', async () => {
     let serial = 0
     const document = new ProjectDocumentController(() => `document-${++serial}`)
@@ -124,7 +248,8 @@ describe('Composition chart contract', () => {
     const frame = buildCompositionChartFrame(scene, { kind: 'screen', target: 'right' },
       { ...defaultChartSettings, labels: 'grid-address' })
     expect(frame.primitives).toContainEqual({ kind: 'text', point: { x: 250, y: 70 },
-      text: 'A1', color: '#ffffff', size: 16, align: 'center', shadow: true })
+      text: 'A1', color: '#ffffff', size: 16, align: 'center', shadow: true,
+      role: 'cabinet-label', cellBounds: scene.cabinets[1]?.bounds })
     expect(frame.scopedCabinets).toEqual(['right/C01'])
   })
 
@@ -148,6 +273,19 @@ describe('Composition chart contract', () => {
     expect(frame.primitives.at(-1)).toMatchObject({ kind: 'text', role: 'screen-title', text: 'Left · 200×200' })
     expect(frame.primitives.filter(primitive => primitive.kind === 'text' && primitive.text === 'Right · 200×200')).toHaveLength(0)
     expect(() => withChartSettings({}, settings)).not.toThrow()
+  })
+
+  it('applies a chosen Cabinet line color to the chart and serialized settings', () => {
+    const style = { ...screenChartStyle(defaultChartSettings, 'left'), labels: 'none' as const,
+      showScreenName: false, cabinetLineColor: '#dc517b' }
+    const settings = { ...defaultChartSettings, screenStyles: { left: style } }
+    const restored = chartSettingsFromExtensions(withChartSettings({}, settings))
+    expect(restored.screenStyles['left']?.cabinetLineColor).toBe('#dc517b')
+    const frame = buildCompositionChartFrame(scene, { kind: 'screen', target: 'left' }, restored)
+    expect(frame.primitives).toContainEqual({ kind: 'cabinet-border', bounds: scene.cabinets[0]?.bounds, color: '#dc517b' })
+    expect(renderFrameSvg(frame, frame.bounds)).toContain('fill="#dc517b"')
+    expect(() => withChartSettings({}, { ...settings, screenStyles: { left: { ...style, cabinetLineColor: 'pink' } } }))
+      .toThrow(/Cabinet line color/)
   })
 
   it('draws all Screen names and resolutions after every Screen drawing and logo', () => {
@@ -189,7 +327,7 @@ describe('Composition chart contract', () => {
     expect(chart.primitives).toContainEqual({ kind: 'text', point: { x: -80, y: 206 },
       text: 'X -100 · Y 20', color: '#ffffff', size: 12, align: 'left', shadow: true })
     const mask = buildCompositionChartFrame(scene, { kind: 'composition', target: null }, loaded, true)
-    expect(mask.primitives[0]).toEqual({ kind: 'rect', bounds: { x: -88, y: 13, width: 200, height: 200 }, fill: '#ffffff' })
+    expect(mask.primitives[0]).toEqual({ kind: 'rect', bounds: { x: -100, y: 20, width: 200, height: 200 }, fill: '#ffffff' })
     expect(() => withChartSettings({}, { ...settings, screenStyles: { left: { ...style, maskOffsetX: 9000 } } })).toThrow(/mask offsets/)
   })
 
@@ -203,8 +341,8 @@ describe('Composition chart contract', () => {
     const svg = renderFrameSvg(chart, chart.bounds)
     expect(svg).toContain('viewBox="-100 20 500 200"')
     expect(svg).toContain('fill="#ff0000"')
-    expect(svg).toContain('A &amp; B &lt;LED&gt;')
+    expect(svg).not.toContain('A &amp; B &lt;LED&gt;')
     const mask = buildCompositionChartFrame(scene, { kind: 'composition', target: null }, settings, true)
-    expect(renderFrameSvg(mask, mask.bounds)).toContain('x="-88" y="20" width="200" height="200" fill="#ffffff"')
+    expect(renderFrameSvg(mask, mask.bounds)).toContain('x="-100" y="20" width="200" height="200" fill="#ffffff"')
   })
 })

@@ -31,6 +31,7 @@ describe('composition workspace separation', () => {
     expect(html).toContain('data-overlay="cabinets"')
     expect(html).toContain('data-overlay="modules"')
     expect(html).toContain('data-overlay="coordinates"')
+    expect(html).toContain('data-overlay="editorLabels"')
     expect(html).not.toContain('data-overlay="signal"')
     expect(renderer).not.toContain('signal: false')
     expect(renderer).not.toContain('overlays.signal')
@@ -43,7 +44,7 @@ describe('composition workspace separation', () => {
     expect(canvas).not.toContain('CABINET_FIRST')
     expect(canvas).not.toMatch(/#\$\{/)
     expect(canvas).toContain('cabinetDisplayLabel(labelMode, shape.columns, shape.rows, cabinet)')
-    expect(canvas).toContain('ctx.fillText(visibleLabel, p.x, p.y)')
+    expect(canvas).toContain('drawViewportCabinetLabel(ctx, label, p.x, p.y')
   })
 
   it('owns no Numbering, Direction or Snake controls in Composition properties', () => {

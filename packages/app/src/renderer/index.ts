@@ -13,7 +13,8 @@ import {
 } from './v2-commands.js'
 import { buildSnapshot, initialDraft, type Draft, type Snapshot } from './state.js'
 import { manualScreenPosition, nextScreenPosition, screenCreationDraft } from './screen-authoring.js'
-import { SCREEN_PRESETS_KEY, builtInScreenPresets, makeScreenPreset, parseScreenPresets, upsertScreenPreset, type ScreenPreset } from './screen-presets.js'
+import { SCREEN_PRESETS_KEY } from './screen-presets.js'
+import { builtInCabinetPresets, emptyPresetLibrary, type CabinetPreset, type DrawingPreset, type PresetLibrary } from '../shared/preset-library.js'
 import type { GridShape, OverlayVisibility, Point, ResizeHandle, ResizePreview } from './canvas.js'
 import {
   drawProject, fitCamera, resizeHandleCursor, resizeHandleHit,
@@ -26,17 +27,20 @@ import {
   type AlignMode, type AlignmentGuide, type DistributeAxis, type LayoutPoint, type LayoutRect,
   type ProjectGuide, type SelectionBox, type SnapSources,
 } from './layout-interaction.js'
+import { projectGuidesFromExtensions, withProjectGuides } from './project-guides.js'
 import { createMappingWorkspace, type MappingWorkspace } from './mapping-workspace.js'
 import { createOutputMappingWorkspace, type OutputMappingWorkspace } from './output-mapping-workspace.js'
 import { createHardwareWorkspace, type HardwareWorkspace } from './hardware-workspace.js'
 import { createTestWorkspace, type TestWorkspace } from './test-workspace.js'
 import { buildV2TestScene } from './v2-test-project.js'
 import { buildCompositionChartFrame } from '../shared/chart-engine.js'
+import { buildChartInformation } from '../shared/chart-information.js'
+import { compactInformationBadges } from './test-canvas.js'
 import type { TestFrame } from '../shared/test-engine.js'
 import { createLiveOutputController, type LiveOutputController } from './live-output.js'
 import { createExportWorkspace, type ExportWorkspace } from './export-workspace.js'
 import { selectCompositionGeometry, type Direction, type Numbering } from '@ledmap/core'
-import { chartBounds, chartSettingsFromExtensions, screenChartStyle, withChartSettings, type ChartSettings, type ChartPalette, type ChartLabels, type ScreenChartStyle } from '../shared/chart-settings.js'
+import { chartBounds, chartLogoBounds, chartSettingsFromExtensions, screenChartStyle, screenNameVisible, screenCabinetLabels, defaultChartGuides, defaultChartInformation, withChartSettings, withChartFrameBounds, type ChartSettings, type ChartPalette, type ChartLabels, type ChartAnchor, type ScreenChartStyle } from '../shared/chart-settings.js'
 import { cabinetDisplayLabel, duplicateCabinetLabel, physicalCabinetLabel, type CabinetLabelMode } from '../shared/cabinet-labels.js'
 
 interface LedmapHook {
@@ -112,6 +116,12 @@ const snapEdgesButton = element<HTMLButtonElement>('snap-edges')
 const snapCentersButton = element<HTMLButtonElement>('snap-centers')
 const snapGuidesButton = element<HTMLButtonElement>('snap-guides')
 const gridStepInput = element<HTMLInputElement>('grid-step')
+const arrowStepInput = element<HTMLInputElement>('arrow-step')
+const canvasAutoButton = element<HTMLButtonElement>('canvas-auto')
+const canvasFitAllButton = element<HTMLButtonElement>('canvas-fit-all')
+const canvasFitSelectionButton = element<HTMLButtonElement>('canvas-fit-selection')
+const canvasFrameSize = element<HTMLSpanElement>('canvas-frame-size')
+const canvasCropStatus = element<HTMLSpanElement>('canvas-crop-status')
 const guideAddV = element<HTMLButtonElement>('guide-add-v')
 const guideAddH = element<HTMLButtonElement>('guide-add-h')
 const selectedCount = element<HTMLSpanElement>('selected-count')
@@ -179,17 +189,28 @@ let camera: Camera = fitCamera(projectBounds(currentProject()), 1, 1)
 let snapEnabled = true
 let snapSources: SnapSources = { grid: false, edges: true, centers: true, guides: true }
 let gridStep = 10
-let projectGuides: readonly ProjectGuide[] = []
+let arrowStep = 1
+try {
+  const saved = Number(localStorage.getItem('ledmap.arrowStep.v1'))
+  if (Number.isSafeInteger(saved) && saved >= 1 && saved <= 8192) arrowStep = saved
+} catch { arrowStep = 1 }
+arrowStepInput.value = String(arrowStep)
+let projectGuides: readonly ProjectGuide[] = projectGuidesFromExtensions(documentController.session.extensions)
 let selectedGuideId: string | null = null
 let alignmentGuides: readonly AlignmentGuide[] = []
 let marqueeBox: SelectionBox | null = null
-let overlays: OverlayVisibility = { cabinets: true, modules: false, coordinates: true }
+let overlays: OverlayVisibility = { cabinets: true, modules: false, coordinates: false, editorLabels: false }
 let cleanView = false
 let compositionDrawingCache: { session: ProjectSession; scopeId: string | null; frame: TestFrame } | null = null
 let creationPreview: { frame: TestFrame; bounds: { x: number; y: number; width: number; height: number } } | null = null
 let creationCamera: Camera | null = null
-let screenPresets: ScreenPreset[] = []
-try { screenPresets = parseScreenPresets(localStorage.getItem(SCREEN_PRESETS_KEY)) } catch { screenPresets = [] }
+let presetLibrary: PresetLibrary = emptyPresetLibrary()
+let legacyPresetRaw: string | null = null
+try { legacyPresetRaw = localStorage.getItem(SCREEN_PRESETS_KEY) } catch { legacyPresetRaw = null }
+const presetLibraryReady = window.ledmapDesktop.loadPresetLibrary(legacyPresetRaw).then(library => {
+  presetLibrary = library
+  render()
+}).catch(error => showDocumentError(error, 'Unable to load preset library.'))
 let spaceDown = false
 type PointerMode = 'none' | 'drag' | 'pan' | 'resize' | 'marquee' | 'guide'
 let pointerMode: PointerMode = 'none'
@@ -237,6 +258,15 @@ function applyV2AndChartSettings(
     withChartSettings(extensions, settingsCommand(chartSettingsFromExtensions(extensions))))
   autosave.mutation(before, documentController.session)
   syncDocumentState()
+}
+
+function applyProjectGuides(next: readonly ProjectGuide[]): void {
+  const before = documentController.session
+  documentController.transactExtensions(extensions => withProjectGuides(extensions, next))
+  projectGuides = projectGuidesFromExtensions(documentController.session.extensions)
+  autosave.mutation(before, documentController.session)
+  syncDocumentState()
+  render()
 }
 
 function applyChartSettings(settings: ChartSettings): void {
@@ -289,6 +319,8 @@ function restoreHistory(redo: boolean): void {
   autosave.mutation(before, documentController.session)
   syncDocumentState()
   if (!restored) return
+  projectGuides = projectGuidesFromExtensions(documentController.session.extensions)
+  if (selectedGuideId && !projectGuides.some(guide => guide.id === selectedGuideId)) selectedGuideId = null
   const project = currentProject()
   const knownScreens = new Set<string>(project.screens.map(screen => screen.screen.id))
   selectedScreenIds = selectedScreenIds.filter(id => knownScreens.has(id))
@@ -316,7 +348,11 @@ function replaceDocument(next: ProjectSession): void {
   outputMappingWorkspace?.finishGesture()
   finishArrowHistoryGroup()
   sessionWorkspaceProject(next)
+  const nextGuides = projectGuidesFromExtensions(next.extensions)
   documentController.replace(next)
+  projectGuides = nextGuides
+  selectedPresetIds.clear()
+  selectedGuideId = null
   selection = null
   selectedScreenIds = []
   activeScreenId = currentProject().screens[0]?.screen.id ?? null
@@ -460,8 +496,13 @@ function draw(): void {
     creationPreview,
     transparentScreens,
     cleanView,
-    cabinetLabelModes: Object.fromEntries(visible.map(screen => [screen.screen.id,
-      screenChartStyle(settings, screen.screen.id).cabinetLabelMode ?? 'row-coordinate'])),
+    cabinetLines: Object.fromEntries(visible.map(screen => [screen.screen.id, screenChartStyle(settings, screen.screen.id).cabinetEdges])),
+    cabinetLineColors: Object.fromEntries(visible.map(screen => [screen.screen.id, screenChartStyle(settings, screen.screen.id).cabinetLineColor])),
+    cabinetLabelModes: Object.fromEntries(visible.map(screen => {
+      const style = screenChartStyle(settings, screen.screen.id)
+      return [screen.screen.id, style.labels === 'none' || style.labels === 'screen'
+        ? style.cabinetLabelMode ?? 'row-coordinate' : null]
+    })),
   }, camera)
   zoomIndicator.textContent = `${Math.round(camera.zoom * 100)}%`
   canvasNote.textContent = note
@@ -549,6 +590,20 @@ function renderStatus(): void {
     .map(source => source[0]!.toUpperCase() + source.slice(1))
   snapStatus.textContent = snapEnabled ? `Snap on: ${activeSources.join('+')}` : 'Snap off'
   fitSelectionButton.disabled = selectedScreenIds.length === 0
+  canvasFitSelectionButton.disabled = selectedScreenIds.length === 0
+  canvasFitAllButton.disabled = currentProject().screens.length === 0
+  canvasAutoButton.disabled = currentProject().screens.length === 0
+  const drawing = compositionDrawing()
+  canvasFrameSize.textContent = `Canvas ${format.format(drawing.bounds.width)} × ${format.format(drawing.bounds.height)}`
+  canvasAutoButton.setAttribute('aria-pressed', String(chartSettings().frameMode === 'fit'))
+  const cropping = chartSettings().frameMode === 'fixed' && chartSettings().allowFrameCrop
+  const bounds = drawing.bounds
+  const clipped = cropping ? layoutRects().filter(screen => screen.x < bounds.x || screen.y < bounds.y ||
+    screen.x + screen.width > bounds.x + bounds.width || screen.y + screen.height > bounds.y + bounds.height).length : 0
+  canvasCropStatus.hidden = !cropping
+  canvasCropStatus.textContent = `Export crop: ${clipped} Screen${clipped === 1 ? '' : 's'} clipped`
+  canvasCropStatus.title = `PNG/SVG export: ${format.format(bounds.width)} x ${format.format(bounds.height)} px. ${clipped} Screen${clipped === 1 ? '' : 's'} outside the Canvas frame.`
+  canvasFrameSize.title = cropping ? canvasCropStatus.title : 'Canvas image size'
   renameScreenButton.disabled = selectedScreenIds.length !== 1
   duplicateScreenButton.disabled = selectedScreenIds.length === 0
   deleteScreenButton.disabled = selectedScreenIds.length === 0
@@ -558,6 +613,32 @@ function renderStatus(): void {
   })
   cleanViewButton.setAttribute('aria-pressed', String(cleanView))
 }
+
+function fitCanvasFrame(selected: boolean): void {
+  const bounds = selectionBounds(layoutRects(selected ? selectedScreenIds : currentProject().screens.map(screen => screen.screen.id)))
+  if (!bounds) return
+  try {
+    applyChartSettings(withChartFrameBounds(chartSettings(), bounds, selected))
+  } catch (error) {
+    showDocumentError(error, 'Unable to set Canvas size.')
+  }
+}
+
+canvasFitAllButton.addEventListener('click', () => fitCanvasFrame(false))
+canvasFitSelectionButton.addEventListener('click', () => fitCanvasFrame(true))
+canvasAutoButton.addEventListener('click', () => applyChartSettings({ ...chartSettings(), frameMode: 'fit', allowFrameCrop: false }))
+arrowStepInput.addEventListener('change', () => {
+  const value = Number(arrowStepInput.value)
+  if (!arrowStepInput.value.trim() || !Number.isSafeInteger(value) || value < 1 || value > 8192) {
+    arrowStepInput.value = String(arrowStep)
+    arrowStepInput.setAttribute('aria-invalid', 'true')
+    return
+  }
+  finishArrowHistoryGroup()
+  arrowStep = value
+  arrowStepInput.removeAttribute('aria-invalid')
+  try { localStorage.setItem('ledmap.arrowStep.v1', String(value)) } catch { arrowStepInput.title = 'Move step is active for this session.' }
+})
 
 function fitToSelection(): void {
   const selected = selectionBounds(layoutRects(selectedScreenIds))
@@ -633,6 +714,10 @@ function selectScreen(screenId: string, additive = false): void {
   selectedScreenIds = replaceOrToggleSelection(selectedScreenIds, screenId, additive)
   selection = selectedScreenIds.length === 1 ? { type: 'screen', id: selectedScreenIds[0]! } : null
   activeScreenId = screenId
+  if (viewMode === 'active') {
+    const screen = findScreen(currentProject(), screenId)
+    if (screen) fitTo(screenBounds(screen))
+  }
   render()
 }
 
@@ -655,7 +740,7 @@ function renderProperties(): void {
     title.textContent = 'Nothing selected'
     const hint = document.createElement('p')
     hint.className = 'hint'
-    hint.textContent = 'Select a Screen, a Cabinet Grid or a Cabinet on the canvas or in the project tree.'
+    hint.textContent = 'Choose a Screen in the list or on the canvas. Double-click a Cabinet on the canvas to inspect it.'
     properties.append(hint)
     return
   }
@@ -678,8 +763,7 @@ function renderGuideProperties(guide: ProjectGuide): void {
   const container = document.createElement('div')
   container.className = 'properties-body'
   const positionInput = numberField(guide.position, 'Guide Position', value => {
-    projectGuides = moveGuide(projectGuides, guide.id, value)
-    render()
+    applyProjectGuides(moveGuide(projectGuides, guide.id, value))
   })
   positionInput.removeAttribute('min')
   const box = document.createElement('div')
@@ -687,8 +771,7 @@ function renderGuideProperties(guide: ProjectGuide): void {
     propertyRow('Orientation', valueNode(guide.orientation === 'vertical' ? 'Vertical' : 'Horizontal')),
     propertyRow('Position', positionInput),
     propertyRow('Locked', toggleField(guide.locked, 'Guide Locked', value => {
-      projectGuides = setGuideLocked(projectGuides, guide.id, value)
-      render()
+      applyProjectGuides(setGuideLocked(projectGuides, guide.id, value))
     })),
   )
   container.append(group('Guide', box))
@@ -710,11 +793,26 @@ function group(title: string, container: HTMLDivElement): HTMLDivElement {
   return section
 }
 
+const inspectorOpenSections = new Map<string, boolean>()
+const selectedPresetIds = new Map<string, string>()
+
+function collapsibleGroup(title: string, key: string, container: HTMLDivElement, open = false): HTMLDetailsElement {
+  const section = document.createElement('details')
+  section.className = 'property-group property-disclosure'
+  section.open = inspectorOpenSections.get(key) ?? open
+  const summary = document.createElement('summary')
+  summary.textContent = title
+  section.append(summary, container)
+  section.addEventListener('toggle', () => inspectorOpenSections.set(key, section.open))
+  return section
+}
+
 function propertyRow(label: string, valueNode: HTMLElement): HTMLDivElement {
   const row = document.createElement('div')
   row.className = 'property'
   const labelNode = document.createElement('label')
   labelNode.textContent = label
+  if (valueNode.id) labelNode.htmlFor = valueNode.id
   row.append(labelNode, valueNode)
   return row
 }
@@ -902,7 +1000,8 @@ function updateScreenDrawing(screenId: string, patch: Partial<ScreenChartStyle>)
         if (duplicate) throw new Error(`Cabinet label ${duplicate} is already used on this Screen.`)
       }
     }
-    const style = { ...screenChartStyle(settings, screenId), ...patch }
+    const previous = screenChartStyle(settings, screenId)
+    const style = { ...previous, labels: screenCabinetLabels(previous), showScreenName: screenNameVisible(previous), ...patch }
     applyChartSettings({ ...settings, screenStyles: { ...settings.screenStyles, [screenId]: style } })
   } catch (error) {
     showDocumentError(error, 'Unable to update Screen drawing.')
@@ -926,6 +1025,248 @@ function drawingSelect<T extends string>(
   return select
 }
 
+function drawingColor(id: string, value: string, onChange: (value: string) => void): HTMLInputElement {
+  const input = document.createElement('input')
+  input.id = id
+  input.type = 'color'
+  input.value = value
+  input.addEventListener('change', () => onChange(input.value))
+  return input
+}
+
+function drawingNumber(id: string, value: number, min: number, max: number, onChange: (value: number) => void): HTMLInputElement {
+  const input = numberField(value, id, onChange, value =>
+    Number.isSafeInteger(value) && value >= min && value <= max ? null : `Enter a whole number from ${min} to ${max}.`)
+  input.id = id
+  input.min = String(min)
+  input.max = String(max)
+  return input
+}
+
+function appendPatternControls(drawing: HTMLDivElement, screenId: string, style: ScreenChartStyle): void {
+  if (style.palette === 'checkerboard' || style.palette === 'rgb-bars') {
+    const key = style.palette === 'checkerboard' ? 'checkerColors' : 'bandColors'
+    const colors = style[key] ?? (key === 'checkerColors' ? ['#e9edf0', '#202b39'] : ['#ff0000', '#00ff00', '#0000ff'])
+    const limit = key === 'checkerColors' ? 4 : 10
+    colors.forEach((color, index) => drawing.append(propertyRow(`Color ${index + 1}`,
+      drawingColor(`screen-drawing-${key}-${index}`, color, value => updateScreenDrawing(screenId, {
+        [key]: colors.map((entry, position) => position === index ? value : entry),
+      })))))
+    const actions = document.createElement('div')
+    actions.className = 'drawing-actions'
+    for (const [text, disabled, next] of [
+      ['+ Color', colors.length >= limit, [...colors, '#ffffff']],
+      ['− Color', colors.length <= 2, colors.slice(0, -1)],
+    ] as const) {
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.textContent = text
+      button.disabled = disabled
+      button.id = `screen-drawing-${key}-${text.startsWith('+') ? 'add' : 'remove'}`
+      button.addEventListener('click', () => updateScreenDrawing(screenId, { [key]: next }))
+      actions.append(button)
+    }
+    drawing.append(actions)
+  }
+  if (style.palette === 'rgb-bars' || style.palette === 'gray-gradient') {
+    drawing.append(propertyRow('Direction', drawingSelect('screen-drawing-direction', style.patternDirection ?? 'horizontal', [
+      ['horizontal', 'Horizontal'], ['vertical', 'Vertical'],
+    ], value => updateScreenDrawing(screenId, { patternDirection: value }))))
+  }
+  if (style.palette === 'gray-gradient') {
+    drawing.append(
+      propertyRow('Start color', drawingColor('screen-drawing-gradient-from', style.gradientFrom ?? '#000000', value =>
+        updateScreenDrawing(screenId, { gradientFrom: value }))),
+      propertyRow('End color', drawingColor('screen-drawing-gradient-to', style.gradientTo ?? '#ffffff', value =>
+        updateScreenDrawing(screenId, { gradientTo: value }))),
+    )
+  }
+}
+
+async function persistPresetLibrary(next: PresetLibrary): Promise<void> {
+  await presetLibraryReady
+  try {
+    presetLibrary = await window.ledmapDesktop.savePresetLibrary(next)
+    render()
+  } catch (error) {
+    presetLibrary = await window.ledmapDesktop.loadPresetLibrary(null)
+    render()
+    throw error
+  }
+}
+
+function cabinetPresetFromScreen(name: string, screen: ScreenView, id: string = crypto.randomUUID()): CabinetPreset {
+  return { id, name: name.trim(), moduleColumns: screen.config.moduleColumns, moduleRows: screen.config.moduleRows,
+    modulePixelWidth: screen.config.modulePixelWidth, modulePixelHeight: screen.config.modulePixelHeight }
+}
+
+function drawingPresetFromScreen(name: string, screenId: string, id: string = crypto.randomUUID()): DrawingPreset {
+  return { id, name: name.trim(), drawing: screenChartStyle(chartSettings(), screenId) }
+}
+
+function applyDrawingPreset(screenId: string, preset: DrawingPreset): void {
+  try {
+    const screen = findScreen(currentProject(), screenId)
+    if (screen && preset.drawing.cabinetLabelMode) {
+      const duplicate = duplicateCabinetLabel(preset.drawing.cabinetLabelMode, screen.grid.columns, screen.grid.rows, screen.cabinets)
+      if (duplicate) throw new Error(`Cabinet label ${duplicate} is already used on this Screen.`)
+    }
+    const settings = chartSettings()
+    applyChartSettings({ ...settings, screenStyles: { ...settings.screenStyles, [screenId]: preset.drawing } })
+  } catch (error) {
+    showDocumentError(error, 'Unable to apply Drawing preset.')
+  }
+}
+
+function presetPanel(kind: 'cabinet' | 'drawing', screen: ScreenView): HTMLDetailsElement {
+  const cabinet = kind === 'cabinet'
+  const screenId = screen.screen.id
+  const label = cabinet ? 'Saved LED' : 'Drawing preset'
+  const selectionKey = `${screenId}:${kind}`
+  const box = document.createElement('div')
+  const selector = document.createElement('select')
+  selector.id = cabinet ? 'screen-led-preset' : 'screen-drawing-preset'
+  selector.setAttribute('aria-label', label)
+  selector.append(new Option('Choose a preset', ''))
+  if (cabinet) {
+    const builtIn = document.createElement('optgroup')
+    builtIn.label = 'Built-in cabinets'
+    for (const preset of builtInCabinetPresets) builtIn.append(new Option(preset.name, preset.id))
+    selector.append(builtIn)
+  }
+  const saved = document.createElement('optgroup')
+  saved.label = cabinet ? 'Saved LED' : 'Saved drawings'
+  for (const preset of cabinet ? presetLibrary.cabinets : presetLibrary.drawings) {
+    saved.append(new Option(preset.name, preset.id))
+  }
+  selector.append(saved)
+  selector.value = selectedPresetIds.get(selectionKey) ?? ''
+  if (selector.selectedIndex < 0) {
+    selector.value = ''
+    selectedPresetIds.delete(selectionKey)
+  }
+  box.append(propertyRow(label, selector))
+  const hint = document.createElement('p')
+  hint.className = 'hint'
+  box.append(hint)
+  const actions = document.createElement('div')
+  actions.className = 'preset-actions'
+  const buttons = Object.fromEntries(['Apply', 'Update', 'Rename', 'Delete'].map(text => {
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.textContent = text
+    button.setAttribute('aria-label', `${text} ${label}`)
+    actions.append(button)
+    return [text, button]
+  })) as Record<'Apply' | 'Update' | 'Rename' | 'Delete', HTMLButtonElement>
+  box.append(actions)
+  const selected = (): CabinetPreset | DrawingPreset | undefined => cabinet
+    ? [...builtInCabinetPresets, ...presetLibrary.cabinets].find(preset => preset.id === selector.value)
+    : presetLibrary.drawings.find(preset => preset.id === selector.value)
+  const updateControls = (): void => {
+    const preset = selected()
+    const custom = preset && (cabinet ? presetLibrary.cabinets : presetLibrary.drawings).some(item => item.id === preset.id)
+    buttons.Apply.disabled = !preset
+    buttons.Update.disabled = !custom
+    buttons.Rename.disabled = !custom
+    buttons.Delete.disabled = !custom
+    const led = cabinet ? preset as CabinetPreset | undefined : undefined
+    hint.textContent = led ? `${led.moduleColumns * led.modulePixelWidth} x ${led.moduleRows * led.modulePixelHeight} px per cabinet; Screen becomes ${screen.grid.columns * led.moduleColumns * led.modulePixelWidth} x ${screen.grid.rows * led.moduleRows * led.modulePixelHeight} px.`
+      : cabinet ? 'Save module geometry as a named LED cabinet. Grid columns and rows stay on this Screen.'
+        : 'Saves pattern, text, guides, information and logo. Applying keeps Screen geometry.'
+  }
+  selector.addEventListener('change', () => {
+    if (selector.value) selectedPresetIds.set(selectionKey, selector.value)
+    else selectedPresetIds.delete(selectionKey)
+    updateControls()
+    nameInput.value = selected()?.name ?? ''
+    buttons.Delete.textContent = 'Delete'
+    delete buttons.Delete.dataset.confirm
+  })
+  updateControls()
+  buttons.Apply.addEventListener('click', () => {
+    const preset = selected()
+    if (!preset) return
+    if (cabinet) {
+      const led = preset as CabinetPreset
+      commitCabinetConfig(screenId, { moduleColumns: led.moduleColumns, moduleRows: led.moduleRows,
+        modulePixelWidth: led.modulePixelWidth, modulePixelHeight: led.modulePixelHeight })
+    } else applyDrawingPreset(screenId, preset as DrawingPreset)
+  })
+  buttons.Update.addEventListener('click', () => {
+    const preset = selected()
+    if (!preset) return
+    void (async () => {
+      try {
+        const next = cabinet ? { ...presetLibrary, cabinets: presetLibrary.cabinets.map(item => item.id === preset.id
+          ? cabinetPresetFromScreen(item.name, screen, item.id) : item) }
+          : { ...presetLibrary, drawings: presetLibrary.drawings.map(item => item.id === preset.id
+            ? drawingPresetFromScreen(item.name, screenId, item.id) : item) }
+        await persistPresetLibrary(next)
+      } catch (error) { showDocumentError(error, `Unable to update ${label}.`) }
+    })()
+  })
+  buttons.Rename.addEventListener('click', () => {
+    const preset = selected()
+    if (!preset) return
+    const newName = nameInput.value.trim()
+    if (!newName || newName === preset.name) {
+      canvasNote.textContent = `Enter a new ${label} name in the field below, then choose Rename.`
+      return
+    }
+    void (async () => {
+      try {
+        const next = cabinet ? { ...presetLibrary, cabinets: presetLibrary.cabinets.map(item => item.id === preset.id
+          ? { ...item, name: newName } : item) }
+          : { ...presetLibrary, drawings: presetLibrary.drawings.map(item => item.id === preset.id
+            ? { ...item, name: newName } : item) }
+        await persistPresetLibrary(next)
+      } catch (error) { showDocumentError(error, `Unable to rename ${label}.`) }
+    })()
+  })
+  buttons.Delete.addEventListener('click', () => {
+    const preset = selected()
+    if (!preset) return
+    if (buttons.Delete.dataset.confirm !== preset.id) {
+      buttons.Delete.dataset.confirm = preset.id
+      buttons.Delete.textContent = 'Confirm delete'
+      return
+    }
+    void (async () => {
+      try {
+        const next = cabinet ? { ...presetLibrary, cabinets: presetLibrary.cabinets.filter(item => item.id !== preset.id) }
+          : { ...presetLibrary, drawings: presetLibrary.drawings.filter(item => item.id !== preset.id) }
+        await persistPresetLibrary(next)
+      } catch (error) { showDocumentError(error, `Unable to delete ${label}.`) }
+    })()
+  })
+  const saveRow = document.createElement('div')
+  saveRow.className = 'screen-preset-save'
+  const nameInput = document.createElement('input')
+  nameInput.maxLength = 40
+  nameInput.placeholder = cabinet ? 'Cabinet name' : 'Drawing name'
+  nameInput.title = 'Enter a name to Save new or Rename the selected preset.'
+  nameInput.setAttribute('aria-label', cabinet ? 'New Saved LED name' : 'New Drawing preset name')
+  nameInput.value = selected()?.name ?? ''
+  const saveButton = document.createElement('button')
+  saveButton.type = 'button'
+  saveButton.textContent = 'Save new'
+  saveButton.setAttribute('aria-label', `Save new ${label}`)
+  saveButton.addEventListener('click', () => {
+    void (async () => {
+      try {
+        const next = cabinet ? { ...presetLibrary, cabinets: [...presetLibrary.cabinets, cabinetPresetFromScreen(nameInput.value, screen)] }
+          : { ...presetLibrary, drawings: [...presetLibrary.drawings, drawingPresetFromScreen(nameInput.value, screenId)] }
+        await persistPresetLibrary(next)
+        canvasNote.textContent = `${label} saved for use in other projects.`
+      } catch (error) { showDocumentError(error, `Unable to save ${label}. Use a unique name.`) }
+    })()
+  })
+  saveRow.append(nameInput, saveButton)
+  box.append(saveRow)
+  return collapsibleGroup(label, `${screenId}:${kind}-preset`, box)
+}
+
 function appendScreenDrawingGroup(container: HTMLDivElement, screen: ScreenView): void {
   const screenId = screen.screen.id
   const style = screenChartStyle(chartSettings(), screenId)
@@ -936,45 +1277,27 @@ function appendScreenDrawingGroup(container: HTMLDivElement, screen: ScreenView)
   drawing.append(
     propertyRow('Pattern', drawingSelect<ChartPalette>('screen-drawing-palette', style.palette, [
       ['screen-color', 'Solid color'], ['white-grid', 'White grid'], ['checkerboard', 'Checkerboard'],
-      ['gray-gradient', 'Gray gradient'], ['rgb-bars', 'RGB bars'],
+      ['gray-gradient', 'Gradient'], ['rgb-bars', 'Color bands'],
     ], value => updateScreenDrawing(screenId, { palette: value }))),
-    propertyRow('Color', (() => {
+    ...(style.palette === 'screen-color' ? [propertyRow('Color', (() => {
       const input = document.createElement('input')
       input.id = 'screen-drawing-color'
       input.type = 'color'
       input.value = style.fill === 'transparent' ? '#284a68' : style.fill
-      input.disabled = style.palette !== 'screen-color' || style.fill === 'transparent'
+      input.disabled = style.fill === 'transparent'
       input.addEventListener('change', () => updateScreenDrawing(screenId, { fill: input.value }))
       return input
-    })()),
+    })())] : []),
     propertyRow('Transparent', transparentToggle),
-    propertyRow('Labels', drawingSelect<ChartLabels>('screen-drawing-labels', style.labels, [
-      ['screen', 'Name and size'], ['cabinet', 'Cabinet labels'], ['cabinet-id', 'Physical IDs'], ['coordinates', 'Coordinates'],
-      ['grid-address', 'Columns / rows'], ['none', 'None'],
-    ], value => updateScreenDrawing(screenId, { labels: value }))),
     propertyRow('Cabinet lines', toggleField(style.cabinetEdges, 'Screen cabinet lines', value =>
       updateScreenDrawing(screenId, { cabinetEdges: value }))),
-    propertyRow('Text shadow', toggleField(style.textShadow, 'Screen text shadow', value =>
-      updateScreenDrawing(screenId, { textShadow: value }))),
+    ...(style.cabinetEdges ? [propertyRow('Line color', drawingColor('screen-drawing-cabinet-line-color',
+      style.cabinetLineColor ?? '#4a5055', value => updateScreenDrawing(screenId, { cabinetLineColor: value })))] : []),
     propertyRow('Offset marker', toggleField(style.offsetMarkers ?? false, 'Screen offset marker', value =>
       updateScreenDrawing(screenId, { offsetMarkers: value }))),
   )
-  const maskOffset = (axis: 'X' | 'Y') => {
-    const key = axis === 'X' ? 'maskOffsetX' : 'maskOffsetY'
-    const input = numberField(style[key] ?? 0, `Screen mask offset ${axis}`, value =>
-      updateScreenDrawing(screenId, { [key]: value }), value =>
-      Number.isSafeInteger(value) && Math.abs(value) <= 8192 ? null : 'Enter a whole number from -8192 to 8192.')
-    input.min = '-8192'
-    input.max = '8192'
-    return input
-  }
-  drawing.append(propertyRow('Mask offset X', maskOffset('X')), propertyRow('Mask offset Y', maskOffset('Y')))
-  const caption = textField(style.caption, 'Screen drawing caption', value => {
-    updateScreenDrawing(screenId, { caption: value })
-  })
-  caption.id = 'screen-drawing-caption'
-  caption.maxLength = 80
-  drawing.append(propertyRow('Caption', caption))
+  appendPatternControls(drawing, screenId, style)
+  const drawingSection = group('Screen drawing', drawing)
   const logoFile = document.createElement('input')
   logoFile.id = 'screen-drawing-logo-file'
   logoFile.type = 'file'
@@ -989,9 +1312,8 @@ function appendScreenDrawingGroup(container: HTMLDivElement, screen: ScreenView)
         const bitmap = await createImageBitmap(file)
         const { width, height } = bitmap
         bitmap.close()
-        if (width < 1 || height < 1 || width > 512 || height > 512 ||
-            width + 16 > screenWidth(screen) || height + 16 > screenHeight(screen)) {
-          throw new Error('Logo must fit the Screen and be at most 512 × 512 px.')
+        if (width < 1 || height < 1 || width > 512 || height > 512) {
+          throw new Error('Logo must be at most 512 × 512 px.')
         }
         const dataUrl = await new Promise<string>((resolve, reject) => {
           const reader = new FileReader()
@@ -999,7 +1321,9 @@ function appendScreenDrawingGroup(container: HTMLDivElement, screen: ScreenView)
           reader.onerror = () => reject(new Error('Unable to read logo.'))
           reader.readAsDataURL(file)
         })
-        updateScreenDrawing(screenId, { logo: { dataUrl, width, height } })
+        updateScreenDrawing(screenId, { logo: { dataUrl, width, height },
+          logoLayout: { position: style.logoLayout?.position ?? 'top-right',
+            width: style.logoLayout?.width ?? width, opacity: style.logoLayout?.opacity ?? 100 } })
       } catch (error) {
         showDocumentError(error, 'Unable to import Screen logo.')
       } finally {
@@ -1023,31 +1347,103 @@ function appendScreenDrawingGroup(container: HTMLDivElement, screen: ScreenView)
   removeLogo.disabled = style.logo === null
   removeLogo.addEventListener('click', () => updateScreenDrawing(screenId, { logo: null }))
   logoBox.append(removeLogo)
-  drawing.append(logoBox)
-  const presetBox = document.createElement('div')
-  presetBox.className = 'screen-preset-save'
-  const presetName = document.createElement('input')
-  presetName.type = 'text'
-  presetName.maxLength = 40
-  presetName.placeholder = 'Preset name'
-  presetName.setAttribute('aria-label', 'New Screen preset name')
-  const savePreset = document.createElement('button')
-  savePreset.type = 'button'
-  savePreset.textContent = 'Save preset'
-  savePreset.addEventListener('click', () => {
-    try {
-      const next = upsertScreenPreset(screenPresets, makeScreenPreset(presetName.value, screen, screenChartStyle(chartSettings(), screenId)))
-      localStorage.setItem(SCREEN_PRESETS_KEY, JSON.stringify(next))
-      screenPresets = next
-      presetName.value = ''
-      canvasNote.textContent = 'Screen preset saved for new Screens.'
-    } catch (error) {
-      showDocumentError(error, 'Unable to save Screen preset.')
-    }
-  })
-  presetBox.append(presetName, savePreset)
-  drawing.append(presetBox)
-  container.append(group('Screen drawing', drawing))
+  const logoLayout = style.logoLayout ?? { position: 'top-right' as const, width: style.logo?.width ?? 128, opacity: 100 }
+  logoBox.append(
+    propertyRow('Position', drawingSelect('screen-logo-position', logoLayout.position, [
+      ['top-left', 'Top left'], ['top-right', 'Top right'], ['bottom-left', 'Bottom left'],
+      ['bottom-right', 'Bottom right'], ['center', 'Center'],
+    ], value => updateScreenDrawing(screenId, { logoLayout: { ...logoLayout, position: value } }))),
+    propertyRow('Width', drawingNumber('screen-logo-width', logoLayout.width, 1, 8192, value =>
+      updateScreenDrawing(screenId, { logoLayout: { ...logoLayout, width: value } }))),
+    propertyRow('Opacity %', drawingNumber('screen-logo-opacity', logoLayout.opacity, 0, 100, value =>
+      updateScreenDrawing(screenId, { logoLayout: { ...logoLayout, opacity: value } }))),
+  )
+  if (style.logo) {
+    const bounds = chartLogoBounds({ x: screen.x, y: screen.y, width: screenWidth(screen), height: screenHeight(screen) },
+      style.logo, style.logoLayout)
+    logoBox.append(valueNode(`Displayed: ${Math.round(bounds.width)} × ${Math.round(bounds.height)} px`))
+  }
+  const logoSection = collapsibleGroup('Logo', `${screenId}:logo`, logoBox)
+  const text = document.createElement('div')
+  const screenName = toggleField(screenNameVisible(style), 'Screen name visibility', value =>
+    updateScreenDrawing(screenId, { showScreenName: value }))
+  screenName.id = 'screen-drawing-name'
+  text.append(
+    propertyRow('Screen name', screenName),
+    propertyRow('Name size', drawingNumber('screen-drawing-name-size', style.screenNameSize ?? 24, 10, 48, value =>
+      updateScreenDrawing(screenId, { screenNameSize: value }))),
+    propertyRow('Cabinet labels', drawingSelect<ChartLabels>('screen-drawing-labels', screenCabinetLabels(style), [
+      ['none', 'None'], ['cabinet', 'Cabinet labels'], ['cabinet-id', 'Physical IDs'], ['coordinates', 'Coordinates'],
+      ['grid-address', 'Columns / rows'],
+    ], value => updateScreenDrawing(screenId, { labels: value }))),
+    propertyRow('Text color', drawingColor('screen-drawing-text-color', style.textColor ??
+      (style.palette === 'white-grid' ? '#202b39' : '#ffffff'), value => updateScreenDrawing(screenId, { textColor: value }))),
+    propertyRow('Text shadow', toggleField(style.textShadow, 'Screen text shadow', value =>
+      updateScreenDrawing(screenId, { textShadow: value }))),
+  )
+  const textHint = document.createElement('p')
+  textHint.className = 'hint'
+  textHint.textContent = 'Drawing labels stay 14 px while zooming. The Editor labels toolbar switch controls fallback IDs and Screen tags separately.'
+  text.append(textHint)
+  const textSection = group('Text', text)
+  const guideBox = document.createElement('div')
+  const guides = style.guides ?? { ...defaultChartGuides, color: style.palette === 'white-grid' ? '#202b39' : '#ffffff' }
+  for (const [key, label] of [
+    ['diagonals', 'Diagonals'], ['horizontalCenter', 'Horizontal center'], ['verticalCenter', 'Vertical center'],
+    ['centralCircle', 'Central circle'], ['cornerCircles', 'Corner circles'], ['outerBorder', 'Outer border'],
+  ] as const) {
+    const toggle = toggleField(guides[key], `Graphic guide ${label}`, value =>
+      updateScreenDrawing(screenId, { guides: { ...guides, [key]: value } }))
+    toggle.id = `screen-guide-${key}`
+    guideBox.append(propertyRow(label, toggle))
+  }
+  guideBox.append(
+    propertyRow('Color', drawingColor('screen-guide-color', guides.color, value =>
+      updateScreenDrawing(screenId, { guides: { ...guides, color: value } }))),
+    propertyRow('Thickness', drawingNumber('screen-guide-thickness', guides.thickness, 1, 8, value =>
+      updateScreenDrawing(screenId, { guides: { ...guides, thickness: value } }))),
+  )
+  const guideSection = collapsibleGroup('Graphic guides', `${screenId}:guides`, guideBox)
+  const information = style.information ?? defaultChartInformation
+  const infoBox = document.createElement('div')
+  const infoToggle = toggleField(information.enabled, 'Show information block', value =>
+    updateScreenDrawing(screenId, { information: { ...information, enabled: value } }))
+  infoToggle.id = 'screen-info-enabled'
+  infoBox.append(
+    propertyRow('Show block', infoToggle),
+    propertyRow('Position', drawingSelect<ChartAnchor>('screen-info-position', information.position, [
+      ['top-left', 'Top left'], ['top-right', 'Top right'],
+      ['bottom-left', 'Bottom left'], ['bottom-right', 'Bottom right'],
+    ], value => updateScreenDrawing(screenId, { information: { ...information, position: value } }))),
+    propertyRow('Text size', drawingNumber('screen-info-size', information.size, 10, 32, value =>
+      updateScreenDrawing(screenId, { information: { ...information, size: value } }))),
+  )
+  for (const [key, label] of [
+    ['resolution', 'Resolution'], ['aspectRatio', 'Aspect ratio'], ['cabinetSize', 'Cabinet size'],
+    ['grid', 'Grid dimensions'], ['cabinetCount', 'Cabinet count'], ['canvasPosition', 'Canvas position'],
+  ] as const) {
+    const toggle = toggleField(information[key], `Information ${label}`, value =>
+      updateScreenDrawing(screenId, { information: { ...information, [key]: value } }))
+    toggle.id = `screen-info-${key}`
+    infoBox.append(propertyRow(label, toggle))
+  }
+  const infoHint = document.createElement('p')
+  infoHint.className = 'hint'
+  const scene = buildV2TestScene(documentController.session.project)
+  const sceneScreen = scene.screens.find(value => value.id === screenId)
+  const informationFields = [information.resolution, information.aspectRatio, information.cabinetSize,
+    information.grid, information.cabinetCount, information.canvasPosition]
+  if (information.enabled && !informationFields.some(Boolean)) {
+    infoHint.textContent = 'Select at least one field to show the information block.'
+  } else if (information.enabled && sceneScreen && buildChartInformation(sceneScreen,
+    scene.cabinets.filter(value => value.screen === screenId), information, '#ffffff').length === 0) {
+    infoHint.textContent = 'Information does not fit this Screen. Use fewer fields or enlarge the Screen.'
+  } else {
+    infoHint.textContent = 'At small zoom, hover over the Info badge to read all fields. Exports keep the full block.'
+  }
+  infoBox.append(infoHint)
+  const infoSection = collapsibleGroup('Information block', `${screenId}:information`, infoBox)
+  container.append(drawingSection, textSection, guideSection, infoSection, logoSection, presetPanel('drawing', screen))
 }
 
 function renderScreenProperties(screen: ScreenView): void {
@@ -1064,8 +1460,6 @@ function renderScreenProperties(screen: ScreenView): void {
     }
   })
   container.append(propertyRow('Name', nameInput))
-  appendScreenDrawingGroup(container, screen)
-
   const positionBox = document.createElement('div')
   const xInput = numberField(screen.x, 'Screen X position', value => {
     try {
@@ -1106,7 +1500,8 @@ function renderScreenProperties(screen: ScreenView): void {
       gridValidator('Rows', () => maxRowsForColumns(screen, screen.grid.columns)),
     )),
   )
-  container.append(group('Cabinet Grid', gridBox))
+  container.append(group('Cabinet Grid', gridBox), presetPanel('cabinet', screen))
+  appendScreenDrawingGroup(container, screen)
 
   appendCabinetConfigGroups(container, screen, 'Screen')
   properties.append(container)
@@ -1192,6 +1587,16 @@ function focusScreenName(): void {
   const input = properties.querySelector<HTMLInputElement>('input[aria-label="Screen name"]')
   input?.focus()
   input?.select()
+}
+
+function visibleScreenIds(): readonly string[] {
+  return viewMode === 'active' ? activeScreenId ? [activeScreenId] : []
+    : currentProject().screens.map(screen => screen.screen.id)
+}
+
+function visibleProject(): Project {
+  const project = currentProject()
+  return viewMode === 'all' ? project : { ...project, screens: project.screens.filter(screen => screen.screen.id === activeScreenId) }
 }
 
 function layoutRects(screenIds: readonly string[] = currentProject().screens.map(screen => screen.screen.id)): LayoutRect[] {
@@ -1315,6 +1720,9 @@ function renderCabinetProperties(screen: ScreenView): void {
     propertyRow('Custom label', labelInput),
     resetLabel,
     propertyRow('Physical ID', valueNode(cabinet.id)),
+    propertyRow('Resolution', valueNode(`${format.format(screen.grid.cabinetWidth)} × ${format.format(screen.grid.cabinetHeight)} px`)),
+    propertyRow('Modules', valueNode(format.format(screen.modulesPerCabinet))),
+    propertyRow('Pixels', valueNode(format.format(screen.grid.cabinetWidth * screen.grid.cabinetHeight))),
     propertyRow('Position', valueNode(`Column ${cabinet.column + 1} · Row ${cabinet.row + 1}`)),
     propertyRow('Screen', valueNode(screen.screen.name)),
   )
@@ -1401,7 +1809,7 @@ canvas.addEventListener('pointerdown', event => {
     render()
     return
   }
-  const hit = hitTest(currentProject(), projectPoint)
+  const hit = hitTest(visibleProject(), projectPoint)
   canvas.classList.add('dragging')
   if (hit) {
     const screenId = hit.screen.screen.id
@@ -1430,7 +1838,7 @@ canvas.addEventListener('pointerdown', event => {
       startProject: projectPoint,
       positions: selectedPositions(),
       bounds,
-      targets: layoutRects(currentProject().screens.map(screen => screen.screen.id).filter(id => !selectedScreenIds.includes(id))),
+      targets: layoutRects(visibleScreenIds().filter(id => !selectedScreenIds.includes(id))),
       appliedDx: 0,
       appliedDy: 0,
     }
@@ -1459,7 +1867,7 @@ canvas.addEventListener('pointerdown', event => {
 
 canvas.addEventListener('dblclick', event => {
   if (event.button !== 0 || cleanView) return
-  const hit = hitTest(currentProject(), toProject(camera, viewportPoint(event)))
+  const hit = hitTest(visibleProject(), toProject(camera, viewportPoint(event)))
   if (!hit?.cabinet) return
   selection = { type: 'cabinet', id: hit.cabinet.id, screenId: hit.screen.screen.id }
   selectedScreenIds = [hit.screen.screen.id]
@@ -1469,8 +1877,14 @@ canvas.addEventListener('dblclick', event => {
 
 canvas.addEventListener('pointermove', event => {
   const cursor = toProject(camera, viewportPoint(event))
-  const hovered = !cleanView && pointerMode === 'none' ? hitTest(currentProject(), cursor) : null
-  if (hovered?.cabinet && (viewMode === 'all' || hovered.screen.screen.id === activeScreenId)) {
+  const hovered = !cleanView && pointerMode === 'none' ? hitTest(visibleProject(), cursor) : null
+  const position = viewportPoint(event)
+  const informationBadge = compactInformationBadges(compositionDrawing(), camera).find(badge =>
+    position.x >= badge.bounds.x && position.x <= badge.bounds.x + badge.bounds.width &&
+    position.y >= badge.bounds.y && position.y <= badge.bounds.y + badge.bounds.height)
+  if (informationBadge) {
+    canvas.title = informationBadge.title
+  } else if (hovered?.cabinet && (viewMode === 'all' || hovered.screen.screen.id === activeScreenId)) {
     const mode = screenChartStyle(chartSettings(), hovered.screen.screen.id).cabinetLabelMode ?? 'row-coordinate'
     const label = cabinetDisplayLabel(mode, hovered.screen.grid.columns, hovered.screen.grid.rows, hovered.cabinet)
     canvas.title = `${label} · ${hovered.cabinet.id}`
@@ -1503,7 +1917,7 @@ canvas.addEventListener('pointermove', event => {
       ? clamp(
         resizeGesture.startRows + Math.round(dy / screen.grid.cabinetHeight),
         1,
-        maxRowsForColumns(screen, resizeGesture.startColumns),
+        maxRowsForColumns(screen, columns),
       )
       : resizeGesture.startRows
     resizeGesture = { ...resizeGesture, columns, rows }
@@ -1530,7 +1944,7 @@ canvas.addEventListener('pointermove', event => {
   if (pointerMode === 'marquee' && marqueeGesture) {
     const point = toProject(camera, viewportPoint(event))
     marqueeBox = normalizeSelectionBox(marqueeGesture.start, point)
-    selectedScreenIds = marqueeSelection(layoutRects(), marqueeGesture.start, point, marqueeGesture.baseSelection)
+    selectedScreenIds = marqueeSelection(layoutRects(visibleScreenIds()), marqueeGesture.start, point, marqueeGesture.baseSelection)
     selection = selectedScreenIds.length === 1 ? { type: 'screen', id: selectedScreenIds[0]! } : null
     draw()
     renderStatus()
@@ -1601,8 +2015,10 @@ canvas.addEventListener('pointerup', () => {
     return
   }
   if (pointerMode === 'guide') {
+    const moved = guideGesture?.moved ? projectGuides : null
     endPointerGesture()
-    render()
+    if (moved) applyProjectGuides(moved)
+    else render()
     return
   }
   endPointerGesture()
@@ -1634,7 +2050,11 @@ toggleMode.addEventListener('click', () => {
       if (first) activeScreenId = first.screen.id
     }
     const active = activeScreenId ? findScreen(currentProject(), activeScreenId) : undefined
-    if (active) fitTo(screenBounds(active))
+    if (active) {
+      selectedScreenIds = [active.screen.id]
+      selection = { type: 'screen', id: active.screen.id }
+      fitTo(screenBounds(active))
+    }
   } else {
     viewMode = 'all'
     fitToProject()
@@ -1669,36 +2089,62 @@ function dialogInput(id: string): HTMLInputElement {
   return element<HTMLInputElement>(id)
 }
 
-function selectedCreationPreset(): ScreenPreset | undefined {
-  const name = element<HTMLSelectElement>('new-screen-preset').value
-  return [...builtInScreenPresets, ...screenPresets].find(preset => preset.name === name)
+function selectedCreationCabinetPreset(): CabinetPreset | undefined {
+  const id = element<HTMLSelectElement>('new-screen-led-preset').value
+  return [...builtInCabinetPresets, ...presetLibrary.cabinets].find(preset => preset.id === id)
 }
 
-function refreshScreenPresets(): void {
-  const selector = element<HTMLSelectElement>('new-screen-preset')
-  selector.replaceChildren(new Option('Custom settings', ''))
+function selectedCreationDrawingPreset(): DrawingPreset | undefined {
+  const id = element<HTMLSelectElement>('new-screen-drawing-preset').value
+  return presetLibrary.drawings.find(preset => preset.id === id)
+}
+
+function refreshCreationPresets(): void {
+  const led = element<HTMLSelectElement>('new-screen-led-preset')
+  const drawing = element<HTMLSelectElement>('new-screen-drawing-preset')
+  led.replaceChildren(new Option('Custom cabinet', ''))
   const builtIn = document.createElement('optgroup')
-  builtIn.label = 'Cabinet formats'
-  for (const preset of builtInScreenPresets) builtIn.append(new Option(preset.name, preset.name))
-  selector.append(builtIn)
-  if (screenPresets.length > 0) {
+  builtIn.label = 'Built-in cabinets'
+  for (const preset of builtInCabinetPresets) builtIn.append(new Option(preset.name, preset.id))
+  led.append(builtIn)
+  if (presetLibrary.cabinets.length > 0) {
     const saved = document.createElement('optgroup')
-    saved.label = 'Saved presets'
-    for (const preset of screenPresets) saved.append(new Option(preset.name, preset.name))
-    selector.append(saved)
+    saved.label = 'Saved LED'
+    for (const preset of presetLibrary.cabinets) saved.append(new Option(preset.name, preset.id))
+    led.append(saved)
   }
-  element<HTMLButtonElement>('new-screen-preset-delete').disabled = true
+  drawing.replaceChildren(new Option('Custom drawing', ''))
+  for (const preset of presetLibrary.drawings) drawing.append(new Option(preset.name, preset.id))
+  for (const kind of ['led', 'drawing'] as const) {
+    const button = element<HTMLButtonElement>(`new-screen-${kind}-delete`)
+    button.disabled = true
+    button.textContent = 'Delete'
+    delete button.dataset.confirm
+  }
 }
 
-function applyCreationPreset(): void {
-  const preset = selectedCreationPreset()
-  element<HTMLButtonElement>('new-screen-preset-delete').disabled = preset === undefined || !screenPresets.some(value => value.name === preset.name)
+function applyCreationCabinetPreset(): void {
+  const preset = selectedCreationCabinetPreset()
+  const deleteButton = element<HTMLButtonElement>('new-screen-led-delete')
+  deleteButton.disabled = !preset || !presetLibrary.cabinets.some(value => value.id === preset.id)
+  deleteButton.textContent = 'Delete'
+  delete deleteButton.dataset.confirm
   if (!preset) return
   element<HTMLSelectElement>('new-screen-geometry-mode').value = 'advanced'
   dialogInput('new-screen-module-columns').value = String(preset.moduleColumns)
   dialogInput('new-screen-module-rows').value = String(preset.moduleRows)
   dialogInput('new-screen-module-width').value = String(preset.modulePixelWidth)
   dialogInput('new-screen-module-height').value = String(preset.modulePixelHeight)
+  updateCreationPreview()
+}
+
+function applyCreationDrawingPreset(): void {
+  const preset = selectedCreationDrawingPreset()
+  const deleteButton = element<HTMLButtonElement>('new-screen-drawing-delete')
+  deleteButton.disabled = !preset
+  deleteButton.textContent = 'Delete'
+  delete deleteButton.dataset.confirm
+  if (!preset) return
   element<HTMLSelectElement>('new-screen-palette').value = preset.drawing.palette
   dialogInput('new-screen-color').value = preset.drawing.fill === 'transparent' ? '#284a68' : preset.drawing.fill
   dialogInput('new-screen-transparent').checked = preset.drawing.fill === 'transparent'
@@ -1740,7 +2186,8 @@ function creationDetails(): {
   return {
     draft, snapshot: built.snapshot, position, name,
     palette: element<HTMLSelectElement>('new-screen-palette').value as ChartPalette,
-    color: dialogInput('new-screen-transparent').checked ? 'transparent' : dialogInput('new-screen-color').value,
+    color: element<HTMLSelectElement>('new-screen-palette').value === 'screen-color' && dialogInput('new-screen-transparent').checked
+      ? 'transparent' : dialogInput('new-screen-color').value,
   }
 }
 
@@ -1755,8 +2202,11 @@ function updateCreationPreview(): void {
   element<HTMLElement>('new-screen-manual').hidden = !manual
   dialogInput('new-screen-x').disabled = !manual
   dialogInput('new-screen-y').disabled = !manual
-  dialogInput('new-screen-transparent').disabled = element<HTMLSelectElement>('new-screen-palette').value !== 'screen-color'
-  dialogInput('new-screen-color').disabled = dialogInput('new-screen-transparent').checked || dialogInput('new-screen-transparent').disabled
+  const solid = element<HTMLSelectElement>('new-screen-palette').value === 'screen-color'
+  element<HTMLElement>('new-screen-color-field').hidden = !solid
+  element<HTMLElement>('new-screen-transparent-field').hidden = !solid
+  dialogInput('new-screen-transparent').disabled = !solid
+  dialogInput('new-screen-color').disabled = !solid || dialogInput('new-screen-transparent').checked
   try {
     const details = creationDetails()
     const { snapshot, position, name, palette, color } = details
@@ -1778,7 +2228,7 @@ function updateCreationPreview(): void {
       modules: [], signalPaths: [],
     }
     const settings = chartSettings()
-    const style = { ...screenChartStyle(settings, 'creation-preview'), palette, fill: color }
+    const style = { ...screenChartStyle(settings, 'creation-preview'), ...selectedCreationDrawingPreset()?.drawing, palette, fill: color }
     const frame = buildCompositionChartFrame(scene, { kind: 'screen', target: 'creation-preview' }, {
       ...settings, frameMode: 'fit', background: 'transparent', logoText: '', logo: null,
       screenStyles: { 'creation-preview': style },
@@ -1802,7 +2252,8 @@ function updateCreationPreview(): void {
   draw()
 }
 
-function openScreenDialog(): void {
+async function openScreenDialog(): Promise<void> {
+  await presetLibraryReady
   creationCamera = camera
   dialogInput('new-screen-name').value = `Screen ${currentProject().screens.length + 1}`
   dialogInput('new-screen-x').value = '0'
@@ -1816,11 +2267,13 @@ function openScreenDialog(): void {
   dialogInput('new-screen-module-width').value = '128'
   dialogInput('new-screen-module-height').value = '128'
   element<HTMLSelectElement>('new-screen-geometry-mode').value = 'basic'
-  element<HTMLSelectElement>('new-screen-position-mode').value = 'auto'
+  const positionMode = element<HTMLSelectElement>('new-screen-position-mode')
+  positionMode.value = 'auto'
+  positionMode.options[0]!.textContent = currentProject().screens.length === 0 ? 'At origin (0, 0)' : 'After existing screens (64 px gap)'
   element<HTMLSelectElement>('new-screen-palette').value = 'screen-color'
   dialogInput('new-screen-color').value = '#284a68'
   dialogInput('new-screen-transparent').checked = false
-  refreshScreenPresets()
+  refreshCreationPresets()
   screenFormError.hidden = true
   screenFormError.textContent = ''
   screenDialog.showModal()
@@ -1828,23 +2281,32 @@ function openScreenDialog(): void {
   dialogInput('new-screen-name').select()
 }
 
-addScreenButton.addEventListener('click', openScreenDialog)
-emptyAddScreenButton.addEventListener('click', openScreenDialog)
+addScreenButton.addEventListener('click', () => { void openScreenDialog() })
+emptyAddScreenButton.addEventListener('click', () => { void openScreenDialog() })
 element<HTMLButtonElement>('screen-cancel').addEventListener('click', () => screenDialog.close())
-element<HTMLSelectElement>('new-screen-preset').addEventListener('change', applyCreationPreset)
-element<HTMLButtonElement>('new-screen-preset-delete').addEventListener('click', () => {
-  const preset = selectedCreationPreset()
-  if (!preset) return
-  try {
-    const next = screenPresets.filter(value => value.name !== preset.name)
-    localStorage.setItem(SCREEN_PRESETS_KEY, JSON.stringify(next))
-    screenPresets = next
-    refreshScreenPresets()
-    updateCreationPreview()
-  } catch (error) {
-    showDocumentError(error, 'Unable to delete Screen preset.')
-  }
-})
+element<HTMLSelectElement>('new-screen-led-preset').addEventListener('change', applyCreationCabinetPreset)
+element<HTMLSelectElement>('new-screen-drawing-preset').addEventListener('change', applyCreationDrawingPreset)
+for (const kind of ['led', 'drawing'] as const) {
+  element<HTMLButtonElement>(`new-screen-${kind}-delete`).addEventListener('click', () => {
+    const preset = kind === 'led' ? selectedCreationCabinetPreset() : selectedCreationDrawingPreset()
+    if (!preset) return
+    const button = element<HTMLButtonElement>(`new-screen-${kind}-delete`)
+    if (button.dataset.confirm !== preset.id) {
+      button.dataset.confirm = preset.id
+      button.textContent = 'Confirm delete'
+      return
+    }
+    void (async () => {
+      try {
+        const next = kind === 'led' ? { ...presetLibrary, cabinets: presetLibrary.cabinets.filter(value => value.id !== preset.id) }
+          : { ...presetLibrary, drawings: presetLibrary.drawings.filter(value => value.id !== preset.id) }
+        await persistPresetLibrary(next)
+        refreshCreationPresets()
+        updateCreationPreview()
+      } catch (error) { showDocumentError(error, 'Unable to delete preset.') }
+    })()
+  })
+}
 screenForm.addEventListener('input', updateCreationPreview)
 screenForm.addEventListener('change', updateCreationPreview)
 screenDialog.addEventListener('close', () => {
@@ -1858,7 +2320,7 @@ screenForm.addEventListener('submit', event => {
   event.preventDefault()
   try {
     const { draft, position, name, palette, color } = creationDetails()
-    const preset = selectedCreationPreset()
+    const preset = selectedCreationDrawingPreset()
     let createdId = ''
     applyV2AndChartSettings(project => {
       const next = addScreenV2(project, draft, { name, position })
@@ -1910,7 +2372,8 @@ function addGuideAtCenter(orientation: ProjectGuide['orientation']): void {
   const rect = canvas.getBoundingClientRect()
   const center = toProject(camera, { x: rect.width / 2, y: rect.height / 2 })
   const position = orientation === 'vertical' ? center.x : center.y
-  projectGuides = addGuide(projectGuides, orientation, position)
+  const next = addGuide(projectGuides, orientation, position)
+  applyProjectGuides(next)
   const created = projectGuides[projectGuides.length - 1]!
   selection = null
   selectedScreenIds = []
@@ -1934,9 +2397,8 @@ function deleteSelectedGuide(): void {
     canvasNote.textContent = 'Guide is locked.'
     return
   }
-  projectGuides = removeGuide(projectGuides, guide.id)
   selectedGuideId = null
-  render()
+  applyProjectGuides(removeGuide(projectGuides, guide.id))
 }
 
 gridStepInput.addEventListener('change', () => {
@@ -1979,7 +2441,7 @@ duplicateScreenButton.addEventListener('click', () => {
   applyV2AndChartSettings(original => {
     let next = original
     for (const screenId of sourceIds) {
-      next = duplicateScreenV2(next, screenId)
+      next = duplicateScreenV2(next, screenId, 'after-screens')
       const fresh = next.design.screens[next.design.screens.length - 1]
       if (fresh) duplicates.push(fresh.id)
     }
@@ -2208,9 +2670,14 @@ window.addEventListener('keydown', event => {
       arrowHistoryKey = event.key
       arrowHistoryGroupId = documentController.beginHistoryGroup()
     }
-    const step = event.shiftKey ? 10 : 1
+    const step = arrowStep * (event.shiftKey ? 10 : 1)
     const positions = nudgePositions(selectedPositions(), selectedScreenIds, direction[0] * step, direction[1] * step)
     if (applyScreenPositions(positions, arrowHistoryGroupId)) render()
+    event.preventDefault()
+    return
+  }
+  if (event.shiftKey && event.key === 'Enter') {
+    fitCanvasFrame(true)
     event.preventDefault()
     return
   }

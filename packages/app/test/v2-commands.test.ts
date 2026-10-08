@@ -63,11 +63,12 @@ describe('direct V2 Layout and Mapping commands', () => {
 
   it('duplicates an existing four-by-four Screen without applying the new default', () => {
     const original = addScreenV2(createProjectSession('reference').project, ref001Draft)
-    const duplicate = duplicateScreenV2(original, 'screen-1')
+    const duplicate = duplicateScreenV2(original, 'screen-1', 'after-screens')
     const screens = projectV2WorkspaceReadModel(duplicate).screens
     expect(screens[0]!.config).toMatchObject({ moduleColumns: 4, moduleRows: 4, modulePixelWidth: 32, modulePixelHeight: 32 })
     expect(screens[1]!.config).toEqual(screens[0]!.config)
     expect(screens[1]!.screen.resolution).toEqual({ width: 512, height: 384 })
+    expect([screens[1]!.x, screens[1]!.y]).toEqual([576, 0])
   })
 
   it('matches every existing Layout mutation and derived ScreenView', () => {

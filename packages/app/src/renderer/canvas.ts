@@ -6,6 +6,7 @@ import type { TestBounds, TestFrame } from '../shared/test-engine.js'
 import { drawFramePrimitives } from './test-canvas.js'
 import { cabinetDisplayLabel, type CabinetLabelMode } from '../shared/cabinet-labels.js'
 import { drawCabinetBorder } from './cabinet-border.js'
+import { drawViewportCabinetLabel } from './cabinet-label-renderer.js'
 
 export interface Camera {
   readonly zoom: number
@@ -42,13 +43,16 @@ export interface View {
   readonly creationPreview?: { readonly frame: TestFrame; readonly bounds: TestBounds } | null
   readonly transparentScreens: readonly TestBounds[]
   readonly cleanView: boolean
-  readonly cabinetLabelModes: Readonly<Record<string, CabinetLabelMode>>
+  readonly cabinetLines: Readonly<Record<string, boolean>>
+  readonly cabinetLineColors: Readonly<Record<string, string | undefined>>
+  readonly cabinetLabelModes: Readonly<Record<string, CabinetLabelMode | null>>
 }
 
 export interface OverlayVisibility {
   readonly cabinets: boolean
   readonly modules: boolean
   readonly coordinates: boolean
+  readonly editorLabels: boolean
 }
 
 const MIN_ZOOM = 0.02
@@ -246,7 +250,9 @@ function drawCabinetGrid(
   screen: ScreenView,
   shape: GridShape,
   overlays: OverlayVisibility,
-  labelMode: CabinetLabelMode,
+  showCabinetLines: boolean,
+  cabinetLineColor: string | undefined,
+  labelMode: CabinetLabelMode | null,
 ): boolean {
   const rect = screenRectPx(camera, screen, shape)
   const cw = screen.grid.cabinetWidth * camera.zoom
@@ -261,7 +267,7 @@ function drawCabinetGrid(
       const x = rect.left + column * cw
       const y = rect.top + row * ch
       const id = existing.get(`${column},${row}`)
-      if (overlays.cabinets && id === undefined) {
+      if (showCabinetLines && id === undefined) {
         ctx.fillStyle = PENDING_FILL
         ctx.fillRect(x, y, cw, ch)
       }
@@ -278,16 +284,16 @@ function drawCabinetGrid(
         }
         ctx.stroke()
       }
-      if (overlays.cabinets) {
+      if (showCabinetLines) {
         drawCabinetBorder(ctx, camera, { x: screen.x + column * screen.grid.cabinetWidth, y: screen.y + row * screen.grid.cabinetHeight,
-          width: screen.grid.cabinetWidth, height: screen.grid.cabinetHeight }, id === undefined ? PENDING_EDGE : CABINET_EDGE, id === undefined)
+          width: screen.grid.cabinetWidth, height: screen.grid.cabinetHeight }, cabinetLineColor ?? (id === undefined ? PENDING_EDGE : CABINET_EDGE), id === undefined)
       }
     }
   }
-  if (labelsVisible && overlays.cabinets) {
+  if (labelsVisible && overlays.editorLabels && labelMode !== null) {
     drawCabinetLabels(ctx, camera, screen, shape, labelMode)
   }
-  return overlays.cabinets && !labelsVisible || overlays.modules && !modulesVisible
+  return overlays.editorLabels && labelMode !== null && !labelsVisible || overlays.modules && !modulesVisible
 }
 
 function drawCabinetLabels(
@@ -299,31 +305,12 @@ function drawCabinetLabels(
 ): void {
   const cw = screen.grid.cabinetWidth * camera.zoom
   const ch = screen.grid.cabinetHeight * camera.zoom
-  const maxWidth = cw - 6
-  const fontSize = Math.min(12, Math.max(10, Math.floor(Math.min(cw, ch) * .45)))
-  ctx.save()
-  ctx.font = `600 ${fontSize}px "Segoe UI", sans-serif`
-  ctx.textAlign = 'center'
-  ctx.textBaseline = 'middle'
-  ctx.lineJoin = 'round'
-  ctx.lineWidth = 2.5
-  ctx.strokeStyle = 'rgba(15, 20, 25, .9)'
-  ctx.fillStyle = '#f2f4f5'
   for (const cabinet of screen.cabinets) {
     if (cabinet.column >= shape.columns || cabinet.row >= shape.rows) continue
     const p = cellCenterPx(camera, screen, cabinet)
     const label = cabinetDisplayLabel(labelMode, shape.columns, shape.rows, cabinet)
-    let visibleLabel = label
-    if (ctx.measureText(visibleLabel).width > maxWidth) {
-      let prefix = label
-      while (prefix && ctx.measureText(`${prefix}…`).width > maxWidth) prefix = prefix.slice(0, -1)
-      visibleLabel = prefix ? `${prefix}…` : label[0] ?? ''
-    }
-    if (!visibleLabel || ctx.measureText(visibleLabel).width > maxWidth) continue
-    ctx.strokeText(visibleLabel, p.x, p.y)
-    ctx.fillText(visibleLabel, p.x, p.y)
+    drawViewportCabinetLabel(ctx, label, p.x, p.y, cw, ch, '#f2f4f5', false, false)
   }
-  ctx.restore()
 }
 
 function drawScreenOutline(ctx: CanvasRenderingContext2D, camera: Camera, screen: ScreenView, shape: GridShape, selected: boolean): void {
@@ -351,12 +338,14 @@ function drawScreenLabel(
   selected: boolean,
   previewing: boolean,
   coordinates: boolean,
+  occupied: ScreenRect[],
 ): void {
+  if (camera.zoom < 0.35 && !selected) return
   const rect = screenRectPx(camera, screen, shape)
   const format = new Intl.NumberFormat('en-US')
   const rw = format.format(shape.width)
   const rh = format.format(shape.height)
-  const showCoords = coordinates || selected
+  const showCoords = coordinates
   const suffix = showCoords ? ` · ${screen.x}, ${screen.y}` : ''
   const pending = previewing ? ' · Preview' : ''
   let title = `${screen.screen.name}${suffix}${pending}`
@@ -380,9 +369,14 @@ function drawScreenLabel(
     width = maxLabelWidth
   }
   const height = 26
-  let y = rect.top - height - 4
-  if (y < 4) y = rect.top + 4
-  const x = Math.max(6, rect.left)
+  const x = Math.max(6, Math.min(rect.left, ctx.canvas.width / (window.devicePixelRatio || 1) - width - 6))
+  const candidates = [rect.top - height - 4, rect.top + rect.height + 4, rect.top + 4]
+  const viewportHeight = ctx.canvas.height / (window.devicePixelRatio || 1)
+  const y = candidates.find(candidate => candidate >= 4 && candidate + height <= viewportHeight &&
+    occupied.every(label => x + width <= label.left || label.left + label.width <= x ||
+      candidate + height <= label.top || label.top + label.height <= candidate))
+  if (y === undefined) return
+  occupied.push({ left: x, top: y, width, height })
   ctx.fillStyle = selected ? '#2b241c' : '#26292b'
   ctx.fillRect(x, y, width, height)
   ctx.strokeStyle = selected ? ACCENT : '#34383b'
@@ -495,11 +489,38 @@ function drawTransparencyIndicator(ctx: CanvasRenderingContext2D, camera: Camera
   ctx.restore()
 }
 
-export function drawProject(canvas: HTMLCanvasElement, project: Project, view: View, camera: Camera): string {
-  const { width, height } = canvas.getBoundingClientRect()
+function alignProjectCanvas(canvas: HTMLCanvasElement): { width: number; height: number; ratio: number } {
   const ratio = window.devicePixelRatio || 1
-  canvas.width = Math.max(1, Math.round(width * ratio))
-  canvas.height = Math.max(1, Math.round(height * ratio))
+  const viewport = canvas.parentElement
+  if (!viewport) {
+    const { width, height } = canvas.getBoundingClientRect()
+    canvas.width = Math.max(1, Math.round(width * ratio))
+    canvas.height = Math.max(1, Math.round(height * ratio))
+    return { width, height, ratio }
+  }
+  const rect = viewport.getBoundingClientRect()
+  const style = window.getComputedStyle(viewport)
+  const borderLeft = parseFloat(style.borderLeftWidth) || 0
+  const borderRight = parseFloat(style.borderRightWidth) || 0
+  const borderTop = parseFloat(style.borderTopWidth) || 0
+  const borderBottom = parseFloat(style.borderBottomWidth) || 0
+  const originX = rect.left + borderLeft
+  const originY = rect.top + borderTop
+  const pixelWidth = Math.max(1, Math.round((rect.width - borderLeft - borderRight) * ratio))
+  const pixelHeight = Math.max(1, Math.round((rect.height - borderTop - borderBottom) * ratio))
+  const width = pixelWidth / ratio
+  const height = pixelHeight / ratio
+  canvas.style.left = String(Math.round(originX * ratio) / ratio - originX) + 'px'
+  canvas.style.top = String(Math.round(originY * ratio) / ratio - originY) + 'px'
+  canvas.style.width = String(width) + 'px'
+  canvas.style.height = String(height) + 'px'
+  canvas.width = pixelWidth
+  canvas.height = pixelHeight
+  return { width, height, ratio }
+}
+
+export function drawProject(canvas: HTMLCanvasElement, project: Project, view: View, camera: Camera): string {
+  const { width, height, ratio } = alignProjectCanvas(canvas)
   const ctx = canvas.getContext('2d')
   if (!ctx) return 'Canvas is unavailable.'
   ctx.setTransform(ratio, 0, 0, ratio, 0, 0)
@@ -520,11 +541,11 @@ export function drawProject(canvas: HTMLCanvasElement, project: Project, view: V
     for (const bounds of view.transparentScreens) drawTransparencyIndicator(ctx, camera, bounds)
   }
   const redraw = () => drawProject(canvas, project, view, camera)
-  drawFramePrimitives(ctx, view.drawing, camera, redraw, 'regular')
+  drawFramePrimitives(ctx, view.drawing, camera, redraw, 'regular', true, view.overlays.cabinets)
   if (view.creationPreview) {
     ctx.save()
     ctx.globalAlpha = 0.82
-    drawFramePrimitives(ctx, view.creationPreview.frame, camera, redraw, 'regular')
+    drawFramePrimitives(ctx, view.creationPreview.frame, camera, redraw, 'regular', true, view.overlays.cabinets)
     ctx.restore()
     const topLeft = toScreen(camera, view.creationPreview.bounds)
     ctx.save()
@@ -553,8 +574,11 @@ export function drawProject(canvas: HTMLCanvasElement, project: Project, view: V
     const shape = preview
       ? screenShape(screen, preview.columns, preview.rows)
       : screenShape(screen, screen.grid.columns, screen.grid.rows)
+    const labelMode = view.cabinetLabelModes[screen.screen.id]
     if (drawCabinetGrid(ctx, camera, screen, shape, view.overlays,
-      view.cabinetLabelModes[screen.screen.id] ?? 'row-coordinate')) hints += 1
+      view.overlays.cabinets && view.cabinetLines[screen.screen.id] !== false,
+      view.cabinetLineColors[screen.screen.id],
+      labelMode === undefined ? 'row-coordinate' : labelMode)) hints += 1
     const selectedScreen = view.selectedScreenIds.includes(screen.screen.id)
     const selectedGrid = view.selection?.type === 'cabinetGrid' && view.selection.id === screen.grid.id
     const highlighted = selectedScreen || selectedGrid
@@ -564,7 +588,15 @@ export function drawProject(canvas: HTMLCanvasElement, project: Project, view: V
       drawCabinetSelection(ctx, camera, screen, view.selection)
     }
   }
+  drawFramePrimitives(ctx, view.drawing, camera, redraw, 'screen-guide', true)
+  if (view.creationPreview) {
+    ctx.save()
+    ctx.globalAlpha = 0.82
+    drawFramePrimitives(ctx, view.creationPreview.frame, camera, redraw, 'screen-guide', true)
+    ctx.restore()
+  }
   if (!view.cleanView) drawInteractionOverlay(ctx, camera, width, height, view.alignmentGuides, view.projectGuides, view.selectedGuideId, view.marquee)
+  drawFramePrimitives(ctx, view.drawing, camera, redraw, 'screen-information')
   drawFramePrimitives(ctx, view.drawing, camera, redraw, 'screen-title')
   if (view.creationPreview) {
     ctx.save()
@@ -572,8 +604,11 @@ export function drawProject(canvas: HTMLCanvasElement, project: Project, view: V
     drawFramePrimitives(ctx, view.creationPreview.frame, camera, redraw, 'screen-title')
     ctx.restore()
   }
-  for (const { screen, shape, highlighted, previewing } of labels) {
-    drawScreenLabel(ctx, camera, screen, shape, highlighted, previewing, view.overlays.coordinates)
+  if (view.overlays.editorLabels) {
+    const occupied: ScreenRect[] = []
+    for (const { screen, shape, highlighted, previewing } of [...labels].sort((a, b) => Number(b.highlighted) - Number(a.highlighted))) {
+      drawScreenLabel(ctx, camera, screen, shape, highlighted, previewing, view.overlays.coordinates, occupied)
+    }
   }
   return hints > 0 ? note : ''
 }

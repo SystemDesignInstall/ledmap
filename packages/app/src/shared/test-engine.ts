@@ -106,11 +106,12 @@ export interface TestPatternConfig {
 }
 
 export type TestPrimitive =
-  | { readonly kind: 'rect'; readonly bounds: TestBounds; readonly fill?: string; readonly stroke?: string; readonly lineWidth?: number }
+  | { readonly kind: 'rect'; readonly bounds: TestBounds; readonly fill?: string; readonly stroke?: string; readonly lineWidth?: number; readonly opacity?: number; readonly pixelAligned?: boolean; readonly role?: 'screen-information' | 'screen-guide' }
   | { readonly kind: 'cabinet-border'; readonly bounds: TestBounds; readonly color: string }
-  | { readonly kind: 'line'; readonly from: TestPoint; readonly to: TestPoint; readonly color: string; readonly lineWidth: number; readonly dash?: readonly number[] }
-  | { readonly kind: 'text'; readonly point: TestPoint; readonly text: string; readonly color: string; readonly size: number; readonly align?: 'left' | 'center' | 'right'; readonly shadow?: boolean; readonly role?: 'screen-title' }
-  | { readonly kind: 'image'; readonly bounds: TestBounds; readonly dataUrl: string }
+  | { readonly kind: 'circle'; readonly center: TestPoint; readonly radius: number; readonly color: string; readonly lineWidth: number; readonly role?: 'screen-guide' }
+  | { readonly kind: 'line'; readonly from: TestPoint; readonly to: TestPoint; readonly color: string; readonly lineWidth: number; readonly dash?: readonly number[]; readonly role?: 'screen-guide' | 'screen-center-guide' }
+  | { readonly kind: 'text'; readonly point: TestPoint; readonly text: string; readonly color: string; readonly size: number; readonly align?: 'left' | 'center' | 'right'; readonly shadow?: boolean; readonly role?: 'screen-title' | 'cabinet-label' | 'screen-information'; readonly cellBounds?: TestBounds }
+  | { readonly kind: 'image'; readonly bounds: TestBounds; readonly dataUrl: string; readonly opacity?: number }
   | { readonly kind: 'gradient'; readonly bounds: TestBounds; readonly direction: 'horizontal' | 'vertical'; readonly from: string; readonly to: string }
   | { readonly kind: 'pixel'; readonly point: TestPoint; readonly color: string }
 

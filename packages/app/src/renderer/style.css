@@ -52,6 +52,11 @@ button[aria-pressed="true"] { border-color: var(--accent); background: var(--acc
 
 .layout-toolbar { min-height: 38px; display: flex; align-items: center; gap: 6px; padding: 4px 10px; border-top: 1px solid #2a2e31; overflow-x: auto; scrollbar-width: none; }
 .layout-toolbar::-webkit-scrollbar { display: none; }
+#layout-toolbar { flex-wrap: wrap; row-gap: 5px; }
+#layout-toolbar .tool-group { flex-shrink: 0; }
+.canvas-frame-size { color: var(--muted); font-size: 10px; margin-right: 5px; white-space: nowrap; }
+.canvas-crop-status { color: #f3b55f; border: 1px solid #8e611e; border-radius: 4px; padding: 3px 5px; font-size: 10px; white-space: nowrap; }
+.canvas-crop-status[hidden] { display: none; }
 .layout-toolbar button { padding-inline: 7px; font-size: 11px; }
 .tool-group { display: flex; align-items: center; gap: 3px; padding-right: 8px; margin-right: 2px; border-right: 1px solid var(--border); }
 .tool-group:last-of-type { border-right: 0; }
@@ -116,6 +121,9 @@ canvas.dragging { cursor: grabbing; }
 .property-group { padding-bottom: 8px; border-bottom: 1px solid #2a2e31; }
 .property-group:last-child { border-bottom: 0; padding-bottom: 0; }
 .property-group h3 { margin: 0 0 6px; color: var(--muted); font-size: 9px; font-weight: 650; letter-spacing: .08em; text-transform: uppercase; }
+.property-disclosure > summary { margin: 0 0 6px; color: var(--muted); font-size: 9px; font-weight: 650; letter-spacing: .08em; text-transform: uppercase; cursor: pointer; }
+.property-disclosure:not([open]) > summary { margin-bottom: 0; }
+.property-disclosure > summary:hover { color: var(--text-strong); }
 .property { display: grid; grid-template-columns: minmax(68px, 1fr) minmax(92px, 118px); align-items: center; gap: 8px; min-height: 26px; }
 .property label { color: var(--muted); font-size: 10px; }
 .property .value { overflow: hidden; color: var(--text-strong); font-size: 11px; font-variant-numeric: tabular-nums; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
@@ -162,10 +170,13 @@ dialog::backdrop { background: #06090dc7; backdrop-filter: blur(2px); }
 .dialog-grid label.dialog-checkbox { flex-direction: row; align-items: center; font-size: 11px; }
 .dialog-checkbox input { width: auto; }
 .dialog-subgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.dialog-subgrid[hidden] { display: none; }
+.dialog-subgrid[hidden], .dialog-grid label[hidden] { display: none; }
 .screen-resolution { margin: 14px 0 0; color: var(--text-strong); font-size: 12px; }
 .screen-preset-save { display: flex; gap: 6px; margin-top: 10px; }
+.preset-actions { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
+.preset-actions button { flex: 1 1 65px; }
 .screen-preset-save input { min-width: 0; flex: 1; }
+.drawing-actions { display: flex; gap: 6px; justify-content: flex-end; margin: 7px 0; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 7px; margin-top: 16px; }
 .resolume-import-dialog { width: min(980px, calc(100vw - 40px)); max-width: none; }
 .resolume-import-body { padding: 20px; overflow-wrap: anywhere; }

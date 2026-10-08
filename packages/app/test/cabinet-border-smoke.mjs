@@ -236,6 +236,40 @@ export async function verifyCabinetBorders(page, { output, exportDirectory, addS
     await seamMetrics.send('Emulation.clearDeviceMetricsOverride')
     await seamMetrics.detach()
   }
+  await page.locator('#layout-mode').click()
+  await page.locator('#project-tree [data-id="' + screen.id + '"]').click()
+  await page.locator('#screen-drawing-labels').selectOption('coordinates')
+  const guideDetails = page.locator('details.property-disclosure').filter({ has: page.locator('#screen-guide-diagonals') })
+  if (await guideDetails.getAttribute('open') === null) await guideDetails.locator('summary').click()
+  await page.locator('#screen-guide-diagonals').click()
+  await page.locator('#screen-guide-centralCircle').click()
+  await page.locator('#screen-guide-outerBorder').click()
+  await page.getByLabel('Screen cabinet lines', { exact: true }).click()
+  await page.locator('#export-mode').click()
+  await runExport(page, '#export-png-run', 'Exported 1 PNG')
+  const crispPng = await readFile(resolve(exportDirectory, 'screen-drawings.png'))
+  const crispPixels = await page.evaluate(async data => {
+    const image = new Image()
+    image.src = `data:image/png;base64,${data}`
+    await image.decode()
+    const canvas = document.createElement('canvas')
+    canvas.width = image.width
+    canvas.height = image.height
+    const ctx = canvas.getContext('2d')
+    ctx.drawImage(image, 0, 0)
+    const bytes = ctx.getImageData(0, 0, image.width, image.height).data
+    const colors = new Set()
+    for (let index = 0; index < bytes.length; index += 4) {
+      colors.add(`${bytes[index]},${bytes[index + 1]},${bytes[index + 2]},${bytes[index + 3]}`)
+    }
+    const seam = Array.from({ length: 4 }, (_, index) =>
+      [...ctx.getImageData(126 + index, 192, 1, 1).data])
+    return { width: image.width, height: image.height, colors: [...colors].sort(), seam }
+  }, crispPng.toString('base64'))
+  assert.deepEqual([crispPixels.width, crispPixels.height], [screen.width, screen.height])
+  assert.deepEqual(crispPixels.colors, ['0,255,0,255', '220,81,123,255', '255,0,0,255', '255,255,255,255'])
+  assert.deepEqual(crispPixels.seam, [[0, 255, 0, 255], chosenEdge, chosenEdge, [255, 0, 0, 255]])
   console.log('Checkerboard seams passed: pure adjacent colors at 800% zoom and DPR 1.25 with Cabinet lines OFF.')
   console.log('Cabinet borders passed: exactly two solid pixels at every seam, zoom 47/50/100/200%, DPR 1/2, editor and Clean View, PNG/SVG.')
+  console.log('PNG pixel-perfect export passed: guides, labels, text shadow and Cabinet borders use only pure palette colors.')
 }

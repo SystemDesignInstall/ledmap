@@ -313,7 +313,7 @@ async function createWindow(): Promise<void> {
     })
   })
   window.on('closed', () => {
-    liveOutputManager?.unregisterEditor(window.webContents)
+    liveOutputManager?.unregisterEditor(webContentsId)
     windowStates.delete(webContentsId)
   })
   const devUrl = process.env['ELECTRON_RENDERER_URL']

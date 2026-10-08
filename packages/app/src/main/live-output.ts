@@ -80,9 +80,9 @@ export class LiveOutputManager {
     this.editors.add(contents.id)
   }
 
-  unregisterEditor(contents: WebContents): void {
-    this.stopAll(contents)
-    this.editors.delete(contents.id)
+  unregisterEditor(ownerId: number): void {
+    this.stopAll(ownerId)
+    this.editors.delete(ownerId)
   }
 
   attachDisplayEvents(): void {
@@ -247,9 +247,9 @@ export class LiveOutputManager {
     this.notifyState(route.ownerId, stopped(route.outputId, route.displayId, route.revision, reason ?? undefined))
   }
 
-  private stopAll(owner: WebContents): void {
+  private stopAll(ownerId: number): void {
     for (const route of [...this.routes.values()]) {
-      if (route.ownerId === owner.id) this.closeRoute(route, 'Editor window closed.')
+      if (route.ownerId === ownerId) this.closeRoute(route, 'Editor window closed.')
     }
   }
 

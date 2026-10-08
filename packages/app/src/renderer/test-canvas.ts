@@ -75,7 +75,84 @@ function fillPixelAlignedRect(ctx: CanvasRenderingContext2D, camera: Camera, bou
   ctx.restore()
 }
 
-function drawPrimitive(ctx: CanvasRenderingContext2D, camera: Camera, primitive: TestPrimitive, redraw: (() => void) | null = null, viewportLabels = false): void {
+function textFont(primitive: Extract<TestPrimitive, { kind: 'text' }>, zoom: number): string {
+  const size = primitive.role === 'screen-information'
+    ? Math.min(48, primitive.size * zoom)
+    : Math.max(8, Math.min(48, primitive.size * zoom))
+  return `600 ${size}px "Segoe UI", sans-serif`
+}
+
+function hardPrimitiveBounds(ctx: CanvasRenderingContext2D, camera: Camera, primitive: TestPrimitive): TestBounds {
+  if (primitive.kind === 'line') {
+    const from = point(camera, primitive.from)
+    const to = point(camera, primitive.to)
+    const inset = Math.max(1, primitive.lineWidth * camera.zoom) / 2 + 2
+    return { x: Math.min(from.x, to.x) - inset, y: Math.min(from.y, to.y) - inset,
+      width: Math.abs(to.x - from.x) + inset * 2, height: Math.abs(to.y - from.y) + inset * 2 }
+  }
+  if (primitive.kind === 'circle') {
+    const center = point(camera, primitive.center)
+    const radius = primitive.radius * camera.zoom + Math.max(1, primitive.lineWidth * camera.zoom) / 2 + 2
+    return { x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2 }
+  }
+  if (primitive.kind === 'rect') {
+    const origin = point(camera, primitive.bounds)
+    const inset = Math.max(1, (primitive.lineWidth ?? 1) * camera.zoom) / 2 + 2
+    return { x: origin.x - inset, y: origin.y - inset,
+      width: primitive.bounds.width * camera.zoom + inset * 2,
+      height: primitive.bounds.height * camera.zoom + inset * 2 }
+  }
+  if (primitive.kind === 'text') {
+    const position = point(camera, primitive.point)
+    ctx.save()
+    ctx.font = textFont(primitive, camera.zoom)
+    ctx.textAlign = primitive.align ?? 'left'
+    ctx.textBaseline = 'middle'
+    const metrics = ctx.measureText(primitive.text)
+    ctx.restore()
+    return { x: position.x - metrics.actualBoundingBoxLeft - 2,
+      y: position.y - metrics.actualBoundingBoxAscent - 2,
+      width: metrics.actualBoundingBoxLeft + metrics.actualBoundingBoxRight + 4,
+      height: metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent + 4 }
+  }
+  throw new Error('Unsupported pixel-perfect primitive.')
+}
+
+function drawHardPrimitive(ctx: CanvasRenderingContext2D, camera: Camera, primitive: TestPrimitive): void {
+  const bounds = hardPrimitiveBounds(ctx, camera, primitive)
+  const left = Math.max(0, Math.floor(bounds.x))
+  const top = Math.max(0, Math.floor(bounds.y))
+  const right = Math.min(ctx.canvas.width, Math.ceil(bounds.x + bounds.width))
+  const bottom = Math.min(ctx.canvas.height, Math.ceil(bounds.y + bounds.height))
+  if (right <= left || bottom <= top) return
+  const source: TestPrimitive = primitive.kind === 'text' ? { ...primitive, shadow: false }
+    : primitive.kind === 'rect' ? { kind: 'rect', bounds: primitive.bounds, stroke: primitive.stroke!,
+      ...(primitive.lineWidth === undefined ? {} : { lineWidth: primitive.lineWidth }) } : primitive
+  const mask = document.createElement('canvas')
+  for (let y = top; y < bottom; y += 512) {
+    for (let x = left; x < right; x += 512) {
+      mask.width = Math.min(512, right - x)
+      mask.height = Math.min(512, bottom - y)
+      const maskCtx = mask.getContext('2d', { willReadFrequently: true })
+      if (!maskCtx) throw new Error('PNG mask Canvas 2D context is unavailable.')
+      maskCtx.setTransform(1, 0, 0, 1, -x, -y)
+      drawPrimitive(maskCtx, camera, source)
+      const pixels = maskCtx.getImageData(0, 0, mask.width, mask.height).data
+      const output = ctx.getImageData(x, y, mask.width, mask.height)
+      for (let index = 0; index < pixels.length; index += 4) {
+        if (pixels[index + 3]! < 128) continue
+        output.data[index] = pixels[index]!
+        output.data[index + 1] = pixels[index + 1]!
+        output.data[index + 2] = pixels[index + 2]!
+        output.data[index + 3] = 255
+      }
+      ctx.putImageData(output, x, y)
+    }
+  }
+}
+
+function drawPrimitive(ctx: CanvasRenderingContext2D, camera: Camera, primitive: TestPrimitive,
+  redraw: (() => void) | null = null, viewportLabels = false, pixelPerfect = false): void {
   if (primitive.kind === 'cabinet-border') {
     drawCabinetBorder(ctx, camera, primitive.bounds, primitive.color)
     return
@@ -100,18 +177,25 @@ function drawPrimitive(ctx: CanvasRenderingContext2D, camera: Camera, primitive:
     }
     if (primitive.fill) {
       ctx.fillStyle = primitive.fill
-      if (primitive.pixelAligned) fillPixelAlignedRect(ctx, camera, primitive.bounds)
+      if (pixelPerfect || primitive.pixelAligned) fillPixelAlignedRect(ctx, camera, primitive.bounds)
       else ctx.fillRect(origin.x, origin.y, width, height)
     }
     if (primitive.stroke) {
-      ctx.strokeStyle = primitive.stroke
-      ctx.lineWidth = Math.max(1, (primitive.lineWidth ?? 1) * camera.zoom)
-      ctx.strokeRect(origin.x, origin.y, width, height)
+      if (pixelPerfect) drawHardPrimitive(ctx, camera, primitive)
+      else {
+        ctx.strokeStyle = primitive.stroke
+        ctx.lineWidth = Math.max(1, (primitive.lineWidth ?? 1) * camera.zoom)
+        ctx.strokeRect(origin.x, origin.y, width, height)
+      }
     }
     ctx.restore()
     return
   }
   if (primitive.kind === 'circle') {
+    if (pixelPerfect) {
+      drawHardPrimitive(ctx, camera, primitive)
+      return
+    }
     const center = point(camera, primitive.center)
     ctx.strokeStyle = primitive.color
     ctx.lineWidth = Math.max(1, primitive.lineWidth * camera.zoom)
@@ -121,6 +205,10 @@ function drawPrimitive(ctx: CanvasRenderingContext2D, camera: Camera, primitive:
     return
   }
   if (primitive.kind === 'line') {
+    if (pixelPerfect) {
+      drawHardPrimitive(ctx, camera, primitive)
+      return
+    }
     const from = point(camera, primitive.from)
     const to = point(camera, primitive.to)
     if (viewportLabels && primitive.role === 'screen-center-guide') {
@@ -157,6 +245,10 @@ function drawPrimitive(ctx: CanvasRenderingContext2D, camera: Camera, primitive:
         primitive.color, primitive.shadow)
       return
     }
+    if (pixelPerfect) {
+      drawHardPrimitive(ctx, camera, primitive)
+      return
+    }
     ctx.save()
     ctx.fillStyle = primitive.color
     if (primitive.shadow) {
@@ -165,7 +257,7 @@ function drawPrimitive(ctx: CanvasRenderingContext2D, camera: Camera, primitive:
       ctx.shadowOffsetX = 1
       ctx.shadowOffsetY = 1
     }
-    ctx.font = `600 ${primitive.role === 'screen-information' ? Math.min(48, primitive.size * camera.zoom) : Math.max(8, Math.min(48, primitive.size * camera.zoom))}px "Segoe UI", sans-serif`
+    ctx.font = textFont(primitive, camera.zoom)
     ctx.textAlign = primitive.align ?? 'left'
     ctx.textBaseline = 'middle'
     ctx.fillText(primitive.text, position.x, position.y)
@@ -178,6 +270,7 @@ function drawPrimitive(ctx: CanvasRenderingContext2D, camera: Camera, primitive:
     const origin = point(camera, primitive.bounds)
     ctx.save()
     ctx.globalAlpha *= primitive.opacity ?? 1
+    if (pixelPerfect) ctx.imageSmoothingEnabled = false
     ctx.drawImage(cached.image, origin.x, origin.y, primitive.bounds.width * camera.zoom, primitive.bounds.height * camera.zoom)
     ctx.restore()
     return
@@ -239,6 +332,7 @@ export function drawFramePrimitives(
   layer: 'all' | 'regular' | 'screen-title' | 'screen-information' | 'screen-guide' = 'all',
   viewportLabels = false,
   showCabinetBorders = true,
+  pixelPerfect = false,
 ): void {
   const badges = layer === 'screen-information' ? compactInformationBadges(frame, camera) : []
   const compactPrimitives = new Set<TestPrimitive>(badges.flatMap(badge => [badge.rect, ...badge.texts]))
@@ -251,7 +345,7 @@ export function drawFramePrimitives(
       (primitive.role === 'screen-guide' || primitive.role === 'screen-center-guide')
     if (layer === 'regular' && (title || information || guide) || layer === 'screen-title' && !title ||
         layer === 'screen-information' && !information || layer === 'screen-guide' && !guide) continue
-    drawPrimitive(ctx, camera, primitive, redraw, viewportLabels)
+    drawPrimitive(ctx, camera, primitive, redraw, viewportLabels, pixelPerfect)
   }
   for (const badge of badges) drawCompactInformationBadge(ctx, badge)
 }
@@ -344,7 +438,7 @@ export async function drawTestFrameAtActualPixels(canvas: HTMLCanvasElement, fra
   await Promise.all(frame.primitives.filter(primitive => primitive.kind === 'image').map(primitive => chartImage(primitive.dataUrl, null).loaded))
   canvas.width = bounds.width
   canvas.height = bounds.height
-  const ctx = canvas.getContext('2d')
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })
   if (!ctx) throw new Error('PNG Canvas 2D context is unavailable.')
   ctx.setTransform(1, 0, 0, 1, 0, 0)
   ctx.clearRect(0, 0, bounds.width, bounds.height)
@@ -357,6 +451,6 @@ export async function drawTestFrameAtActualPixels(canvas: HTMLCanvasElement, fra
   ctx.rect(0, 0, bounds.width, bounds.height)
   ctx.clip()
   const camera: Camera = { zoom: 1, offsetX: -bounds.x, offsetY: -bounds.y }
-  drawFramePrimitives(ctx, frame, camera)
+  drawFramePrimitives(ctx, frame, camera, null, 'all', false, true, true)
   ctx.restore()
 }

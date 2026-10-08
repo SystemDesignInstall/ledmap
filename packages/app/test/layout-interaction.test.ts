@@ -190,7 +190,7 @@ describe('Layout interaction math', () => {
     expect(guideHitTest(guides, { x: 500, y: 55 }, 8)?.orientation).toBe('horizontal')
     expect(guideHitTest(guides, { x: 500, y: 500 }, 8)).toBeNull()
     const locked = setGuideLocked(guides, guides[0]!.id, true)
-    expect(guideHitTest(locked, { x: 104, y: 200 }, 8)).toBeNull()
+    expect(guideHitTest(locked, { x: 104, y: 200 }, 8)).toEqual(locked[0])
     expect(guidePositions(guides)).toEqual({ vertical: [100], horizontal: [50] })
   })
 })

@@ -54,9 +54,6 @@ button[aria-pressed="true"] { border-color: var(--accent); background: var(--acc
 .layout-toolbar::-webkit-scrollbar { display: none; }
 #layout-toolbar { flex-wrap: wrap; row-gap: 5px; }
 #layout-toolbar .tool-group { flex-shrink: 0; }
-.canvas-frame-size { color: var(--muted); font-size: 10px; margin-right: 5px; white-space: nowrap; }
-.canvas-crop-status { color: #f3b55f; border: 1px solid #8e611e; border-radius: 4px; padding: 3px 5px; font-size: 10px; white-space: nowrap; }
-.canvas-crop-status[hidden] { display: none; }
 .layout-toolbar button { padding-inline: 7px; font-size: 11px; }
 .tool-group { display: flex; align-items: center; gap: 3px; padding-right: 8px; margin-right: 2px; border-right: 1px solid var(--border); }
 .tool-group:last-of-type { border-right: 0; }

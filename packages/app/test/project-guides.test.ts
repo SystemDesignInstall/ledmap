@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { ProjectDocumentController } from '../src/renderer/document.js'
 import { addGuide, moveGuide, setGuideLocked } from '../src/renderer/layout-interaction.js'
 import { loadProjectSession, serializeProjectSession, sessionDirty } from '../src/renderer/project-session.js'
-import { projectGuidesFromExtensions, withProjectGuides } from '../src/renderer/project-guides.js'
+import { MAX_PROJECT_GUIDES, projectGuidesFromExtensions, withProjectGuides } from '../src/renderer/project-guides.js'
 
 describe('Composition project guides', () => {
   it('saves guides in the document and restores them through Undo, Redo and Open', async () => {
@@ -27,6 +27,16 @@ describe('Composition project guides', () => {
     const loaded = projectGuidesFromExtensions(withProjectGuides({}, existing))
     expect(addGuide(loaded, 'horizontal', 20).map(guide => guide.id)).toEqual(['guide-1', 'guide-2'])
     expect(addGuide([], 'horizontal', 20)[0]?.id).toBe('guide-1')
+  })
+
+  it('accepts the guide limit and rejects an additional guide', () => {
+    const guides = Array.from({ length: MAX_PROJECT_GUIDES }, (_, index) => ({
+      id: `guide-${index + 1}`, orientation: 'vertical' as const, position: index, locked: false,
+    }))
+    expect(projectGuidesFromExtensions(withProjectGuides({}, guides))).toHaveLength(MAX_PROJECT_GUIDES)
+    expect(() => withProjectGuides({}, [...guides, {
+      id: `guide-${MAX_PROJECT_GUIDES + 1}`, orientation: 'horizontal', position: 0, locked: false,
+    }])).toThrow(/at most/)
   })
 
   it('rejects duplicate or malformed persisted guides', () => {

@@ -1,6 +1,7 @@
 import { BrowserWindow, dialog, type WebContents } from 'electron'
-import { mkdir, open, writeFile } from 'node:fs/promises'
-import { basename, extname, resolve } from 'node:path'
+import { randomUUID } from 'node:crypto'
+import { mkdir, open, rename, unlink, writeFile } from 'node:fs/promises'
+import { basename, dirname, extname, resolve } from 'node:path'
 import {
   V2ExportPreflightError,
   genericMappingV2Chunks,
@@ -43,8 +44,22 @@ function validateFile(value: unknown): ExportFilePayload {
   return { name, bytes: file.bytes }
 }
 
+async function stagedWriteBytes(filePath: string, bytes: Uint8Array): Promise<void> {
+  const destination = resolve(filePath)
+  const temp = resolve(dirname(destination), `.${basename(destination)}.${randomUUID()}.tmp`)
+  await writeFile(temp, bytes, { flag: 'wx' })
+  try {
+    await rename(temp, destination)
+  } catch (error) {
+    try { await unlink(temp) } catch { /* ignore cleanup failure */ }
+    throw error
+  }
+}
+
 async function writeChunks(filePath: string, chunks: Iterable<string>): Promise<void> {
-  const handle = await open(filePath, 'w')
+  const destination = resolve(filePath)
+  const temp = resolve(dirname(destination), `.${basename(destination)}.${randomUUID()}.tmp`)
+  const handle = await open(temp, 'wx')
   try {
     let pending = ''
     for (const chunk of chunks) {
@@ -55,8 +70,17 @@ async function writeChunks(filePath: string, chunks: Iterable<string>): Promise<
       }
     }
     if (pending.length > 0) await handle.write(pending, null, 'utf8')
-  } finally {
-    await handle.close()
+  } catch (error) {
+    try { await handle.close() } catch { /* ignore cleanup failure */ }
+    try { await unlink(temp) } catch { /* ignore cleanup failure */ }
+    throw error
+  }
+  await handle.close()
+  try {
+    await rename(temp, destination)
+  } catch (error) {
+    try { await unlink(temp) } catch { /* ignore cleanup failure */ }
+    throw error
   }
 }
 
@@ -83,7 +107,7 @@ export class ExportFileService {
     if (this.consumeCancel()) return { canceled: true, filePaths: [] }
     const paths = await this.destinationPaths(owner, request.mode, files.map(file => file.name))
     if (!paths) return { canceled: true, filePaths: [] }
-    for (let index = 0; index < files.length; index += 1) await writeFile(paths[index]!, files[index]!.bytes)
+    for (let index = 0; index < files.length; index += 1) await stagedWriteBytes(paths[index]!, files[index]!.bytes)
     return { canceled: false, filePaths: paths }
   }
 

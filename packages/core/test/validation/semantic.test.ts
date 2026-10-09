@@ -19,7 +19,7 @@ const semanticCases = [
   { name: 'source bounds', path: ['region', 'position', 'x'], value: 999, code: 'MAPPING_OUT_OF_RANGE' },
   { name: 'size mismatch', path: ['screen', 'resolution', 'width'], value: 1, code: 'MAPPING_SIZE_MISMATCH' },
   { name: 'unsafe arithmetic', path: ['grid', 'columns'], value: Number.MAX_SAFE_INTEGER, code: 'MAPPING_OVERFLOW' },
-  { name: 'missing cell', path: ['grid', 'columns'], value: 2, code: 'MAPPING_INCOMPLETE' },
+  { name: 'Grid extent mismatch', path: ['grid', 'columns'], value: 2, code: 'MAPPING_SIZE_MISMATCH' },
   { name: 'cell outside Grid', path: ['hardwareTopology', 'cabinets', 0, 'column'], value: 1, code: 'MAPPING_OUT_OF_RANGE' },
   { name: 'unknown cabinet Grid', path: ['hardwareTopology', 'cabinets', 0, 'grid'], value: 'missing', code: 'MAPPING_UNKNOWN_REFERENCE' },
   { name: 'unknown hardware reference', path: ['hardwareTopology', 'ports', 0, 'processor'], value: 'missing', code: 'HARDWARE_UNKNOWN_REFERENCE' },

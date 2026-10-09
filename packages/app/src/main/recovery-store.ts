@@ -25,7 +25,7 @@ export interface RecoveryManifest {
   readonly updatedAt: string
   readonly snapshotRevision: number
   readonly observedSavedRevision: number
-  readonly sourceSchemaVersion: 1 | 2 | 3 | 4 | 5 | 6
+  readonly sourceSchemaVersion: 1 | 2 | 3 | 4 | 5 | 6 | 7
   readonly payloadSha256: string
   readonly baselineSourceSha256: string | null
 }
@@ -38,7 +38,7 @@ export interface RecoverySnapshotRequest {
   readonly displayName: string
   readonly snapshotRevision: number
   readonly observedSavedRevision: number
-  readonly sourceSchemaVersion: 1 | 2 | 3 | 4 | 5 | 6
+  readonly sourceSchemaVersion: 1 | 2 | 3 | 4 | 5 | 6 | 7
   readonly baselineSourceSha256: string | null
 }
 
@@ -49,7 +49,7 @@ export interface RecoverySaveCommit {
   readonly currentRevision: number
   readonly sourcePath: string
   readonly baselineSourceSha256: string
-  readonly sourceSchemaVersion?: 5 | 6
+  readonly sourceSchemaVersion?: 5 | 6 | 7
 }
 
 export interface RecoveryCandidate {
@@ -96,7 +96,7 @@ export function parseRecoveryManifest(text: string): RecoveryManifest {
       !validDate(data['createdAt']) || !validDate(data['updatedAt']) ||
       !validRevision(data['snapshotRevision']) || !validRevision(data['observedSavedRevision']) ||
       data['observedSavedRevision'] > data['snapshotRevision'] ||
-      (data['sourceSchemaVersion'] !== 1 && data['sourceSchemaVersion'] !== 2 && data['sourceSchemaVersion'] !== 3 && data['sourceSchemaVersion'] !== 4 && data['sourceSchemaVersion'] !== 5 && data['sourceSchemaVersion'] !== 6) ||
+      (data['sourceSchemaVersion'] !== 1 && data['sourceSchemaVersion'] !== 2 && data['sourceSchemaVersion'] !== 3 && data['sourceSchemaVersion'] !== 4 && data['sourceSchemaVersion'] !== 5 && data['sourceSchemaVersion'] !== 6 && data['sourceSchemaVersion'] !== 7) ||
       typeof data['payloadSha256'] !== 'string' || !hashPattern.test(data['payloadSha256']) ||
       (data['baselineSourceSha256'] !== null &&
         (typeof data['baselineSourceSha256'] !== 'string' || !hashPattern.test(data['baselineSourceSha256'])))) {
@@ -169,7 +169,7 @@ export class RecoveryStore {
           Buffer.byteLength(input.text, 'utf8') > 512 * 1024 * 1024 ||
           (input.sourcePath !== null && (typeof input.sourcePath !== 'string' || !isAbsolute(input.sourcePath))) ||
           typeof input.displayName !== 'string' || input.displayName.length > 200 ||
-          (input.sourceSchemaVersion !== 1 && input.sourceSchemaVersion !== 2 && input.sourceSchemaVersion !== 3 && input.sourceSchemaVersion !== 4 && input.sourceSchemaVersion !== 5 && input.sourceSchemaVersion !== 6) ||
+          (input.sourceSchemaVersion !== 1 && input.sourceSchemaVersion !== 2 && input.sourceSchemaVersion !== 3 && input.sourceSchemaVersion !== 4 && input.sourceSchemaVersion !== 5 && input.sourceSchemaVersion !== 6 && input.sourceSchemaVersion !== 7) ||
           (input.baselineSourceSha256 !== null && (typeof input.baselineSourceSha256 !== 'string' ||
             !hashPattern.test(input.baselineSourceSha256))) ||
           (previous?.sessionEpoch === input.sessionEpoch && previous.snapshotRevision > input.snapshotRevision)) {
@@ -207,7 +207,7 @@ export class RecoveryStore {
         input.currentRevision < input.savedRevision || typeof input.sourcePath !== 'string' ||
         !isAbsolute(input.sourcePath) || typeof input.baselineSourceSha256 !== 'string' ||
         !hashPattern.test(input.baselineSourceSha256) ||
-        (input.sourceSchemaVersion !== undefined && input.sourceSchemaVersion !== 5 && input.sourceSchemaVersion !== 6)) {
+        (input.sourceSchemaVersion !== undefined && input.sourceSchemaVersion !== 5 && input.sourceSchemaVersion !== 6 && input.sourceSchemaVersion !== 7)) {
       return Promise.reject(new Error('Invalid recovery Save commit.'))
     }
     return this.enqueue(input.recoveryId, async () => {

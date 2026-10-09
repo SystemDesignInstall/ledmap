@@ -40,16 +40,20 @@ describe('Mapping validation', () => {
     expect(() => resolveMapping(change(smallMapping()))).toThrowError(new RegExp(`MAPPING_${code}`))
   })
 
-  it('rejects a missing physical cell even with complete hardware assignments', () => {
+  it('maps occupied cells and leaves a removed physical cell unmapped', () => {
     const input = smallMapping()
     const removed = input.hardwareTopology.cabinets[0]!.id
-    expect(() => resolveMapping({ ...input, hardwareTopology: {
+    const mapping = resolveMapping({ ...input, hardwareTopology: {
       ...input.hardwareTopology, cabinets: input.hardwareTopology.cabinets.slice(1),
       modules: input.hardwareTopology.modules.filter(m => m.cabinet !== removed),
       receivers: input.hardwareTopology.receivers.map(r => ({ ...r, cabinets: r.cabinets.filter(id => id !== removed) })),
-    } })).toThrowError(/MAPPING_INCOMPLETE/)
+    } })
+    expect(() => mapInputPixel(mapping, { inputCanvas: input.inputCanvas.id,
+      inputCoordinate: { x: input.region.position.x, y: input.region.position.y } })).toThrowError(/MAPPING_UNMAPPED/)
+    expect(mapInputPixel(mapping, { inputCanvas: input.inputCanvas.id,
+      inputCoordinate: { x: input.region.position.x + 15, y: input.region.position.y } }).cabinet).toBe(input.hardwareTopology.cabinets[1]!.id)
     expect(() => resolveMapping({ ...input, hardwareTopology: { processors: [], ports: [], receivers: [], cabinets: [], modules: [], processorOrder: [], receiverOrder: [] } }))
-      .toThrowError(/MAPPING_INCOMPLETE/)
+      .toThrow()
   })
 
   it('rejects heterogeneous pixel sizes that Hardware Engine can resolve', () => {

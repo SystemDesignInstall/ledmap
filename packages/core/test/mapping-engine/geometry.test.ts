@@ -89,16 +89,19 @@ describe('Geometry Mapping without hardware addressing', () => {
     }
   }, 120000)
 
-  it('reports incomplete Cabinet and Module geometry without fake hardware', () => {
+  it('leaves a removed Cabinet unmapped while rejecting incomplete Module geometry', () => {
     const input = smallMapping()
     const geometry = geometryInput(input)
     const removed = geometry.cabinets[0]!.id
-    expect(() => resolveGeometryMapping({
+    const sparse = resolveGeometryMapping({
       ...geometry,
       cabinets: geometry.cabinets.slice(1),
       modules: geometry.modules.filter(module => module.cabinet !== removed),
-    }))
-      .toThrowError(/MAPPING_INCOMPLETE/)
+    })
+    expect(sparse.cells).toHaveLength(3)
+    expect(() => mapGeometryInputPixel(sparse, { inputCanvas: geometry.inputCanvas.id,
+      inputCoordinate: { x: geometry.region.position.x, y: geometry.region.position.y } }))
+      .toThrowError(/MAPPING_UNMAPPED/)
     expect(() => resolveGeometryMapping({ ...geometry, modules: geometry.modules.slice(1) }))
       .toThrowError(/MAPPING_INCOMPLETE/)
   })

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { addScreenV2 } from '../src/renderer/v2-commands.js'
+import { addScreenV2, setCabinetCellsV2 } from '../src/renderer/v2-commands.js'
+import { createProjectSession } from '../src/renderer/project-session.js'
+import { buildV2TestScene } from '../src/renderer/v2-test-project.js'
 import { ProjectDocumentController } from '../src/renderer/document.js'
 import { loadProjectSession, serializeProjectSession, sessionDirty } from '../src/renderer/project-session.js'
 import {
@@ -24,6 +26,33 @@ const scene: TestScene = {
 }
 
 describe('Composition chart contract', () => {
+  it('leaves missing Cabinet cells transparent in chart fills and the export mask', () => {
+    const full = addScreenV2(createProjectSession('chart-sparse').project)
+    const sparse = setCabinetCellsV2(full, 'screen-1', [{ column: 1, row: 0 }], false)
+    const sparseScene = buildV2TestScene(sparse)
+    const scope = { kind: 'screen' as const, target: 'screen-1' }
+    const settings = { ...defaultChartSettings, screenStyles: { 'screen-1': {
+      ...screenChartStyle(defaultChartSettings, 'screen-1'), palette: 'screen-color' as const, fill: '#ff0000',
+      cabinetEdges: false, labels: 'none' as const, showScreenName: false,
+    } } }
+    const chart = buildCompositionChartFrame(sparseScene, scope, settings)
+    const mask = buildCompositionChartFrame(sparseScene, scope, settings, true)
+    const hole = { x: 32, y: 0, width: 32, height: 32 }
+    expect(chart.primitives.some(value => value.kind === 'rect' && value.fill === '#ff0000' &&
+      value.bounds.x === hole.x && value.bounds.y === hole.y)).toBe(false)
+    expect(mask.primitives).toHaveLength(11)
+    expect(mask.primitives.some(value => value.kind === 'rect' && value.bounds.x === hole.x && value.bounds.y === hole.y)).toBe(false)
+    expect(renderFrameSvg(mask, mask.bounds)).not.toContain('<rect x="32" y="0" width="32" height="32" fill="#ffffff"')
+    const insetSettings = { ...settings, screenStyles: { 'screen-1': {
+      ...settings.screenStyles['screen-1'], maskOffsetX: 4, maskOffsetY: 3,
+    } } }
+    const insetMask = buildCompositionChartFrame(sparseScene, scope, insetSettings, true)
+    expect(insetMask.primitives).toHaveLength(11)
+    expect(insetMask.primitives[0]).toEqual({ kind: 'rect', bounds: { x: 4, y: 3, width: 28, height: 29 }, fill: '#ffffff' })
+    expect(insetMask.primitives.some(value => value.kind === 'rect' && value.bounds.x === hole.x &&
+      value.bounds.y < hole.height)).toBe(false)
+  })
+
   it('makes intentional Canvas cropping explicit while keeping document geometry and Undo atomic', () => {
     const document = new ProjectDocumentController(() => 'frame')
     document.transactV2(addScreenV2)
@@ -327,7 +356,10 @@ describe('Composition chart contract', () => {
     expect(chart.primitives).toContainEqual({ kind: 'text', point: { x: -80, y: 206 },
       text: 'X -100 · Y 20', color: '#ffffff', size: 12, align: 'left', shadow: true })
     const mask = buildCompositionChartFrame(scene, { kind: 'composition', target: null }, loaded, true)
-    expect(mask.primitives[0]).toEqual({ kind: 'rect', bounds: { x: -100, y: 20, width: 200, height: 200 }, fill: '#ffffff' })
+    expect(mask.primitives[0]).toEqual({ kind: 'rect', bounds: { x: -88, y: 13, width: 176, height: 214 }, fill: '#ffffff' })
+    expect(buildCompositionChartFrame(scene, { kind: 'screen', target: 'left' }, {
+      ...loaded, screenStyles: { left: { ...style, maskOffsetX: 100 } },
+    }, true).primitives).toEqual([])
     expect(() => withChartSettings({}, { ...settings, screenStyles: { left: { ...style, maskOffsetX: 9000 } } })).toThrow(/mask offsets/)
   })
 
@@ -343,6 +375,6 @@ describe('Composition chart contract', () => {
     expect(svg).toContain('fill="#ff0000"')
     expect(svg).not.toContain('A &amp; B &lt;LED&gt;')
     const mask = buildCompositionChartFrame(scene, { kind: 'composition', target: null }, settings, true)
-    expect(renderFrameSvg(mask, mask.bounds)).toContain('x="-100" y="20" width="200" height="200" fill="#ffffff"')
+    expect(renderFrameSvg(mask, mask.bounds)).toContain('x="-88" y="20" width="176" height="200" fill="#ffffff"')
   })
 })

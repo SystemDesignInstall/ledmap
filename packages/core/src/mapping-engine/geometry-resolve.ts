@@ -63,7 +63,7 @@ export function resolveGeometryMapping(input: ResolveGeometryMappingInput): Reso
   assertCoordinate('MappingRegion.position', region.position)
   assertSafeInteger('Grid.columns', grid.columns, 1)
   assertSafeInteger('Grid.rows', grid.rows, 1)
-  const cellCount = safeResult('Grid cell count', grid.columns * grid.rows)
+  safeResult('Grid cell count', grid.columns * grid.rows)
   assertReference('MappingRegion.inputCanvas', region.inputCanvas, inputCanvas.id)
   assertReference('MappingRegion.screen', region.screen, screen.id)
   assertReference('MappingRegion.grid', region.grid, grid.id)
@@ -121,7 +121,6 @@ export function resolveGeometryMapping(input: ResolveGeometryMappingInput): Reso
       moduleIds: moduleLayout.moduleIds,
     }))
   }
-  if (cells.size !== cellCount) fail('INCOMPLETE', 'Grid has missing physical cells')
   for (const size of [region.size, screen.resolution]) {
     if (size.width !== gridPixelSize.width || size.height !== gridPixelSize.height) {
       fail('SIZE_MISMATCH', 'MappingRegion and Screen dimensions must equal Grid pixel dimensions')

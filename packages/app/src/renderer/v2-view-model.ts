@@ -56,7 +56,8 @@ export interface AddScreenOptions {
 export type SelectedObject =
   | { readonly type: 'screen'; readonly id: string }
   | { readonly type: 'cabinetGrid'; readonly id: string }
-  | { readonly type: 'cabinet'; readonly id: string; readonly screenId: string }
+  | { readonly type: 'cabinet'; readonly id: string; readonly screenId: string; readonly column?: number; readonly row?: number }
+  | { readonly type: 'cabinetCell'; readonly id: string; readonly screenId: string; readonly column: number; readonly row: number }
 
 export interface Bounds {
   readonly left: number
@@ -116,7 +117,8 @@ function screenView(project: LedMapProjectV2, screen: ProjectScreen): ScreenView
     ...moduleGeometry(project, sourceCabinets, grid),
     ordering: Object.freeze({ ...grid.ordering }),
   })
-  const path = cabinetOrder(config)
+  const occupied = new Set(sourceCabinets.map(cabinet => `${cabinet.column},${cabinet.row}`))
+  const path = cabinetOrder(config).filter(cell => occupied.has(`${cell.column},${cell.row}`))
   const cabinets = sourceCabinets.map(cabinet => {
     const id = cabinetLabel(screen.id, cabinet.id)
     return Object.freeze({ sourceId: cabinet.id, id, label: cabinet.label, column: cabinet.column, row: cabinet.row,
@@ -124,7 +126,7 @@ function screenView(project: LedMapProjectV2, screen: ProjectScreen): ScreenView
   })
   const modulesPerCabinet = safeProduct('Modules per cabinet', config.moduleColumns, config.moduleRows)
   const pixelCount = safeProduct('Pixel count', screen.resolution.width, screen.resolution.height)
-  const nextCabinetSerial = cabinets.reduce((maximum, cabinet) => Math.max(maximum, numericCabinetSerial(cabinet.id)), 0) + 1
+  const nextCabinetSerial = grid.nextCabinetSerial ?? cabinets.reduce((maximum, cabinet) => Math.max(maximum, numericCabinetSerial(cabinet.id)), 0) + 1
   return Object.freeze({ screen, grid, config, x: placement.x, y: placement.y,
     cabinets: Object.freeze(cabinets), nextCabinetSerial, path: Object.freeze(path), modulesPerCabinet,
     totalModules: cabinets.length === 0 ? 0 : safeProduct('Total modules', cabinets.length, modulesPerCabinet), pixelCount })

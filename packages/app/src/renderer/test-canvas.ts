@@ -175,10 +175,12 @@ function drawPrimitive(ctx: CanvasRenderingContext2D, camera: Camera, primitive:
     const width = primitive.bounds.width * camera.zoom
     const height = primitive.bounds.height * camera.zoom
     if (primitive.kind === 'gradient') {
+      const gradientBounds = primitive.gradientBounds ?? primitive.bounds
+      const gradientOrigin = point(camera, gradientBounds)
       const end = primitive.direction === 'horizontal'
-        ? { x: origin.x + width, y: origin.y }
-        : { x: origin.x, y: origin.y + height }
-      const gradient = ctx.createLinearGradient(origin.x, origin.y, end.x, end.y)
+        ? { x: gradientOrigin.x + gradientBounds.width * camera.zoom, y: gradientOrigin.y }
+        : { x: gradientOrigin.x, y: gradientOrigin.y + gradientBounds.height * camera.zoom }
+      const gradient = ctx.createLinearGradient(gradientOrigin.x, gradientOrigin.y, end.x, end.y)
       gradient.addColorStop(0, primitive.from)
       gradient.addColorStop(1, primitive.to)
       ctx.fillStyle = gradient
@@ -345,7 +347,9 @@ export function drawFramePrimitives(
   showCabinetBorders = true,
   pixelPerfect = false,
 ): void {
-  const badges = layer === 'screen-information' ? compactInformationBadges(frame, camera) : []
+  const badges = layer === 'screen-information' && !frame.primitives.some(primitive =>
+    primitive.clip && 'role' in primitive && primitive.role === 'screen-information')
+    ? compactInformationBadges(frame, camera) : []
   const compactPrimitives = new Set<TestPrimitive>(badges.flatMap(badge => [badge.rect, ...badge.texts]))
   for (const primitive of frame.primitives) {
     if (!showCabinetBorders && primitive.kind === 'cabinet-border') continue
@@ -356,7 +360,17 @@ export function drawFramePrimitives(
       (primitive.role === 'screen-guide' || primitive.role === 'screen-center-guide')
     if (layer === 'regular' && (title || information || guide) || layer === 'screen-title' && !title ||
         layer === 'screen-information' && !information || layer === 'screen-guide' && !guide) continue
+    if (primitive.clip) {
+      ctx.save()
+      ctx.beginPath()
+      for (const bounds of primitive.clip) {
+        const origin = point(camera, bounds)
+        ctx.rect(origin.x, origin.y, bounds.width * camera.zoom, bounds.height * camera.zoom)
+      }
+      ctx.clip()
+    }
     drawPrimitive(ctx, camera, primitive, redraw, viewportLabels, pixelPerfect)
+    if (primitive.clip) ctx.restore()
   }
   for (const badge of badges) drawCompactInformationBadge(ctx, badge)
 }

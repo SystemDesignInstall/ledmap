@@ -147,13 +147,13 @@ describe('Project report ownership and compactness', () => {
     expect(reverse).not.toHaveBeenCalled()
   })
 
-  it('does not enumerate missing cells of a huge incomplete Grid', () => {
+  it('does not enumerate missing cells of a huge Grid with mismatched extent', () => {
     const input = projectFixture()
     setAt(input, ['mapping', 'grid', 'columns'], 1000000000)
     const result = validateProject(input)
     expect(result.valid).toBe(false)
     expect(result.diagnostics).toHaveLength(1)
-    expect(result.diagnostics[0]!.code).toBe('MAPPING_INCOMPLETE')
+    expect(result.diagnostics[0]!.code).toBe('MAPPING_SIZE_MISMATCH')
     expect(result.checks).toHaveLength(3)
   })
 })

@@ -65,12 +65,16 @@ export function buildV2TestScene(project: LedMapProjectV2): TestScene {
   const screens = views.map(view => ({
     id: view.screen.id, name: view.screen.name,
     bounds: { x: view.x, y: view.y, width: view.width, height: view.height },
+    ...(project.design.cabinets.filter(cabinet => cabinet.gridId === view.grid.id).length < view.grid.columns * view.grid.rows
+      ? { sparse: true } : {}),
   }))
   const cabinets: TestCabinetNode[] = []
   for (const view of views) {
     const physical = project.design.cabinets.filter(value => value.gridId === view.grid.id)
       .sort((a, b) => a.row - b.row || a.column - b.column)
+    const occupied = new Set(physical.map(cabinet => `${cabinet.column},${cabinet.row}`))
     const path = cabinetOrder({ columns: view.grid.columns, rows: view.grid.rows, ordering: view.grid.ordering })
+      .filter(cell => occupied.has(`${cell.column},${cell.row}`))
     for (const cabinet of physical) {
       const receiver = receiverByCabinet.get(cabinet.id)
       const port = receiver ? ports.get(receiver.portId) : undefined

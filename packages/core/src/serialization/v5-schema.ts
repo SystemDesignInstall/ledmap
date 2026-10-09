@@ -4,6 +4,7 @@ import { assertOwnDataProperties } from './schema.js'
 import type { JsonValue } from './types.js'
 import type { ProjectV5Wire } from './v5-types.js'
 import type { ProjectV6Wire } from './v6-types.js'
+import type { ProjectV7Wire } from './v7-types.js'
 
 type Scalar = 'string' | 'boolean' | 'positive' | 'nonnegative' | 'signed' | 'finite' | 'rotation'
 type Spec = Scalar | { readonly enum: readonly string[] } | { readonly record: Readonly<Record<string, Spec>> }
@@ -24,7 +25,7 @@ const capacityProfile = { optional: { record: {
 } } } as const
 const capacityOverride = { optional: { record: { pixelCapacity: 'positive', reason: 'string', mode: capacityMode } } } as const
 
-function projectShapeV5(version: 5 | 6 = 5): Spec { return { record: {
+function projectShapeV5(version: 5 | 6 | 7 = 5): Spec { return { record: {
   metadata: { record: { name: { optional: 'string' }, description: { optional: 'string' } } },
   design: { record: {
     screens: { array: { record: {
@@ -39,6 +40,7 @@ function projectShapeV5(version: 5 | 6 = 5): Spec { return { record: {
         direction: { enum: ['left-to-right', 'right-to-left', 'top-to-bottom', 'bottom-to-top'] },
         snake: 'boolean',
       } },
+      ...(version === 7 ? { nextCabinetSerial: { optional: 'positive' } as const } : {}),
     } } },
     cabinets: { array: { record: {
       id: 'string', gridId: 'string', label: 'string', column: 'nonnegative', row: 'nonnegative',
@@ -72,11 +74,11 @@ function projectShapeV5(version: 5 | 6 = 5): Spec { return { record: {
   } },
   hardware: { record: {
     processors: { array: { record: { id: 'string', name: 'string', portCount: 'positive',
-      ...(version === 6 ? { capacityProfile } : {}),
+      ...(version >= 6 ? { capacityProfile } : {}),
     } } },
     ports: { array: { record: {
       id: 'string', processorId: 'string', index: 'nonnegative', receiverCapacity: 'positive',
-      ...(version === 6 ? { pixelCapacityOverride: capacityOverride } : {}),
+      ...(version >= 6 ? { pixelCapacityOverride: capacityOverride } : {}),
     } } },
     receivers: { array: { record: {
       id: 'string', legacyIndex: 'nonnegative', processorId: 'string', portId: 'string',
@@ -103,6 +105,7 @@ function projectShapeV5(version: 5 | 6 = 5): Spec { return { record: {
 
 const projectShapeV5Value = projectShapeV5()
 const projectShapeV6Value = projectShapeV5(6)
+const projectShapeV7Value = projectShapeV5(7)
 
 function fail(mode: Mode, path: SerializationPath, message: string): never {
   throw new SerializationError(mode === 'document' ? 'SERIALIZATION_INVALID_SCHEMA' : 'SERIALIZATION_INVALID_INPUT', message, path)
@@ -167,4 +170,8 @@ export function checkProjectV5Wire(value: unknown, mode: Mode): ProjectV5Wire {
 
 export function checkProjectV6Wire(value: unknown, mode: Mode): ProjectV6Wire {
   return check(value, projectShapeV6Value, ['project'], mode) as unknown as ProjectV6Wire
+}
+
+export function checkProjectV7Wire(value: unknown, mode: Mode): ProjectV7Wire {
+  return check(value, projectShapeV7Value, ['project'], mode) as unknown as ProjectV7Wire
 }

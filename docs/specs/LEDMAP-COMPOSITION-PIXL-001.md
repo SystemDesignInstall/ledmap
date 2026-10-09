@@ -30,15 +30,17 @@ Composition owns authoring and the immediately visible drawing. Test owns playba
 
 Each stage ends with tests, typecheck and lint. Stage 3 must distinguish a missing physical Cabinet from a visually transparent or masked Cabinet. External format adapters in Stage 5 require verified target-generated fixtures; supported native exports can proceed independently.
 
-## Implementation status — 2026-10-05
+## Implementation status — 2026-10-09
+
+The evidence, unverified PixlGrid behavior, and integrated implementation are recorded in [the current comparison audit](../cross-check/pixlgrid-composition-2026-10-09.md).
 
 | Stage | Status | Delivered |
 |---|---|---|
 | 1 | Complete | Basic/Advanced creation, calculated resolution, transient central-canvas preview, automatic placement, initial drawing, atomic Undo, screen selection and existing editing actions. |
-| 2 | Partial | Existing per-Screen palettes, labels, logo and statistics; local reusable LED geometry/drawing presets; offset markers. Separate multi-swatch palettes and preset management beyond save/select/delete are not implemented. |
-| 3 | Partial | Built-in half-height and half-width Cabinet formats create separate uniform Screens with real Cabinet dimensions. The current core Mapping Region requires a complete uniform Cabinet Grid; physical gaps and mixed half-size edge Cabinets within one Screen require a new geometry and mapping contract. Visual mask offsets do not change Cabinet membership. |
-| 4 | Partial | Saved mask offsets share TestFrame across Test, Live Output, PNG and SVG; Address Walk can play at selectable speed and keyboard shortcuts 0–4 select solid Test colors. Arbitrary moving cursor paths are not implemented. |
-| 5 | Partial | Drawing/mask PNG and SVG, Generic Mapping JSON/CSV, and existing LedMAP-specific output-slice XML/CSV. The latter are not verified native Resolume/Hippo import formats. Millumin and After Effects adapters, native Resolume import, and pixl Grid project import await target-generated fixtures and verified format contracts. |
+| 2 | Partial | Per-Screen palettes including multi-swatch colors, labels, logo, statistics, local reusable LED geometry/drawing presets and offset markers are implemented. Physical LED Type metadata and `.lts` import are absent. |
+| 3 | Partial | Built-in half-height and half-width Cabinet formats create separate uniform Screens. Physical gaps and block selection are implemented in `feat/composition-sparse-integration`; mixed half-size edge Cabinets within one Screen still need a geometry and mapping contract. |
+| 4 | Partial | Drawing/mask PNG and SVG and Address Walk are implemented. `feat/composition-sparse-integration` applies saved mask insets, exposes X/Y controls and preserves physical Cabinet gaps. Arbitrary moving Live Output cursors are absent. |
+| 5 | Partial | Native Resolume Advanced Output import/export is implemented, but loading in Arena is unverified. Generic SVG, LedMAP-specific XML/CSV, and Mapping JSON/CSV exist. Millumin and After Effects adapters and PixlGrid project import await target-generated fixtures. |
 
 ## Stage 1 acceptance
 
@@ -51,4 +53,4 @@ Each stage ends with tests, typecheck and lint. Stage 3 must distinguish a missi
 
 ## Preflight record
 
-The mandatory Git preflight completed on 2026-10-05: `feat/composition-calculation` at `21946babfe404036d28041d59121b2ac2ff6c6dd` is at `origin/master` (`0 0` ahead/behind). Existing uncommitted Composition work is preserved. No commit is authorized.
+The mandatory Git preflight completed on 2026-10-05: `feat/composition-calculation` at `21946babfe404036d28041d59121b2ac2ff6c6dd` is at `origin/master` (`0 0` ahead/behind). Existing uncommitted Composition work was preserved. Integration and commits were authorized on 2026-10-09.

@@ -4,6 +4,7 @@ import {
   loadLedMapProject,
   serializeProjectV5,
   serializeProjectV6,
+  serializeProjectV7,
   projectHasCapacityIntent,
   validateProjectV2Structural,
   DomainError,
@@ -22,7 +23,7 @@ export interface ProjectSession<TProject = LedMapProjectV2> {
   readonly savedStateId: number | null
   readonly documentId: string
   readonly currentFilePath: string | null
-  readonly sourceSchemaVersion: 1 | 2 | 3 | 4 | 5 | 6
+  readonly sourceSchemaVersion: 1 | 2 | 3 | 4 | 5 | 6 | 7
   readonly extensions: JsonObject
 }
 
@@ -136,11 +137,18 @@ export function restoreProjectSessionState(session: ProjectSession, project: Led
 }
 
 export function serializeProjectSession(session: ProjectSession): string {
+  if (projectHasSparseCabinets(session.project)) return serializeProjectV7({ project: session.project, extensions: session.extensions })
   if (projectHasCapacityIntent(session.project)) return serializeProjectV6({ project: session.project, extensions: session.extensions })
   return serializeProjectV5({ project: session.project, extensions: session.extensions })
 }
 
-export function projectSessionSchemaVersion(session: ProjectSession): 5 | 6 {
+function projectHasSparseCabinets(project: LedMapProjectV2): boolean {
+  return project.design.cabinetGrids.some(grid => grid.nextCabinetSerial !== undefined ||
+    project.design.cabinets.filter(cabinet => cabinet.gridId === grid.id).length !== grid.columns * grid.rows)
+}
+
+export function projectSessionSchemaVersion(session: ProjectSession): 5 | 6 | 7 {
+  if (projectHasSparseCabinets(session.project)) return 7
   return projectHasCapacityIntent(session.project) ? 6 : 5
 }
 
@@ -150,7 +158,7 @@ export function markProjectSessionSaved(
   savedRevision: number,
   savedStateId: number,
   currentFilePath: string,
-  sourceSchemaVersion: 5 | 6 = projectSessionSchemaVersion(session),
+  sourceSchemaVersion: 5 | 6 | 7 = projectSessionSchemaVersion(session),
 ): ProjectSession {
   if (session.documentId !== documentId) return session
   if (savedRevision > session.revision) throw new DomainError('PROJECT_REVISION_INVALID', 'Saved revision exceeds current revision')

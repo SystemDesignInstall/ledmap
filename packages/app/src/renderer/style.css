@@ -52,8 +52,11 @@ button[aria-pressed="true"] { border-color: var(--accent); background: var(--acc
 
 .layout-toolbar { min-height: 38px; display: flex; align-items: center; gap: 6px; padding: 4px 10px; border-top: 1px solid #2a2e31; overflow-x: auto; scrollbar-width: none; }
 .layout-toolbar::-webkit-scrollbar { display: none; }
-#layout-toolbar { flex-wrap: wrap; row-gap: 5px; }
+#layout-toolbar { display: flex; flex-direction: column; align-items: stretch; overflow-x: hidden; }
+.layout-toolbar-row { display: flex; align-items: center; gap: 6px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.layout-toolbar-row::-webkit-scrollbar { display: none; }
 #layout-toolbar .tool-group { flex-shrink: 0; }
+.cabinet-toolbar-row { border-top: 1px solid var(--border); padding-top: 4px; }
 .layout-toolbar button { padding-inline: 7px; font-size: 11px; }
 .tool-group { display: flex; align-items: center; gap: 3px; padding-right: 8px; margin-right: 2px; border-right: 1px solid var(--border); }
 .tool-group:last-of-type { border-right: 0; }

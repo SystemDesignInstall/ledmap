@@ -29,34 +29,44 @@
         </div>
       </div>
       <div id="layout-toolbar" class="layout-toolbar" aria-label="Layout tools">
-        <div class="tool-group primary-tools">
-          <button id="add-screen" class="primary" type="button">+ Screen</button>
-          <button id="fit-project" type="button">Fit All</button>
-          <button id="fit-selection" type="button">Fit Selection</button>
-          <button id="actual-size" type="button">100%</button>
-          <button id="zoom-out" type="button" aria-label="Zoom out">−</button>
-          <button id="zoom-in" type="button" aria-label="Zoom in">+</button>
+        <div class="layout-toolbar-row">
+          <div class="tool-group primary-tools">
+            <button id="add-screen" class="primary" type="button">+ Screen</button>
+            <button id="fit-project" type="button">Fit All</button>
+            <button id="fit-selection" type="button">Fit Selection</button>
+            <button id="actual-size" type="button">100%</button>
+            <button id="zoom-out" type="button" aria-label="Zoom out">−</button>
+            <button id="zoom-in" type="button" aria-label="Zoom in">+</button>
+          </div>
+          <div class="tool-group snap-tools" aria-label="Snap controls">
+            <button id="snap-toggle" type="button" aria-pressed="true" title="Toggle snapping">Snap ✓</button>
+            <button id="snap-grid" type="button" aria-pressed="false" title="Snap to grid">Grid</button>
+            <button id="snap-edges" type="button" aria-pressed="true" title="Snap to Screen edges">Edges</button>
+            <button id="snap-centers" type="button" aria-pressed="true" title="Snap to Screen centers">Centers</button>
+            <button id="snap-guides" type="button" aria-pressed="true" title="Snap to guides">Guides</button>
+            <label class="toolbar-field"><input id="grid-step" type="number" min="1" step="1" value="10" aria-label="Grid snap step" /><span>px</span></label>
+            <button id="guide-add-v" type="button" title="Add vertical guide at viewport center">+ V-Guide</button>
+            <button id="guide-add-h" type="button" title="Add horizontal guide at viewport center">+ H-Guide</button>
+            <label class="toolbar-field"><span>Move</span><input id="arrow-step" type="number" min="1" max="8192" step="1" value="1" aria-label="Arrow move step" title="Arrow move step. Hold Shift for ×10." /><span>px</span></label>
+          </div>
+          <div class="tool-group overlay-tools" aria-label="Canvas overlays">
+            <span class="tool-label">Overlays</span>
+            <button type="button" data-overlay="cabinets" aria-pressed="true">Cabinets</button>
+            <button type="button" data-overlay="modules" aria-pressed="false">Modules</button>
+            <button type="button" data-overlay="editorLabels" aria-pressed="false" title="Show editor Screen tags and fallback Cabinet IDs">Editor labels</button>
+            <button type="button" data-overlay="coordinates" aria-pressed="false">Coordinates</button>
+            <button id="clean-view" type="button" aria-pressed="false" title="Hide editor guides and overlays">Clean View</button>
+          </div>
+          <button id="toggle-mode" class="focus-toggle" type="button">Focus Screen</button>
         </div>
-        <div class="tool-group snap-tools" aria-label="Snap controls">
-          <button id="snap-toggle" type="button" aria-pressed="true" title="Toggle snapping">Snap ✓</button>
-          <button id="snap-grid" type="button" aria-pressed="false" title="Snap to grid">Grid</button>
-          <button id="snap-edges" type="button" aria-pressed="true" title="Snap to Screen edges">Edges</button>
-          <button id="snap-centers" type="button" aria-pressed="true" title="Snap to Screen centers">Centers</button>
-          <button id="snap-guides" type="button" aria-pressed="true" title="Snap to guides">Guides</button>
-          <label class="toolbar-field"><input id="grid-step" type="number" min="1" step="1" value="10" aria-label="Grid snap step" /><span>px</span></label>
-          <button id="guide-add-v" type="button" title="Add vertical guide at viewport center">+ V-Guide</button>
-          <button id="guide-add-h" type="button" title="Add horizontal guide at viewport center">+ H-Guide</button>
-          <label class="toolbar-field"><span>Move</span><input id="arrow-step" type="number" min="1" max="8192" step="1" value="1" aria-label="Arrow move step" title="Arrow move step. Hold Shift for ×10." /><span>px</span></label>
+        <div class="layout-toolbar-row cabinet-toolbar-row">
+          <div class="tool-group" aria-label="Cabinet cell editing">
+            <button id="edit-cabinet-cells" type="button" aria-pressed="false" title="Click cells to select or deselect; drag to select a block; click outside the Screen to clear">Edit Cabinets</button>
+            <button id="remove-cabinet-cells" type="button" disabled>Remove selected</button>
+            <button id="restore-cabinet-cells" type="button" disabled>Restore selected</button>
+            <span id="cabinet-cell-count" class="tool-label">0 cells</span>
+          </div>
         </div>
-        <div class="tool-group overlay-tools" aria-label="Canvas overlays">
-          <span class="tool-label">Overlays</span>
-          <button type="button" data-overlay="cabinets" aria-pressed="true">Cabinets</button>
-          <button type="button" data-overlay="modules" aria-pressed="false">Modules</button>
-          <button type="button" data-overlay="editorLabels" aria-pressed="false" title="Show editor Screen tags and fallback Cabinet IDs">Editor labels</button>
-          <button type="button" data-overlay="coordinates" aria-pressed="false">Coordinates</button>
-          <button id="clean-view" type="button" aria-pressed="false" title="Hide editor guides and overlays">Clean View</button>
-        </div>
-        <button id="toggle-mode" class="focus-toggle" type="button">Focus Screen</button>
       </div>
       <div id="mapping-toolbar" class="layout-toolbar mapping-toolbar" aria-label="Mapping tools" hidden>
         <div class="tool-group input-tools">

@@ -2,6 +2,7 @@ import { addressPixel, locatePixel, type PortPixelKey } from '../hardware-engine
 import type { PixelCoordinate } from '../model/coordinates.js'
 import type { InputPixel, MappedPixel, MappingCabinetCell, ResolvedPixelMap } from './types.js'
 import { assertCoordinate, assertReference, fail, safeResult } from './validation.js'
+import { physicalCellAt } from './cell-lookup.js'
 
 function cellForCabinet(mapping: ResolvedPixelMap, cabinet: string): MappingCabinetCell {
   const cell = mapping.cells.find(value => value.cabinet === cabinet)
@@ -36,7 +37,8 @@ export function mapInputPixel(mapping: ResolvedPixelMap, inputPixel: InputPixel)
   }
   const column = Math.floor(gx / mapping.cabinetPixelSize.width)
   const row = Math.floor(gy / mapping.cabinetPixelSize.height)
-  const cell = mapping.cells[row * mapping.grid.columns + column]!
+  const cell = physicalCellAt(mapping.cells, mapping.grid.columns, column, row)
+  if (!cell) fail('UNMAPPED', `InputPixel is inside an empty Cabinet Grid cell ${column},${row}`)
   return mappedPixel(mapping, cell, { x: gx % mapping.cabinetPixelSize.width, y: gy % mapping.cabinetPixelSize.height })
 }
 

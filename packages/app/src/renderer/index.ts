@@ -3,12 +3,12 @@ import {
   screenBounds, screenHeight, screenWidth,
   type Project, type ScreenCabinetConfigPatch, type ScreenView, type SelectedObject,
 } from './v2-view-model.js'
-import type { LedMapProjectV2 } from '@ledmap/core'
+import type { GridPosition, LedMapProjectV2 } from '@ledmap/core'
 import { ProjectDocumentController } from './document.js'
 import { AutosaveCoordinator } from './autosave-coordinator.js'
 import { createProjectSession, recoverProjectSession, sessionDirty, sessionWorkspaceProject, type ProjectSession } from './project-session.js'
 import {
-  addScreenV2, deleteScreensV2, duplicateScreenV2, renameScreenV2, resizeScreenGridV2, setCabinetLabelV2,
+  addScreenV2, deleteScreensV2, duplicateScreenV2, renameScreenV2, resizeScreenGridV2, setCabinetCellsV2, setCabinetLabelV2,
   setScreenPositionV2, setScreenPositionsV2, updateScreenCabinetConfigV2,
 } from './v2-commands.js'
 import { buildSnapshot, initialDraft, type Draft, type Snapshot } from './state.js'
@@ -76,7 +76,7 @@ interface LedmapHook {
   projectToPx(point: Point): Point
   preview(): ResizePreview | null
   resizeHandlesPx(id: string): ReadonlyArray<{ readonly handle: ResizeHandle; readonly x: number; readonly y: number }>
-  document(): { readonly dirty: boolean; readonly currentFilePath: string | null; readonly sourceSchemaVersion: 1 | 2 | 3 | 4 | 5 | 6;
+  document(): { readonly dirty: boolean; readonly currentFilePath: string | null; readonly sourceSchemaVersion: 1 | 2 | 3 | 4 | 5 | 6 | 7;
     readonly revision: number; readonly savedRevision: number }
   projectSnapshot(): string
   selectedScreens(): readonly string[]
@@ -103,6 +103,10 @@ const empty = element<HTMLDivElement>('empty')
 const toggleMode = element<HTMLButtonElement>('toggle-mode')
 const fitProject = element<HTMLButtonElement>('fit-project')
 const addScreenButton = element<HTMLButtonElement>('add-screen')
+const editCabinetCellsButton = element<HTMLButtonElement>('edit-cabinet-cells')
+const removeCabinetCellsButton = element<HTMLButtonElement>('remove-cabinet-cells')
+const restoreCabinetCellsButton = element<HTMLButtonElement>('restore-cabinet-cells')
+const cabinetCellCount = element<HTMLSpanElement>('cabinet-cell-count')
 const newProjectButton = element<HTMLButtonElement>('new-project')
 const openProjectButton = element<HTMLButtonElement>('open-project')
 const undoProjectButton = element<HTMLButtonElement>('undo-project')
@@ -180,6 +184,8 @@ let viewMode: 'all' | 'active' = 'all'
 let selection: SelectedObject | null = null
 let selectedScreenIds: readonly string[] = []
 let activeScreenId: string | null = currentProject().screens[0]?.screen.id ?? null
+let cellEditScreenId: string | null = null
+const selectedCellKeys = new Set<string>()
 let camera: Camera = fitCamera(projectBounds(currentProject()), 1, 1)
 let snapEnabled = true
 let snapSources: SnapSources = { grid: false, edges: true, centers: true, guides: true }
@@ -207,8 +213,16 @@ const presetLibraryReady = window.ledmapDesktop.loadPresetLibrary(legacyPresetRa
   render()
 }).catch(error => showDocumentError(error, 'Unable to load preset library.'))
 let spaceDown = false
-type PointerMode = 'none' | 'drag' | 'pan' | 'resize' | 'marquee' | 'guide'
+type PointerMode = 'none' | 'drag' | 'pan' | 'resize' | 'marquee' | 'guide' | 'cell-select'
 let pointerMode: PointerMode = 'none'
+let cellSelectionGesture: {
+  screenId: string
+  startColumn: number
+  startRow: number
+  column: number
+  row: number
+  baseKeys: readonly string[]
+} | null = null
 let dragState: {
   screenIds: readonly string[]
   startProject: Point
@@ -323,8 +337,14 @@ function restoreHistory(redo: boolean): void {
   const selected = selection
   if (selected?.type === 'screen' && !knownScreens.has(selected.id)) selection = null
   if (selected?.type === 'cabinetGrid' && !project.screens.some(screen => screen.grid.id === selected.id)) selection = null
-  if (selected?.type === 'cabinet' && !project.screens.some(screen =>
-    screen.screen.id === selected.screenId && screen.cabinets.some(cabinet => cabinet.id === selected.id))) selection = null
+  if (selected?.type === 'cabinet' || selected?.type === 'cabinetCell') {
+    const screen = project.screens.find(value => value.screen.id === selected.screenId)
+    if (!screen) selection = null
+    else if (selected.column !== undefined && selected.row !== undefined &&
+      selected.column < screen.grid.columns && selected.row < screen.grid.rows) {
+      selectCabinetCell(screen, selected.column, selected.row)
+    } else if (selected.type === 'cabinet' && !screen.cabinets.some(cabinet => cabinet.id === selected.id)) selection = null
+  }
   render()
 }
 
@@ -350,6 +370,8 @@ function replaceDocument(next: ProjectSession): void {
   selectedGuideId = null
   selection = null
   selectedScreenIds = []
+  cellEditScreenId = null
+  selectedCellKeys.clear()
   activeScreenId = currentProject().screens[0]?.screen.id ?? null
   viewMode = 'all'
   endPointerGesture()
@@ -479,6 +501,7 @@ function draw(): void {
     mode: viewMode,
     selection,
     selectedScreenIds,
+    cellEdit: cellEditScreenId ? { screenId: cellEditScreenId, selectedKeys: selectedCellKeys } : null,
     activeScreenId,
     resizePreview,
     alignmentGuides,
@@ -541,12 +564,13 @@ function chipText(): string {
   if (selectedScreenIds.length > 1) return `${selectedScreenIds.length} Screens selected`
   const current = selection
   if (!current) return 'No selection'
-  const screen = current.type === 'cabinet' ? findScreen(currentProject(), current.screenId) : (
+  const screen = current.type === 'cabinet' || current.type === 'cabinetCell' ? findScreen(currentProject(), current.screenId) : (
     current.type === 'screen' ? findScreen(currentProject(), current.id) : findScreenByGrid(current.id)
   )
   const suffix = screen ? ` · ${screen.screen.name}` : ''
   if (current.type === 'screen') return '1 Screen selected'
   if (current.type === 'cabinetGrid') return `Cabinet Grid${suffix}`
+  if (current.type === 'cabinetCell') return `Cell ${current.column + 1},${current.row + 1}${suffix}`
   return `${current.id}${suffix}`
 }
 
@@ -570,6 +594,15 @@ function renderStatus(): void {
   chip.textContent = chipText()
   compositionStatus.textContent = compositionStatusText()
   selectedCount.textContent = `${selectedScreenIds.length} selected`
+  const editScreen = cellEditScreenId ? findScreen(currentProject(), cellEditScreenId) : undefined
+  editCabinetCellsButton.disabled = currentProject().screens.length === 0
+  editCabinetCellsButton.setAttribute('aria-pressed', String(cellEditScreenId !== null))
+  cabinetCellCount.textContent = editScreen
+    ? `${editScreen.cabinets.length}/${editScreen.grid.columns * editScreen.grid.rows} Cabinets · ${selectedCellKeys.size} selected`
+    : '0 cells'
+  const occupied = new Set(editScreen?.cabinets.map(cabinet => `${cabinet.column},${cabinet.row}`) ?? [])
+  removeCabinetCellsButton.disabled = !editScreen || ![...selectedCellKeys].some(key => occupied.has(key))
+  restoreCabinetCellsButton.disabled = !editScreen || ![...selectedCellKeys].some(key => !occupied.has(key))
   toggleMode.textContent = viewMode === 'all' ? 'Focus Screen' : 'Show All'
   toggleMode.setAttribute('aria-pressed', String(viewMode === 'active'))
   snapToggle.textContent = snapEnabled ? 'Snap ✓' : 'Snap off'
@@ -689,6 +722,28 @@ function selectScreen(screenId: string, additive = false): void {
     if (screen) fitTo(screenBounds(screen))
   }
   render()
+}
+
+function selectCabinetCell(screen: ScreenView, column: number, row: number): void {
+  const cabinet = screen.cabinets.find(value => value.column === column && value.row === row)
+  selection = cabinet
+    ? { type: 'cabinet', id: cabinet.id, screenId: screen.screen.id, column, row }
+    : { type: 'cabinetCell', id: `${column},${row}`, screenId: screen.screen.id, column, row }
+  selectedScreenIds = [screen.screen.id]
+  activeScreenId = screen.screen.id
+  selectedGuideId = null
+}
+
+function syncSelectedCabinetCells(screen: ScreenView): void {
+  if (selectedCellKeys.size === 1) {
+    const [column, row] = [...selectedCellKeys][0]!.split(',').map(Number)
+    selectCabinetCell(screen, column!, row!)
+    return
+  }
+  selectedScreenIds = [screen.screen.id]
+  selection = { type: 'screen', id: screen.screen.id }
+  activeScreenId = screen.screen.id
+  selectedGuideId = null
 }
 
 function renderProperties(): void {
@@ -1270,6 +1325,18 @@ function appendScreenDrawingGroup(container: HTMLDivElement, screen: ScreenView)
   )
   appendPatternControls(drawing, screenId, style)
   const drawingSection = group('Screen drawing', drawing)
+  const maskBox = document.createElement('div')
+  maskBox.append(
+    propertyRow('Inset X', drawingNumber('screen-mask-inset-x', style.maskOffsetX ?? 0, -8192, 8192, value =>
+      updateScreenDrawing(screenId, { maskOffsetX: value }))),
+    propertyRow('Inset Y', drawingNumber('screen-mask-inset-y', style.maskOffsetY ?? 0, -8192, 8192, value =>
+      updateScreenDrawing(screenId, { maskOffsetY: value }))),
+  )
+  const maskHint = document.createElement('p')
+  maskHint.className = 'hint'
+  maskHint.textContent = 'Positive values shrink the white mask from both sides; negative values extend it within the Canvas frame. Screen and Cabinet geometry stay unchanged.'
+  maskBox.append(maskHint)
+  const maskSection = group('Canvas mask', maskBox)
   const logoFile = document.createElement('input')
   logoFile.id = 'screen-drawing-logo-file'
   logoFile.type = 'file'
@@ -1415,7 +1482,7 @@ function appendScreenDrawingGroup(container: HTMLDivElement, screen: ScreenView)
   }
   infoBox.append(infoHint)
   const infoSection = collapsibleGroup('Information block', `${screenId}:information`, infoBox)
-  container.append(drawingSection, textSection, guideSection, infoSection, logoSection, presetPanel('drawing', screen))
+  container.append(drawingSection, maskSection, textSection, guideSection, infoSection, logoSection, presetPanel('drawing', screen))
 }
 
 function renderScreenProperties(screen: ScreenView): void {
@@ -1459,6 +1526,7 @@ function renderScreenProperties(screen: ScreenView): void {
 
   const gridBox = document.createElement('div')
   gridBox.append(
+    propertyRow('Physical Cabinets', valueNode(`${screen.cabinets.length} of ${screen.grid.columns * screen.grid.rows}`)),
     propertyRow('Columns', numberField(
       screen.grid.columns,
       'Screen Columns',
@@ -1659,15 +1727,47 @@ function renderGridProperties(screen: ScreenView): void {
   properties.append(container)
 }
 
+function setInspectedCabinetVisible(screenId: string, column: number, row: number, present: boolean): void {
+  try {
+    applyV2(project => setCabinetCellsV2(project, screenId, [{ column, row }], present))
+    const screen = findScreen(currentProject(), screenId)
+    if (screen) selectCabinetCell(screen, column, row)
+    clearDocumentError()
+  } catch (error) {
+    showDocumentError(error, present ? 'Unable to show Cabinet.' : 'Unable to hide Cabinet.')
+  }
+  render()
+}
+
 function renderCabinetProperties(screen: ScreenView): void {
   const current = selection
-  if (current?.type !== 'cabinet') return
-  const cabinet = screen.cabinets.find(c => c.id === current.id)
-  if (!cabinet) return
+  if (current?.type !== 'cabinet' && current?.type !== 'cabinetCell') return
+  const cabinet = current.type === 'cabinet'
+    ? screen.cabinets.find(value => value.id === current.id)
+    : screen.cabinets.find(value => value.column === current.column && value.row === current.row)
+  const column = cabinet?.column ?? current.column
+  const row = cabinet?.row ?? current.row
+  if (column === undefined || row === undefined) return
   element<HTMLHeadingElement>('properties-title').textContent = 'Cabinet'
   const container = document.createElement('div')
   container.className = 'properties-body'
   const box = document.createElement('div')
+  box.append(propertyRow('Show Cabinet', toggleField(Boolean(cabinet), 'Show Cabinet', value =>
+    setInspectedCabinetVisible(screen.screen.id, column, row, value))))
+  const visibilityHint = document.createElement('p')
+  visibilityHint.className = 'hint'
+  visibilityHint.textContent = 'Hiding removes the physical Cabinet and its Modules. Restoring creates a new physical ID.'
+  box.append(visibilityHint)
+  if (!cabinet) {
+    box.append(
+      propertyRow('Status', valueNode('Empty cell')),
+      propertyRow('Position', valueNode(`Column ${column + 1} · Row ${row + 1}`)),
+      propertyRow('Screen', valueNode(screen.screen.name)),
+    )
+    container.append(group('Cabinet', box))
+    properties.append(container)
+    return
+  }
   const mode = screenChartStyle(chartSettings(), screen.screen.id).cabinetLabelMode ?? 'row-coordinate'
   const label = cabinetDisplayLabel(mode, screen.grid.columns, screen.grid.rows, cabinet)
   const manual = cabinet.label.trim().length > 0 && cabinet.label !== physicalCabinetLabel(cabinet.sourceId)
@@ -1695,7 +1795,7 @@ function renderCabinetProperties(screen: ScreenView): void {
     propertyRow('Resolution', valueNode(`${format.format(screen.grid.cabinetWidth)} × ${format.format(screen.grid.cabinetHeight)} px`)),
     propertyRow('Modules', valueNode(format.format(screen.modulesPerCabinet))),
     propertyRow('Pixels', valueNode(format.format(screen.grid.cabinetWidth * screen.grid.cabinetHeight))),
-    propertyRow('Position', valueNode(`Column ${cabinet.column + 1} · Row ${cabinet.row + 1}`)),
+    propertyRow('Position', valueNode(`Column ${column + 1} · Row ${row + 1}`)),
     propertyRow('Screen', valueNode(screen.screen.name)),
   )
   container.append(group('Cabinet', box))
@@ -1735,6 +1835,7 @@ function endPointerGesture(): void {
     finishHistoryGroup(groupId)
   }
   pointerMode = 'none'
+  cellSelectionGesture = null
   dragState = null
   panState = null
   marqueeGesture = null
@@ -1764,6 +1865,33 @@ canvas.addEventListener('pointerdown', event => {
   const px = viewportPoint(event)
   const projectPoint = toProject(camera, px)
   const additive = event.shiftKey || event.ctrlKey || event.metaKey
+  if (cellEditScreenId !== null) {
+    const hit = hitTest(visibleProject(), projectPoint)
+    if (!hit) {
+      selectedCellKeys.clear()
+      selection = null
+      selectedScreenIds = []
+      selectedGuideId = null
+      render()
+      return
+    }
+    const screen = hit.screen
+    const column = Math.floor((projectPoint.x - screen.x) / screen.grid.cabinetWidth)
+    const row = Math.floor((projectPoint.y - screen.y) / screen.grid.cabinetHeight)
+    const key = `${column},${row}`
+    if (cellEditScreenId !== screen.screen.id) selectedCellKeys.clear()
+    cellEditScreenId = screen.screen.id
+    const baseKeys = [...selectedCellKeys]
+    if (selectedCellKeys.has(key)) selectedCellKeys.delete(key)
+    else selectedCellKeys.add(key)
+    syncSelectedCabinetCells(screen)
+    pointerMode = 'cell-select'
+    cellSelectionGesture = { screenId: screen.screen.id, startColumn: column, startRow: row,
+      column, row, baseKeys }
+    canvas.setPointerCapture(event.pointerId)
+    render()
+    return
+  }
   const resizeTarget = resizeTargetAt(px)
   if (resizeTarget) {
     const { screen, handle } = resizeTarget
@@ -1848,12 +1976,13 @@ canvas.addEventListener('pointerdown', event => {
 })
 
 canvas.addEventListener('dblclick', event => {
-  if (event.button !== 0 || cleanView) return
+  if (event.button !== 0 || cleanView || cellEditScreenId !== null) return
   const hit = hitTest(visibleProject(), toProject(camera, viewportPoint(event)))
-  if (!hit?.cabinet) return
-  selection = { type: 'cabinet', id: hit.cabinet.id, screenId: hit.screen.screen.id }
-  selectedScreenIds = [hit.screen.screen.id]
-  activeScreenId = hit.screen.screen.id
+  if (!hit) return
+  const point = toProject(camera, viewportPoint(event))
+  const column = Math.floor((point.x - hit.screen.x) / hit.screen.grid.cabinetWidth)
+  const row = Math.floor((point.y - hit.screen.y) / hit.screen.grid.cabinetHeight)
+  selectCabinetCell(hit.screen, column, row)
   render()
 })
 
@@ -1862,7 +1991,8 @@ canvas.addEventListener('pointermove', event => {
   const cursor = toProject(camera, position)
   const target = pointerMode === 'none' ? resizeTargetAt(position) : null
   const hoveredGuide = pointerMode === 'none' && !target ? guideTargetAt(position) : null
-  const hovered = !cleanView && pointerMode === 'none' ? hitTest(visibleProject(), cursor) : null
+  const hovered = !cleanView && (pointerMode === 'none' || pointerMode === 'cell-select')
+    ? hitTest(visibleProject(), cursor) : null
   const informationBadge = compactInformationBadges(compositionDrawing(), camera).find(badge =>
     position.x >= badge.bounds.x && position.x <= badge.bounds.x + badge.bounds.width &&
     position.y >= badge.bounds.y && position.y <= badge.bounds.y + badge.bounds.height)
@@ -1882,6 +2012,35 @@ canvas.addEventListener('pointermove', event => {
     camera = { ...camera, offsetX: camera.offsetX + event.offsetX - panState.lastX, offsetY: camera.offsetY + event.offsetY - panState.lastY }
     panState = { lastX: event.offsetX, lastY: event.offsetY }
     draw()
+    return
+  }
+  if (cellEditScreenId !== null) {
+    canvas.style.cursor = 'crosshair'
+    if (pointerMode === 'cell-select' && cellSelectionGesture) {
+      const gesture = cellSelectionGesture
+      const screen = findScreen(currentProject(), gesture.screenId)
+      if (!screen) return
+      const column = clamp(Math.floor((cursor.x - screen.x) / screen.grid.cabinetWidth), 0, screen.grid.columns - 1)
+      const row = clamp(Math.floor((cursor.y - screen.y) / screen.grid.cabinetHeight), 0, screen.grid.rows - 1)
+      if (column !== gesture.column || row !== gesture.row) {
+        cellSelectionGesture = { ...gesture, column, row }
+        selectedCellKeys.clear()
+        for (const key of gesture.baseKeys) selectedCellKeys.add(key)
+        for (let selectedRow = Math.min(gesture.startRow, row); selectedRow <= Math.max(gesture.startRow, row); selectedRow += 1) {
+          for (let selectedColumn = Math.min(gesture.startColumn, column); selectedColumn <= Math.max(gesture.startColumn, column); selectedColumn += 1) {
+            selectedCellKeys.add(`${selectedColumn},${selectedRow}`)
+          }
+        }
+        syncSelectedCabinetCells(screen)
+        render()
+      }
+      return
+    }
+    if (hovered) {
+      const column = Math.floor((cursor.x - hovered.screen.x) / hovered.screen.grid.cabinetWidth)
+      const row = Math.floor((cursor.y - hovered.screen.y) / hovered.screen.grid.cabinetHeight)
+      canvas.title = `${hovered.screen.screen.name} · ${column + 1},${row + 1} · ${hovered.cabinet ? 'Cabinet' : 'Empty cell'}`
+    }
     return
   }
   if (pointerMode === 'resize' && resizeGesture) {
@@ -1981,6 +2140,11 @@ canvas.addEventListener('pointerleave', () => {
 })
 
 canvas.addEventListener('pointerup', () => {
+  if (pointerMode === 'cell-select') {
+    endPointerGesture()
+    render()
+    return
+  }
   if (pointerMode === 'resize') {
     const gesture = resizeGesture
     const screen = gesture ? findScreen(currentProject(), gesture.screenId) : undefined
@@ -2012,6 +2176,12 @@ canvas.addEventListener('pointerup', () => {
 
 canvas.addEventListener('pointercancel', () => {
   if (guideGesture) projectGuides = moveGuide(projectGuides, guideGesture.id, guideGesture.previous)
+  if (cellSelectionGesture) {
+    const screen = findScreen(currentProject(), cellSelectionGesture.screenId)
+    selectedCellKeys.clear()
+    for (const key of cellSelectionGesture.baseKeys) selectedCellKeys.add(key)
+    if (screen) syncSelectedCabinetCells(screen)
+  }
   endPointerGesture()
   render()
 })
@@ -2267,6 +2437,43 @@ async function openScreenDialog(): Promise<void> {
 }
 
 addScreenButton.addEventListener('click', () => { void openScreenDialog() })
+editCabinetCellsButton.addEventListener('click', () => {
+  if (cellEditScreenId !== null) {
+    cellEditScreenId = null
+    selectedCellKeys.clear()
+  } else {
+    const screenId = selectedScreenIds.length === 1 ? selectedScreenIds[0] : activeScreenId ?? currentProject().screens[0]?.screen.id
+    if (!screenId) return
+    cellEditScreenId = screenId
+    selectedCellKeys.clear()
+    cleanView = false
+    overlays = { ...overlays, cabinets: true }
+  }
+  render()
+})
+function selectedCellPositions(): GridPosition[] {
+  return [...selectedCellKeys].map(key => {
+    const [column, row] = key.split(',').map(Number)
+    return { column: column!, row: row! }
+  })
+}
+function applySelectedCabinetCells(present: boolean): void {
+  if (!cellEditScreenId || selectedCellKeys.size === 0) return
+  try {
+    applyV2(project => setCabinetCellsV2(project, cellEditScreenId!, selectedCellPositions(), present))
+    const screen = findScreen(currentProject(), cellEditScreenId)
+    if (screen && selectedCellKeys.size === 1) {
+      const [column, row] = [...selectedCellKeys][0]!.split(',').map(Number)
+      selectCabinetCell(screen, column!, row!)
+    }
+    clearDocumentError()
+    render()
+  } catch (error) {
+    showDocumentError(error, present ? 'Unable to restore selected Cabinets.' : 'Unable to remove selected Cabinets.')
+  }
+}
+removeCabinetCellsButton.addEventListener('click', () => applySelectedCabinetCells(false))
+restoreCabinetCellsButton.addEventListener('click', () => applySelectedCabinetCells(true))
 emptyAddScreenButton.addEventListener('click', () => { void openScreenDialog() })
 element<HTMLButtonElement>('screen-cancel').addEventListener('click', () => screenDialog.close())
 element<HTMLSelectElement>('new-screen-led-preset').addEventListener('change', applyCreationCabinetPreset)
@@ -2459,6 +2666,10 @@ function deleteSelection(): void {
     return
   }
   selectedScreenIds = []
+  if (cellEditScreenId !== null && !findScreen(currentProject(), cellEditScreenId)) {
+    cellEditScreenId = null
+    selectedCellKeys.clear()
+  }
   selection = null
   activeScreenId = currentProject().screens[0]?.screen.id ?? null
   viewMode = 'all'
@@ -2574,6 +2785,8 @@ exportWorkspace = createExportWorkspace({
 function setAppMode(mode: AppMode): void {
   if (appMode === mode) return
   appMode = mode
+  cellEditScreenId = null
+  selectedCellKeys.clear()
   const layoutActive = mode === 'layout'
   const mappingActive = mode === 'mapping'
   const outputMappingActive = mode === 'output-mapping'
@@ -2653,7 +2866,7 @@ window.addEventListener('keydown', event => {
     ArrowDown: [0, 1],
   }
   const direction = arrows[event.key]
-  if (direction && selectedScreenIds.length > 0) {
+  if (direction && cellEditScreenId === null && selectedScreenIds.length > 0) {
     if (arrowHistoryKey !== event.key) finishArrowHistoryGroup()
     if (arrowHistoryGroupId === null) {
       arrowHistoryKey = event.key
@@ -2671,6 +2884,8 @@ window.addEventListener('keydown', event => {
     event.preventDefault()
   }
   if (event.key === 'Escape') {
+    cellEditScreenId = null
+    selectedCellKeys.clear()
     if (guideGesture) projectGuides = moveGuide(projectGuides, guideGesture.id, guideGesture.previous)
     endPointerGesture()
     selection = null
@@ -2679,6 +2894,11 @@ window.addEventListener('keydown', event => {
     render()
   }
   if (event.key === 'Delete' || event.key === 'Backspace') {
+    if (cellEditScreenId !== null) {
+      applySelectedCabinetCells(false)
+      event.preventDefault()
+      return
+    }
     if (selectedGuideId !== null) {
       deleteSelectedGuide()
       event.preventDefault()

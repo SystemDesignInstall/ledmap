@@ -45,10 +45,26 @@ export function renderFrameSvg(frame: TestFrame, bounds: TestBounds): string {
   if (![bounds.x, bounds.y, bounds.width, bounds.height].every(Number.isSafeInteger) || bounds.width < 1 || bounds.height < 1) {
     throw new Error('SVG bounds must use positive whole-number dimensions.')
   }
-  const gradients = frame.primitives.flatMap((primitive, index) => primitive.kind === 'gradient'
-    ? [`<linearGradient id="gradient-${index}" x1="0%" y1="0%" x2="${primitive.direction === 'horizontal' ? 100 : 0}%" y2="${primitive.direction === 'vertical' ? 100 : 0}%"><stop offset="0%" stop-color="${escapeXml(primitive.from)}"/><stop offset="100%" stop-color="${escapeXml(primitive.to)}"/></linearGradient>`]
-    : [])
-  const definitions = `<defs><clipPath id="frame-clip">${rect(bounds, 'fill="white"')}</clipPath><filter id="text-shadow" x="-50%" y="-50%" width="200%" height="200%"><feDropShadow dx="1" dy="1" stdDeviation="2" flood-color="#000000" flood-opacity="0.8"/></filter>${gradients.join('')}</defs>`
+  const gradients = frame.primitives.flatMap((primitive, index) => {
+    if (primitive.kind !== 'gradient') return []
+    const bounds = primitive.gradientBounds
+    const geometry = bounds
+      ? ` gradientUnits="userSpaceOnUse" x1="${bounds.x}" y1="${bounds.y}" x2="${primitive.direction === 'horizontal' ? bounds.x + bounds.width : bounds.x}" y2="${primitive.direction === 'vertical' ? bounds.y + bounds.height : bounds.y}"`
+      : ` x1="0%" y1="0%" x2="${primitive.direction === 'horizontal' ? 100 : 0}%" y2="${primitive.direction === 'vertical' ? 100 : 0}%"`
+    return [`<linearGradient id="gradient-${index}"${geometry}><stop offset="0%" stop-color="${escapeXml(primitive.from)}"/><stop offset="100%" stop-color="${escapeXml(primitive.to)}"/></linearGradient>`]
+  })
+  const clipIds = new Map<readonly TestBounds[], string>()
+  const clips = frame.primitives.flatMap((primitive, index) => {
+    if (!primitive.clip || clipIds.has(primitive.clip)) return []
+    const id = `primitive-clip-${index}`
+    clipIds.set(primitive.clip, id)
+    return [`<clipPath id="${id}">${primitive.clip.map(bounds => rect(bounds, 'fill="white"')).join('')}</clipPath>`]
+  })
+  const definitions = `<defs><clipPath id="frame-clip">${rect(bounds, 'fill="white"')}</clipPath><filter id="text-shadow" x="-50%" y="-50%" width="200%" height="200%"><feDropShadow dx="1" dy="1" stdDeviation="2" flood-color="#000000" flood-opacity="0.8"/></filter>${gradients.join('')}${clips.join('')}</defs>`
   const background = frame.background === 'transparent' ? '' : rect(bounds, `fill="${escapeXml(frame.background)}"`)
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${bounds.width}" height="${bounds.height}" viewBox="${bounds.x} ${bounds.y} ${bounds.width} ${bounds.height}">${definitions}<g clip-path="url(#frame-clip)">${background}${frame.primitives.map(primitiveSvg).join('')}</g></svg>\n`
+  const shapes = frame.primitives.map((primitive, index) => {
+    const body = primitiveSvg(primitive, index)
+    return primitive.clip ? `<g clip-path="url(#${clipIds.get(primitive.clip)})">${body}</g>` : body
+  }).join('')
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${bounds.width}" height="${bounds.height}" viewBox="${bounds.x} ${bounds.y} ${bounds.width} ${bounds.height}">${definitions}<g clip-path="url(#frame-clip)">${background}${shapes}</g></svg>\n`
 }

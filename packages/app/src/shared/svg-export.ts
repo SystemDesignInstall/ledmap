@@ -33,7 +33,7 @@ function primitiveSvg(primitive: TestPrimitive, index: number): string {
   }
   if (primitive.kind === 'text') {
     const anchor = primitive.align === 'center' ? 'middle' : primitive.align === 'right' ? 'end' : 'start'
-    return `<text x="${primitive.point.x}" y="${primitive.point.y}" fill="${escapeXml(primitive.color)}" font-family="Segoe UI, sans-serif" font-size="${primitive.size}" text-anchor="${anchor}" dominant-baseline="middle"${primitive.shadow ? ' filter="url(#text-shadow)"' : ''}>${escapeXml(primitive.text)}</text>`
+    return `<text x="${primitive.point.x}" y="${primitive.point.y}" fill="${escapeXml(primitive.color)}" font-family="Segoe UI, sans-serif" font-size="${primitive.size}" font-weight="600" text-anchor="${anchor}" dominant-baseline="middle"${primitive.shadow ? ' filter="url(#text-shadow)"' : ''}>${escapeXml(primitive.text)}</text>`
   }
   if (primitive.kind === 'image') {
     return `<image x="${primitive.bounds.x}" y="${primitive.bounds.y}" width="${primitive.bounds.width}" height="${primitive.bounds.height}"${primitive.opacity === undefined ? '' : ` opacity="${primitive.opacity}"`} href="${escapeXml(primitive.dataUrl)}"/>`

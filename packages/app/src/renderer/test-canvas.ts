@@ -258,7 +258,7 @@ function drawPrimitive(ctx: CanvasRenderingContext2D, camera: Camera, primitive:
         primitive.color, primitive.shadow)
       return
     }
-    if (pixelPerfect) {
+    if (pixelPerfect && !primitive.shadow) {
       drawHardPrimitive(ctx, camera, primitive)
       return
     }

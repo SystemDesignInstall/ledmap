@@ -18,7 +18,7 @@ import { projectV2WorkspaceReadModel } from '../src/renderer/v2-read-model.js'
 import {
   addMappingRegionV2, addScreenV2, deleteMappingRegionV2, deleteScreensV2, duplicateScreenV2,
   mapFromLayoutPositionV2, renameScreenV2, resizeScreenGridV2, setInputCanvasResolutionV2,
-  setScreenPositionV2, setScreenPositionsV2, updateMappingRegionV2, updateScreenCabinetConfigV2,
+  setCabinetCellsV2, setScreenPositionV2, setScreenPositionsV2, updateMappingRegionV2, updateScreenCabinetConfigV2,
 } from '../src/renderer/v2-commands.js'
 import { createTestProject, ref001Draft } from './project-fixtures.js'
 
@@ -53,6 +53,47 @@ function assignedTwoCabinets(): LedMapProjectV2 {
 }
 
 describe('direct V2 Layout and Mapping commands', () => {
+  it('removes several cells, keeps physical identities, and restores with new IDs after Save/Open', () => {
+    const initial = addScreenV2(createProjectSession('sparse').project)
+    const removedIds = [initial.design.cabinets[1]!.id, initial.design.cabinets[5]!.id]
+    const holes = [{ column: 1, row: 0 }, { column: 1, row: 1 }]
+    const changed = setCabinetCellsV2(initial, 'screen-1', holes, false)
+    expect(changed.design.cabinets).toHaveLength(10)
+    expect(changed.design.modules).toHaveLength(10)
+    expect(changed.design.cabinets.some(value => value.id === removedIds[0])).toBe(false)
+    expect(changed.design.cabinetGrids[0]!.nextCabinetSerial).toBe(13)
+    expect(projectV2WorkspaceReadModel(changed).screens[0]!.path).toHaveLength(10)
+    expect(projectV2WorkspaceReadModel(changed).screens[0]!.cabinets.map(value => value.index).sort((a, b) => a - b))
+      .toEqual(Array.from({ length: 10 }, (_, index) => index))
+    const reopened = loadProjectSession(serializeProjectSession({ ...createProjectSession('sparse'), project: createProjectV2(changed) }),
+      'sparse.ledmap', 'reopened')
+    expect(reopened.sourceSchemaVersion).toBe(7)
+    expect(reopened.project).toEqual(createProjectV2(changed))
+    const restored = setCabinetCellsV2(reopened.project, 'screen-1', [...holes, holes[0]!], true)
+    expect(restored.design.cabinets).toHaveLength(12)
+    expect(restored.design.cabinets.filter(value => value.id.endsWith('/C13') || value.id.endsWith('/C14'))).toHaveLength(2)
+    expect(restored.design.cabinets.some(value => removedIds.includes(value.id))).toBe(false)
+    expect(restored.design.cabinetGrids[0]!.nextCabinetSerial).toBe(15)
+    expect(() => createProjectV2(restored)).not.toThrow()
+    expect(setCabinetCellsV2(restored, 'screen-1', holes, true)).toBe(restored)
+  })
+
+  it('keeps holes during resize and duplication and rejects dependent or invalid batches atomically', () => {
+    const initial = addScreenV2(createProjectSession('sparse').project)
+    const sparse = setCabinetCellsV2(initial, 'screen-1', [{ column: 1, row: 0 }], false)
+    const grown = resizeScreenGridV2(sparse, 'screen-1', 5, 3)
+    expect(grown.design.cabinets.some(value => value.gridId === sparse.design.cabinetGrids[0]!.id && value.column === 1 && value.row === 0)).toBe(false)
+    const duplicate = duplicateScreenV2(sparse, 'screen-1')
+    const copyGrid = duplicate.design.cabinetGrids[1]!
+    expect(duplicate.design.cabinets.filter(value => value.gridId === copyGrid.id)).toHaveLength(11)
+    expect(duplicate.design.cabinets.some(value => value.gridId === copyGrid.id && value.column === 1 && value.row === 0)).toBe(false)
+    expect(() => setCabinetCellsV2(initial, 'screen-1', [{ column: 1, row: 0 }, { column: 99, row: 0 }], false))
+      .toThrow(/PROJECT_CABINET_OUT_OF_RANGE/)
+    expect(initial.design.cabinets).toHaveLength(12)
+    expect(() => setCabinetCellsV2(assignedTwoCabinets(), 'screen-1', [{ column: 0, row: 0 }], false))
+      .toThrow(/PROJECT_CABINET_IN_USE/)
+  })
+
   it('creates a new Screen with one module per Cabinet by default', () => {
     const project = addScreenV2(createProjectSession('default').project)
     const screen = projectV2WorkspaceReadModel(project).screens[0]!

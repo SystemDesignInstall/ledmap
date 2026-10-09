@@ -36,6 +36,14 @@ function columnLetter(index: number): string {
   return result
 }
 
+function intersectBounds(a: TestBounds, b: TestBounds): TestBounds | null {
+  const x = Math.max(a.x, b.x)
+  const y = Math.max(a.y, b.y)
+  const right = Math.min(a.x + a.width, b.x + b.width)
+  const bottom = Math.min(a.y + a.height, b.y + b.height)
+  return right > x && bottom > y ? { x, y, width: right - x, height: bottom - y } : null
+}
+
 export function buildCompositionChartFrame(
   scene: TestScene,
   scope: TestScope,
@@ -49,16 +57,20 @@ export function buildCompositionChartFrame(
   const screenTitles: TestPrimitive[] = []
   for (const screen of screens) {
     const style = screenChartStyle(settings, screen.id)
+    const screenCabinets = cabinets.filter(cabinet => cabinet.screen === screen.id)
+    const sparse = screen.sparse === true
+    const paintBounds = sparse ? screenCabinets.map(cabinet => cabinet.bounds) : [screen.bounds]
     if (mask) {
-      primitives.push({ kind: 'rect', bounds: screen.bounds, fill: '#ffffff' })
+      for (const bounds of paintBounds) primitives.push({ kind: 'rect', bounds, fill: '#ffffff' })
       continue
     }
     if (style.palette === 'screen-color' && style.fill !== 'transparent') {
-      primitives.push({ kind: 'rect', bounds: screen.bounds, fill: style.fill })
+      for (const bounds of paintBounds) primitives.push({ kind: 'rect', bounds, fill: style.fill })
     } else if (style.palette === 'white-grid') {
-      primitives.push({ kind: 'rect', bounds: screen.bounds, fill: '#ffffff' })
+      for (const bounds of paintBounds) primitives.push({ kind: 'rect', bounds, fill: '#ffffff' })
     } else if (style.palette === 'gray-gradient') {
-      primitives.push({ kind: 'gradient', bounds: screen.bounds, direction: style.patternDirection ?? 'horizontal',
+      for (const bounds of paintBounds) primitives.push({ kind: 'gradient', bounds,
+        ...(sparse ? { gradientBounds: screen.bounds } : {}), direction: style.patternDirection ?? 'horizontal',
         from: style.gradientFrom ?? '#000000', to: style.gradientTo ?? '#ffffff' })
     } else if (style.palette === 'rgb-bars') {
       const colors = style.bandColors ?? ['#ff0000', '#00ff00', '#0000ff']
@@ -67,15 +79,19 @@ export function buildCompositionChartFrame(
       for (let index = 0; index < colors.length; index += 1) {
         const start = Math.floor(size * index / colors.length)
         const end = Math.floor(size * (index + 1) / colors.length)
-        primitives.push({ kind: 'rect', bounds: horizontal
+        const band = horizontal
           ? { x: screen.bounds.x + start, y: screen.bounds.y, width: end - start, height: screen.bounds.height }
-          : { x: screen.bounds.x, y: screen.bounds.y + start, width: screen.bounds.width, height: end - start }, fill: colors[index]!, pixelAligned: true })
+          : { x: screen.bounds.x, y: screen.bounds.y + start, width: screen.bounds.width, height: end - start }
+        for (const bounds of paintBounds) {
+          const clipped = intersectBounds(bounds, band)
+          if (clipped) primitives.push({ kind: 'rect', bounds: clipped, fill: colors[index]!, pixelAligned: true })
+        }
       }
     } else if (style.palette === 'checkerboard') {
-      primitives.push({ kind: 'rect', bounds: screen.bounds, fill: '#161b23' })
+      for (const bounds of paintBounds) primitives.push({ kind: 'rect', bounds, fill: '#161b23' })
     }
     const cabinetLabels: TestPrimitive[] = []
-    for (const cabinet of cabinets.filter(value => value.screen === screen.id)) {
+    for (const cabinet of screenCabinets) {
       if (style.palette === 'checkerboard') {
         const column = Math.round((cabinet.bounds.x - screen.bounds.x) / cabinet.bounds.width)
         const row = Math.round((cabinet.bounds.y - screen.bounds.y) / cabinet.bounds.height)
@@ -102,8 +118,10 @@ export function buildCompositionChartFrame(
           role: 'cabinet-label', cellBounds: cabinet.bounds })
       }
     }
-    if (style.guides) primitives.push(...buildChartGuides(screen.bounds, style.guides))
+    if (style.guides) primitives.push(...buildChartGuides(screen.bounds, style.guides)
+      .map(primitive => sparse ? { ...primitive, clip: paintBounds } : primitive))
     primitives.push(...cabinetLabels)
+    const decorationStart = primitives.length
     if (screenNameVisible(style)) {
       const labeledCabinets = style.labels !== 'none' && style.labels !== 'screen'
       const heights = cabinets.filter(value => value.screen === screen.id).map(value => value.bounds.height)
@@ -115,7 +133,8 @@ export function buildCompositionChartFrame(
           ? { x: screen.bounds.x + 12, y: screen.bounds.y + inset }
           : { x: screen.bounds.x + screen.bounds.width / 2, y: screen.bounds.y + screen.bounds.height / 2 },
         text: `${screen.name} · ${screen.bounds.width}×${screen.bounds.height}`, color: style.textColor ?? (style.palette === 'white-grid' ? '#202b39' : '#ffffff'),
-        size: titleSize, align: labeledCabinets ? 'left' : 'center', shadow: style.textShadow, role: 'screen-title',
+          size: titleSize, align: labeledCabinets ? 'left' : 'center', shadow: style.textShadow, role: 'screen-title',
+          ...(sparse ? { clip: paintBounds } : {}),
         ...(labeledCabinets ? { cellBounds: { ...screen.bounds, height: cabinetHeight } } : {}) })
       }
     }
@@ -133,6 +152,11 @@ export function buildCompositionChartFrame(
     if (style.logo) {
       primitives.push({ kind: 'image', bounds: chartLogoBounds(screen.bounds, style.logo, style.logoLayout),
         dataUrl: style.logo.dataUrl, ...(style.logoLayout ? { opacity: style.logoLayout.opacity / 100 } : {}) })
+    }
+    if (sparse) {
+      for (let index = decorationStart; index < primitives.length; index += 1) {
+        primitives[index] = { ...primitives[index]!, clip: paintBounds }
+      }
     }
   }
   if (!mask) {

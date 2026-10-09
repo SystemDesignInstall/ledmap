@@ -1,6 +1,6 @@
 import {
   asCabinetGridId, asCabinetId, asModuleId, asScreenId, createInputCanvas, createMappingRegion, DomainError,
-  type CabinetEngineConfig, type LedMapProjectV2, type ProjectCabinet, type ProjectMappingRegion, type ProjectModule,
+  type CabinetEngineConfig, type GridPosition, type LedMapProjectV2, type ProjectCabinet, type ProjectMappingRegion, type ProjectModule,
 } from '@ledmap/core'
 import { buildSnapshot, initialDraft, type CabinetSeed, type Draft, type Snapshot } from './state.js'
 import type { AddScreenOptions, ScreenCabinetConfigPatch } from './v2-view-model.js'
@@ -59,7 +59,7 @@ function snapshotFor(project: LedMapProjectV2, screenId: string, draft: Draft): 
     cabinets: cabinets.map(value => ({
       id: cabinetLabel(screen.id, value.id), column: value.column, row: value.row, index: 0,
     })),
-    nextCabinetSerial: cabinets.reduce((maximum, value) => Math.max(maximum, numericSerial(value.id)), 0) + 1,
+    nextCabinetSerial: grid.nextCabinetSerial ?? cabinets.reduce((maximum, value) => Math.max(maximum, numericSerial(value.id)), 0) + 1,
   }
   const result = buildSnapshot(seed, draft, {
     screenId: screen.id, gridId: grid.id, screenName: screen.name, gridName: grid.name,
@@ -100,7 +100,8 @@ function rebuildGrid(project: LedMapProjectV2, screenId: string, draft: Draft): 
     values.push(module)
     modulesByCabinet.set(module.cabinetId, values)
   }
-  const cabinets: ProjectCabinet[] = snapshot.cabinets.map(value => {
+  const cabinets: ProjectCabinet[] = snapshot.cabinets.filter(value => prior.length === 0 ||
+    value.column >= grid.columns || value.row >= grid.rows || byCell.has(`${value.column},${value.row}`)).map(value => {
     const existing = byCell.get(`${value.column},${value.row}`)
     return {
       id: existing?.id ?? asCabinetId(`${screen.id}/${value.id}`),
@@ -114,6 +115,8 @@ function rebuildGrid(project: LedMapProjectV2, screenId: string, draft: Draft): 
     }
   })
   const retainedIds = new Set(cabinets.map(value => value.id))
+  const nextCabinetSerial = cabinets.reduce((maximum, cabinet) => Math.max(maximum, numericSerial(cabinet.id) + 1),
+    grid.nextCabinetSerial ?? 1)
   const removedIds = new Set([...priorIds].filter(id => !retainedIds.has(id)))
   const assigned = project.hardware.assignments.find(value => removedIds.has(value.target.cabinetId))
   const routed = project.operations.signalRoutes.find(value => value.orderedCabinetIds.some(id => removedIds.has(id)))
@@ -131,6 +134,8 @@ function rebuildGrid(project: LedMapProjectV2, screenId: string, draft: Draft): 
         ? {
           ...value, columns: snapshot.grid.columns, rows: snapshot.grid.rows,
           cabinetWidth: snapshot.grid.cabinetWidth, cabinetHeight: snapshot.grid.cabinetHeight,
+          ...(grid.nextCabinetSerial !== undefined || cabinets.length < snapshot.grid.columns * snapshot.grid.rows
+            ? { nextCabinetSerial } : {}),
           ordering: snapshot.grid.ordering,
         } : value),
       cabinets: [...project.design.cabinets.filter(value => value.gridId !== grid.id), ...cabinets],
@@ -189,10 +194,19 @@ export function duplicateScreenV2(project: LedMapProjectV2, screenId: string, pl
   const x = placementMode === 'after-screens' ? right + 64 : placement.x + 32
   const y = placementMode === 'after-screens' ? placement.y : placement.y + 32
   if (!Number.isSafeInteger(x) || !Number.isSafeInteger(y)) throw new Error('No safe position remains for a Screen copy.')
-  const duplicated = addScreenV2(project, draftFromGrid(project, screenId), {
+  let duplicated = addScreenV2(project, draftFromGrid(project, screenId), {
     name: `${screen.name} Copy`, position: { x, y },
   })
   const sourceGrid = gridOf(project, screenId)
+  const sourceCells = new Set(project.design.cabinets.filter(cabinet => cabinet.gridId === sourceGrid.id)
+    .map(cabinet => `${cabinet.column},${cabinet.row}`))
+  const holes: GridPosition[] = []
+  for (let row = 0; row < sourceGrid.rows; row += 1) {
+    for (let column = 0; column < sourceGrid.columns; column += 1) {
+      if (!sourceCells.has(`${column},${row}`)) holes.push({ column, row })
+    }
+  }
+  if (holes.length > 0) duplicated = setCabinetCellsV2(duplicated, duplicated.design.screens.at(-1)!.id, holes, false)
   const targetGrid = gridOf(duplicated, duplicated.design.screens.at(-1)!.id)
   const sourceLabels = new Map(project.design.cabinets.filter(cabinet =>
     cabinet.gridId === sourceGrid.id && cabinet.label.trim().length > 0 && cabinet.label !== physicalCabinetLabel(cabinet.id))
@@ -229,6 +243,80 @@ export function setCabinetLabelV2(
   if (duplicate) throw new Error(`Cabinet label ${duplicate} is already used on this Screen.`)
   if (cabinet.label === normalized) return project
   return { ...project, design: { ...project.design, cabinets } }
+}
+
+export function setCabinetCellsV2(
+  project: LedMapProjectV2, screenId: string, positions: readonly GridPosition[], present: boolean,
+): LedMapProjectV2 {
+  const screen = screenOf(project, screenId)
+  const grid = gridOf(project, screenId)
+  if (positions.length === 0) return project
+  const selected = new Set<string>()
+  for (const position of positions) {
+    if (!Number.isSafeInteger(position.column) || !Number.isSafeInteger(position.row) ||
+        position.column < 0 || position.row < 0 || position.column >= grid.columns || position.row >= grid.rows) {
+      throw new DomainError('PROJECT_CABINET_OUT_OF_RANGE', 'Selected Cabinet cell is outside the Cabinet Grid')
+    }
+    selected.add(`${position.column},${position.row}`)
+  }
+  const existing = project.design.cabinets.filter(cabinet => cabinet.gridId === grid.id)
+  const selectedCabinets = existing.filter(cabinet => selected.has(`${cabinet.column},${cabinet.row}`))
+  if (!present) {
+    if (selectedCabinets.length === 0) return project
+    if (existing.length - selectedCabinets.length < 1) {
+      throw new DomainError('PROJECT_EMPTY_GRID', 'A Screen must keep at least one physical Cabinet')
+    }
+    const removedIds = new Set(selectedCabinets.map(cabinet => cabinet.id))
+    const assigned = project.hardware.assignments.find(value => removedIds.has(value.target.cabinetId))
+    const routed = project.operations.signalRoutes.find(value => value.orderedCabinetIds.some(id => removedIds.has(id)))
+    if (assigned || routed) {
+      const id = assigned?.target.cabinetId ?? routed!.orderedCabinetIds.find(value => removedIds.has(value))!
+      throw new DomainError('PROJECT_CABINET_IN_USE', `Cabinet ${id} is used by Hardware`)
+    }
+    const highWater = grid.nextCabinetSerial ?? existing.reduce((maximum, cabinet) => Math.max(maximum, numericSerial(cabinet.id)), 0) + 1
+    return { ...project, design: { ...project.design,
+      cabinetGrids: project.design.cabinetGrids.map(value => value.id === grid.id
+        ? { ...value, nextCabinetSerial: highWater } : value),
+      cabinets: project.design.cabinets.filter(cabinet => !removedIds.has(cabinet.id)),
+      modules: project.design.modules.filter(module => !removedIds.has(module.cabinetId)),
+    } }
+  }
+  const occupied = new Set(existing.map(cabinet => `${cabinet.column},${cabinet.row}`))
+  const missing = [...selected].filter(key => !occupied.has(key)).map(key => {
+    const [column, row] = key.split(',').map(Number)
+    return { column: column!, row: row! }
+  })
+  if (missing.length === 0) return project
+  const first = existing[0]
+  if (!first) throw new DomainError('PROJECT_EMPTY_GRID', 'Cannot restore Cabinets without a Cabinet geometry reference')
+  const firstModule = project.design.modules.find(module => module.cabinetId === first.id)
+  const config: CabinetEngineConfig = {
+    columns: grid.columns, rows: grid.rows, ordering: grid.ordering,
+    moduleColumns: first.moduleColumns, moduleRows: first.moduleRows,
+    modulePixelWidth: firstModule?.pixelWidth ?? first.pixelWidth / first.moduleColumns,
+    modulePixelHeight: firstModule?.pixelHeight ?? first.pixelHeight / first.moduleRows,
+  }
+  let serial = grid.nextCabinetSerial ?? existing.reduce((maximum, cabinet) => Math.max(maximum, numericSerial(cabinet.id)), 0) + 1
+  const cabinets: ProjectCabinet[] = missing.map(position => {
+    if (!Number.isSafeInteger(serial + 1)) throw new DomainError('PROJECT_CABINET_SERIAL_OVERFLOW', 'Cabinet ID serial exceeds the safe integer range')
+    const label = `C${String(serial).padStart(2, '0')}`
+    serial += 1
+    return {
+      id: asCabinetId(`${screen.id}/${label}`), gridId: grid.id, label,
+      column: position.column, row: position.row,
+      origin: { x: position.column * grid.cabinetWidth, y: position.row * grid.cabinetHeight },
+      width: grid.cabinetWidth, height: grid.cabinetHeight,
+      pixelWidth: grid.cabinetWidth, pixelHeight: grid.cabinetHeight,
+      moduleColumns: config.moduleColumns, moduleRows: config.moduleRows,
+      rotation: 0, flipH: false, flipV: false,
+    }
+  })
+  return { ...project, design: { ...project.design,
+    cabinetGrids: project.design.cabinetGrids.map(value => value.id === grid.id
+      ? { ...value, nextCabinetSerial: serial } : value),
+    cabinets: [...project.design.cabinets, ...cabinets],
+    modules: [...project.design.modules, ...cabinets.flatMap(cabinet => modulesFor(cabinet, config, []))],
+  } }
 }
 
 export function setScreenPositionsV2(

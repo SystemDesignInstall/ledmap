@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { addScreenV2 } from '../src/renderer/v2-commands.js'
+import { addScreenV2, setCabinetCellsV2 } from '../src/renderer/v2-commands.js'
+import { createProjectSession } from '../src/renderer/project-session.js'
+import { buildV2TestScene } from '../src/renderer/v2-test-project.js'
 import { ProjectDocumentController } from '../src/renderer/document.js'
 import { loadProjectSession, serializeProjectSession, sessionDirty } from '../src/renderer/project-session.js'
 import {
@@ -24,6 +26,25 @@ const scene: TestScene = {
 }
 
 describe('Composition chart contract', () => {
+  it('leaves missing Cabinet cells transparent in chart fills and the export mask', () => {
+    const full = addScreenV2(createProjectSession('chart-sparse').project)
+    const sparse = setCabinetCellsV2(full, 'screen-1', [{ column: 1, row: 0 }], false)
+    const sparseScene = buildV2TestScene(sparse)
+    const scope = { kind: 'screen' as const, target: 'screen-1' }
+    const settings = { ...defaultChartSettings, screenStyles: { 'screen-1': {
+      ...screenChartStyle(defaultChartSettings, 'screen-1'), palette: 'screen-color' as const, fill: '#ff0000',
+      cabinetEdges: false, labels: 'none' as const, showScreenName: false,
+    } } }
+    const chart = buildCompositionChartFrame(sparseScene, scope, settings)
+    const mask = buildCompositionChartFrame(sparseScene, scope, settings, true)
+    const hole = { x: 32, y: 0, width: 32, height: 32 }
+    expect(chart.primitives.some(value => value.kind === 'rect' && value.fill === '#ff0000' &&
+      value.bounds.x === hole.x && value.bounds.y === hole.y)).toBe(false)
+    expect(mask.primitives).toHaveLength(11)
+    expect(mask.primitives.some(value => value.kind === 'rect' && value.bounds.x === hole.x && value.bounds.y === hole.y)).toBe(false)
+    expect(renderFrameSvg(mask, mask.bounds)).not.toContain('<rect x="32" y="0" width="32" height="32" fill="#ffffff"')
+  })
+
   it('makes intentional Canvas cropping explicit while keeping document geometry and Undo atomic', () => {
     const document = new ProjectDocumentController(() => 'frame')
     document.transactV2(addScreenV2)

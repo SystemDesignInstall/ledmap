@@ -42,6 +42,7 @@ export interface ProjectCabinetGrid {
   readonly rows: number
   readonly cabinetWidth: number
   readonly cabinetHeight: number
+  readonly nextCabinetSerial?: number
   readonly ordering: GridOrdering
 }
 

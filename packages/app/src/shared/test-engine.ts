@@ -30,6 +30,7 @@ export interface TestScreenNode {
   readonly id: string
   readonly name: string
   readonly bounds: TestBounds
+  readonly sparse?: boolean
 }
 
 export interface TestHardwareIdentity {
@@ -105,15 +106,16 @@ export interface TestPatternConfig {
   readonly chartSettings?: ChartSettings | undefined
 }
 
-export type TestPrimitive =
+export type TestPrimitive = (
   | { readonly kind: 'rect'; readonly bounds: TestBounds; readonly fill?: string; readonly stroke?: string; readonly lineWidth?: number; readonly opacity?: number; readonly pixelAligned?: boolean; readonly role?: 'screen-information' | 'screen-guide' }
   | { readonly kind: 'cabinet-border'; readonly bounds: TestBounds; readonly color: string }
   | { readonly kind: 'circle'; readonly center: TestPoint; readonly radius: number; readonly color: string; readonly lineWidth: number; readonly role?: 'screen-guide' }
   | { readonly kind: 'line'; readonly from: TestPoint; readonly to: TestPoint; readonly color: string; readonly lineWidth: number; readonly dash?: readonly number[]; readonly role?: 'screen-guide' | 'screen-center-guide' }
   | { readonly kind: 'text'; readonly point: TestPoint; readonly text: string; readonly color: string; readonly size: number; readonly align?: 'left' | 'center' | 'right'; readonly shadow?: boolean; readonly role?: 'screen-title' | 'cabinet-label' | 'screen-information'; readonly cellBounds?: TestBounds }
   | { readonly kind: 'image'; readonly bounds: TestBounds; readonly dataUrl: string; readonly opacity?: number }
-  | { readonly kind: 'gradient'; readonly bounds: TestBounds; readonly direction: 'horizontal' | 'vertical'; readonly from: string; readonly to: string }
+  | { readonly kind: 'gradient'; readonly bounds: TestBounds; readonly gradientBounds?: TestBounds; readonly direction: 'horizontal' | 'vertical'; readonly from: string; readonly to: string }
   | { readonly kind: 'pixel'; readonly point: TestPoint; readonly color: string }
+) & { readonly clip?: readonly TestBounds[] }
 
 export interface TestFrame {
   readonly pattern: TestPatternId
@@ -226,7 +228,9 @@ function scopeRegions(
   cabinets: readonly TestCabinetNode[],
   modules: readonly TestModuleNode[],
 ): readonly TestBounds[] {
-  if (scope.kind === 'composition' || scope.kind === 'screen') return screens.map(screen => screen.bounds)
+  if (scope.kind === 'composition' || scope.kind === 'screen') return screens.flatMap(screen => screen.sparse
+    ? cabinets.filter(cabinet => cabinet.screen === screen.id).map(cabinet => cabinet.bounds)
+    : [screen.bounds])
   if (scope.kind === 'module') return modules.map(module => module.bounds)
   return cabinets.map(cabinet => cabinet.bounds)
 }
@@ -241,7 +245,12 @@ export function testPatternAvailability(scene: TestScene, pattern: TestPatternId
 
 function screenFrames(primitives: TestPrimitive[], scene: TestScene): void {
   for (const screen of scene.screens) {
-    primitives.push({ kind: 'rect', bounds: screen.bounds, fill: '#080d13', stroke: '#314256', lineWidth: 2 })
+    if (screen.sparse) {
+      for (const cabinet of scene.cabinets.filter(value => value.screen === screen.id)) {
+        primitives.push({ kind: 'rect', bounds: cabinet.bounds, fill: '#080d13' })
+      }
+      primitives.push({ kind: 'rect', bounds: screen.bounds, stroke: '#314256', lineWidth: 2 })
+    } else primitives.push({ kind: 'rect', bounds: screen.bounds, fill: '#080d13', stroke: '#314256', lineWidth: 2 })
   }
 }
 

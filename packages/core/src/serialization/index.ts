@@ -10,6 +10,8 @@ export { loadProjectV5, parseProjectV5Document, serializeProjectV5 } from './v5.
 export type { LedMapDocumentV5, ProjectV5Wire } from './v5-types.js'
 export { loadProjectV6, parseProjectV6Document, serializeProjectV6 } from './v6.js'
 export type { LedMapDocumentV6, ProjectV6Wire } from './v6-types.js'
+export { loadProjectV7, parseProjectV7Document, serializeProjectV7 } from './v7.js'
+export type { LedMapDocumentV7, ProjectV7Wire } from './v7-types.js'
 export { loadLedMapProject } from './dispatch.js'
 export type { LoadedLedMapProject } from './dispatch.js'
 export type { SerializationErrorCode, SerializationPath } from './errors.js'

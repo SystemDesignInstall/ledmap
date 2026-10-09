@@ -31,6 +31,7 @@ export interface View {
   readonly mode: 'all' | 'active'
   readonly selection: SelectedObject | null
   readonly selectedScreenIds: readonly string[]
+  readonly cellEdit: { readonly screenId: string; readonly selectedKeys: ReadonlySet<string> } | null
   readonly activeScreenId: string | null
   readonly resizePreview: ResizePreview | null
   readonly alignmentGuides: readonly AlignmentGuide[]
@@ -267,7 +268,7 @@ function drawCabinetGrid(
       const x = rect.left + column * cw
       const y = rect.top + row * ch
       const id = existing.get(`${column},${row}`)
-      if (showCabinetLines && id === undefined) {
+      if (showCabinetLines && id === undefined && (column >= screen.grid.columns || row >= screen.grid.rows)) {
         ctx.fillStyle = PENDING_FILL
         ctx.fillRect(x, y, cw, ch)
       }
@@ -393,16 +394,17 @@ function drawScreenLabel(
   ctx.fillText(resolution, x + width - 11, y + height / 2 + .5)
 }
 
-function drawCabinetSelection(ctx: CanvasRenderingContext2D, camera: Camera, screen: ScreenView, selection: Extract<SelectedObject, { type: 'cabinet' }>): void {
-  const cabinet = screen.cabinets.find(c => c.id === selection.id)
-  if (!cabinet) return
+function drawCabinetSelection(ctx: CanvasRenderingContext2D, camera: Camera, screen: ScreenView,
+  selection: Extract<SelectedObject, { type: 'cabinet' | 'cabinetCell' }>): void {
+  const cell = selection.type === 'cabinet' ? screen.cabinets.find(c => c.id === selection.id) : selection
+  if (!cell) return
   const shape = screenShape(screen, screen.grid.columns, screen.grid.rows)
   const rect = screenRectPx(camera, screen, shape)
   const cw = screen.grid.cabinetWidth * camera.zoom
   const ch = screen.grid.cabinetHeight * camera.zoom
   ctx.strokeStyle = ACCENT
   ctx.lineWidth = 2
-  ctx.strokeRect(rect.left + cabinet.column * cw, rect.top + cabinet.row * ch, cw, ch)
+  ctx.strokeRect(rect.left + cell.column * cw, rect.top + cell.row * ch, cw, ch)
 }
 
 function drawInteractionOverlay(
@@ -584,8 +586,27 @@ export function drawProject(canvas: HTMLCanvasElement, project: Project, view: V
     const highlighted = selectedScreen || selectedGrid
     drawScreenOutline(ctx, camera, screen, shape, highlighted)
     labels.push({ screen, shape, highlighted, previewing: preview !== null })
-    if (view.selection?.type === 'cabinet' && view.selection.screenId === screen.screen.id) {
+    if ((view.selection?.type === 'cabinet' || view.selection?.type === 'cabinetCell') &&
+      view.selection.screenId === screen.screen.id) {
       drawCabinetSelection(ctx, camera, screen, view.selection)
+    }
+    if (view.cellEdit?.screenId === screen.screen.id) {
+      const origin = toScreen(camera, { x: screen.x, y: screen.y })
+      const cellWidth = screen.grid.cabinetWidth * camera.zoom
+      const cellHeight = screen.grid.cabinetHeight * camera.zoom
+      ctx.save()
+      ctx.setLineDash([5, 4])
+      ctx.lineWidth = 2
+      for (const key of view.cellEdit.selectedKeys) {
+        const [column, row] = key.split(',').map(Number)
+        const x = origin.x + column! * cellWidth
+        const y = origin.y + row! * cellHeight
+        ctx.fillStyle = 'rgba(247,148,30,.24)'
+        ctx.strokeStyle = ACCENT
+        ctx.fillRect(x, y, cellWidth, cellHeight)
+        ctx.strokeRect(x, y, cellWidth, cellHeight)
+      }
+      ctx.restore()
     }
   }
   drawFramePrimitives(ctx, view.drawing, camera, redraw, 'screen-guide', true)

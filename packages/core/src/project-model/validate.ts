@@ -174,6 +174,17 @@ export function assertProjectV2EditorStructure(project: LedMapProjectV2): void {
     positive(grid.rows, `CabinetGrid ${grid.id} rows`)
     positive(grid.cabinetWidth, `CabinetGrid ${grid.id} width`)
     positive(grid.cabinetHeight, `CabinetGrid ${grid.id} height`)
+    if (grid.nextCabinetSerial !== undefined) {
+      positive(grid.nextCabinetSerial, `CabinetGrid ${grid.id} next Cabinet serial`)
+      const maximum = project.design.cabinets.filter(cabinet => cabinet.gridId === grid.id)
+        .reduce((value, cabinet) => {
+          const match = /\/C(\d+)$/.exec(cabinet.id)
+          return Math.max(value, match ? Number(match[1]) : 0)
+        }, 0)
+      if (grid.nextCabinetSerial <= maximum) {
+        fail('PROJECT_INVALID_CABINET_SERIAL', `CabinetGrid ${grid.id} next Cabinet serial must exceed existing Cabinet IDs`)
+      }
+    }
   }
   for (const canvas of canvases.values()) {
     positive(canvas.resolution.width, `InputCanvas ${canvas.id} width`)

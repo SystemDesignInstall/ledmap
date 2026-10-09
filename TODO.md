@@ -113,7 +113,7 @@
 - [ ] Open/Save `.ledmap` через IPC + `main/services`
 - [ ] Реактивное state; Canvas: screen → cabinet outline → module grid из read-only модели
 - [ ] Диагностики валидатора в UI
-- [ ] `electron-builder` Windows packaging
+- [x] `electron-builder` Windows portable (x64, unsigned, `npm run package`, CI job `package-win`); NSIS installer остаётся открытым
 - [ ] Экспорт hardware-форматов производителей (отдельный контракт)
 
 ## Early Alpha UI — итерация 3: изменение размера Screen

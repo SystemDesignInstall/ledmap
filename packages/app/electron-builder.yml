@@ -1,0 +1,27 @@
+# LedMAP Windows portable build (electron-builder).
+# Temporary identity: appId com.ledmap.app + placeholder build/icon.ico.
+# Replace both with the brand identity before the first public release.
+appId: com.ledmap.app
+productName: LedMAP
+directories:
+  output: dist
+files:
+  - out/main/**/*
+  - out/preload/**/*
+  - out/renderer/**/*
+  - package.json
+  - '!out/smoke{,/**/*}'
+  - '!test{,/**/*}'
+  - '!src{,/**/*}'
+  # @ledmap/core is bundled into out/main and out/renderer by electron-vite;
+  # the symlinked workspace package must not ship its sources.
+  - '!node_modules/@ledmap/core{,/**/*}'
+  # @xmldom/xmldom is bundled into out/renderer by vite and unused by main/preload.
+  - '!node_modules/@xmldom{,/**/*}'
+win:
+  icon: build/icon.ico
+  target:
+    - portable
+  requestedExecutionLevel: asInvoker
+portable:
+  artifactName: LedMAP-${version}-win-x64-portable.exe

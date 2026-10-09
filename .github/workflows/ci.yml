@@ -22,9 +22,28 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check:licenses
-      - run: npm audit --package-lock-only --audit-level=low
+      - run: node scripts/check-audit.mjs
       - run: npm test
       - run: npm run typecheck
       - run: npm run lint
       - run: npm run build
       - run: xvfb-run -a npm run test:smoke
+
+  package-win:
+    needs: verify
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm run package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LedMAP-win-x64-portable
+          path: packages/app/dist/*.exe
+          if-no-files-found: error

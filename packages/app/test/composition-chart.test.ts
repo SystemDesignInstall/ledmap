@@ -43,6 +43,14 @@ describe('Composition chart contract', () => {
     expect(mask.primitives).toHaveLength(11)
     expect(mask.primitives.some(value => value.kind === 'rect' && value.bounds.x === hole.x && value.bounds.y === hole.y)).toBe(false)
     expect(renderFrameSvg(mask, mask.bounds)).not.toContain('<rect x="32" y="0" width="32" height="32" fill="#ffffff"')
+    const insetSettings = { ...settings, screenStyles: { 'screen-1': {
+      ...settings.screenStyles['screen-1'], maskOffsetX: 4, maskOffsetY: 3,
+    } } }
+    const insetMask = buildCompositionChartFrame(sparseScene, scope, insetSettings, true)
+    expect(insetMask.primitives).toHaveLength(11)
+    expect(insetMask.primitives[0]).toEqual({ kind: 'rect', bounds: { x: 4, y: 3, width: 28, height: 29 }, fill: '#ffffff' })
+    expect(insetMask.primitives.some(value => value.kind === 'rect' && value.bounds.x === hole.x &&
+      value.bounds.y < hole.height)).toBe(false)
   })
 
   it('makes intentional Canvas cropping explicit while keeping document geometry and Undo atomic', () => {
@@ -348,7 +356,10 @@ describe('Composition chart contract', () => {
     expect(chart.primitives).toContainEqual({ kind: 'text', point: { x: -80, y: 206 },
       text: 'X -100 · Y 20', color: '#ffffff', size: 12, align: 'left', shadow: true })
     const mask = buildCompositionChartFrame(scene, { kind: 'composition', target: null }, loaded, true)
-    expect(mask.primitives[0]).toEqual({ kind: 'rect', bounds: { x: -100, y: 20, width: 200, height: 200 }, fill: '#ffffff' })
+    expect(mask.primitives[0]).toEqual({ kind: 'rect', bounds: { x: -88, y: 13, width: 176, height: 214 }, fill: '#ffffff' })
+    expect(buildCompositionChartFrame(scene, { kind: 'screen', target: 'left' }, {
+      ...loaded, screenStyles: { left: { ...style, maskOffsetX: 100 } },
+    }, true).primitives).toEqual([])
     expect(() => withChartSettings({}, { ...settings, screenStyles: { left: { ...style, maskOffsetX: 9000 } } })).toThrow(/mask offsets/)
   })
 
@@ -364,6 +375,6 @@ describe('Composition chart contract', () => {
     expect(svg).toContain('fill="#ff0000"')
     expect(svg).not.toContain('A &amp; B &lt;LED&gt;')
     const mask = buildCompositionChartFrame(scene, { kind: 'composition', target: null }, settings, true)
-    expect(renderFrameSvg(mask, mask.bounds)).toContain('x="-100" y="20" width="200" height="200" fill="#ffffff"')
+    expect(renderFrameSvg(mask, mask.bounds)).toContain('x="-88" y="20" width="176" height="200" fill="#ffffff"')
   })
 })

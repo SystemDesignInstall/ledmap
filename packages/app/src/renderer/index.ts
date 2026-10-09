@@ -1325,6 +1325,18 @@ function appendScreenDrawingGroup(container: HTMLDivElement, screen: ScreenView)
   )
   appendPatternControls(drawing, screenId, style)
   const drawingSection = group('Screen drawing', drawing)
+  const maskBox = document.createElement('div')
+  maskBox.append(
+    propertyRow('Inset X', drawingNumber('screen-mask-inset-x', style.maskOffsetX ?? 0, -8192, 8192, value =>
+      updateScreenDrawing(screenId, { maskOffsetX: value }))),
+    propertyRow('Inset Y', drawingNumber('screen-mask-inset-y', style.maskOffsetY ?? 0, -8192, 8192, value =>
+      updateScreenDrawing(screenId, { maskOffsetY: value }))),
+  )
+  const maskHint = document.createElement('p')
+  maskHint.className = 'hint'
+  maskHint.textContent = 'Positive values shrink the white mask from both sides; negative values extend it within the Canvas frame. Screen and Cabinet geometry stay unchanged.'
+  maskBox.append(maskHint)
+  const maskSection = group('Canvas mask', maskBox)
   const logoFile = document.createElement('input')
   logoFile.id = 'screen-drawing-logo-file'
   logoFile.type = 'file'
@@ -1470,7 +1482,7 @@ function appendScreenDrawingGroup(container: HTMLDivElement, screen: ScreenView)
   }
   infoBox.append(infoHint)
   const infoSection = collapsibleGroup('Information block', `${screenId}:information`, infoBox)
-  container.append(drawingSection, textSection, guideSection, infoSection, logoSection, presetPanel('drawing', screen))
+  container.append(drawingSection, maskSection, textSection, guideSection, infoSection, logoSection, presetPanel('drawing', screen))
 }
 
 function renderScreenProperties(screen: ScreenView): void {

@@ -44,6 +44,14 @@ function intersectBounds(a: TestBounds, b: TestBounds): TestBounds | null {
   return right > x && bottom > y ? { x, y, width: right - x, height: bottom - y } : null
 }
 
+function maskBounds(bounds: TestBounds, offsetX: number, offsetY: number): TestBounds | null {
+  const width = bounds.width - 2 * offsetX
+  const height = bounds.height - 2 * offsetY
+  return width > 0 && height > 0
+    ? { x: bounds.x + offsetX, y: bounds.y + offsetY, width, height }
+    : null
+}
+
 export function buildCompositionChartFrame(
   scene: TestScene,
   scope: TestScope,
@@ -61,7 +69,15 @@ export function buildCompositionChartFrame(
     const sparse = screen.sparse === true
     const paintBounds = sparse ? screenCabinets.map(cabinet => cabinet.bounds) : [screen.bounds]
     if (mask) {
-      for (const bounds of paintBounds) primitives.push({ kind: 'rect', bounds, fill: '#ffffff' })
+      const inset = maskBounds(screen.bounds, style.maskOffsetX ?? 0, style.maskOffsetY ?? 0)
+      if (inset) {
+        if (sparse) {
+          for (const cabinetBounds of paintBounds) {
+            const bounds = intersectBounds(cabinetBounds, inset)
+            if (bounds) primitives.push({ kind: 'rect', bounds, fill: '#ffffff' })
+          }
+        } else primitives.push({ kind: 'rect', bounds: inset, fill: '#ffffff' })
+      }
       continue
     }
     if (style.palette === 'screen-color' && style.fill !== 'transparent') {

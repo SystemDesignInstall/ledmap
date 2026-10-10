@@ -8,18 +8,38 @@ Streams are session-only. They never become hardware Processor Ports. The Test W
 
 ## Build the native sender
 
-The official NDI SDK and its redistributable/runtime are **not checked into this repository**. Read the NDI SDK license and redistribution terms before shipping.
+NDI® is a registered trademark of Vizrt NDI AB. Official documentation: https://ndi.video/ and https://docs.ndi.video/.
 
-With the NDI 6 SDK and Visual Studio C++ build tools installed on Windows, run:
+## NDI-inclusive Windows portable
+
+The GitHub Actions Windows job runs `scripts/build-ndi-windows.ps1`. It:
+1. builds the native x64 NDI sender with Microsoft Visual C++ and the MIT-licensed NDI SDK headers;
+2. downloads the official NDI 6 Runtime installer from `downloads.ndi.tv`;
+3. extracts `Processing.NDI.Lib.x64.dll` and its matching `Processing.NDI.Lib.Licenses.txt`, and downloads the official NDI SDK license PDF;
+4. stages all assets at `packages/app/build/ndi`, which Electron Builder includes in `resources/ndi` **inside the portable EXE**;
+5. **fails the build** if any required NDI binary or notice is missing. It never silently emits a falsely named NDI-ready binary.
+
+The portable executable runs without a separate NDI installation if the bundled runtime DLL loads successfully. Official NDI SDK/runtime binaries are never checked into the git repository.
+
+A developer can run the same script on Windows PowerShell 7 with Visual Studio C++ tools, CMake, git and 7-Zip installed:
+
+```powershell
+pwsh -File scripts/build-ndi-windows.ps1
+npm run package
+```
+
+For a manual SDK-based build, use:
 
 ```powershell
 cmake -S packages/app/native/ndi-sender -B packages/app/native/ndi-sender/build -A x64 -DNDI_SDK_DIR="C:/Program Files/NDI/NDI 6 SDK"
 cmake --build packages/app/native/ndi-sender/build --config Release
 ```
 
-Set `LEDMAP_NDI_SENDER_PATH` to the absolute path of the resulting `ledmap-ndi-sender.exe` before starting LedMAP. For a **portable** Windows build, place `ledmap-ndi-sender.exe` directly next to `LedMAP-<version>-win-x64-portable.exe`; the portable launcher exposes that directory to LedMAP. A regular packaged build can also use `resources/ndi/ledmap-ndi-sender.exe`. The NDI runtime DLLs must be accessible according to the SDK's installation/redistribution instructions.
+In local dev, place `Processing.NDI.Lib.x64.dll` next to the helper and set `LEDMAP_NDI_SENDER_PATH` to its absolute path. A portable build also recognizes an optional helper beside the portable EXE for diagnostic overrides.
 
-The application returns an explicit error if the helper is missing or the SDK cannot initialize; it does **not** falsely report that a stream is broadcasting.
+Before publicly distributing this artifact, the product owner must ensure that the product EULA includes the restrictions required by the NDI SDK license and that the NDI SDK license and included third-party notices are legally sufficient. The licensing requirements are **not waived** by using official runtime binaries. See https://docs.ndi.video/all/developing-with-ndi/sdk/licensing and https://docs.ndi.video/all/developing-with-ndi/sdk/software-distribution.
+
+The application reports an error if the helper is missing or the runtime cannot initialize; it does **not** falsely report that a stream is broadcasting.
 
 ## Data flow
 

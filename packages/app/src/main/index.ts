@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, type WebContents } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, shell, type WebContents } from 'electron'
 import { mkdirSync } from 'node:fs'
 import { readFile, realpath } from 'node:fs/promises'
 import { basename, extname, join, resolve } from 'node:path'
@@ -322,7 +322,12 @@ async function createWindow(): Promise<void> {
   })
   liveOutputManager?.registerEditor(window.webContents)
   window.setMenuBarVisibility(false)
-  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    if (url === 'https://ndi.video/' && window.isVisible()) {
+      void shell.openExternal(url)
+    }
+    return { action: 'deny' }
+  })
   window.webContents.on('will-navigate', event => event.preventDefault())
   window.webContents.on('will-attach-webview', event => event.preventDefault())
   window.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false))

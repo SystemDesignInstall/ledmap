@@ -27,6 +27,7 @@ interface NdiRoute {
 
 const MAX_NDI_STREAMS = 16
 const MAX_NDI_PIXELS = 16_777_216
+const MAX_ACTIVE_NDI_PIXELS = 33_554_432
 
 function checkId(id: unknown): string {
   if (typeof id !== 'string' || (id !== 'composition' && !/^screen:[\w.-]{1,128}$/.test(id))) {
@@ -106,6 +107,11 @@ export class NdiOutputManager {
     if ([...this.routes.values()].filter(route => route.ownerId === owner.id).length >= MAX_NDI_STREAMS) {
       throw new Error(`Only ${MAX_NDI_STREAMS} simultaneous NDI streams are supported.`)
     }
+    const totalPixels = [...this.routes.values()].reduce((sum, route) =>
+      sum + route.region.width * route.region.height, 0)
+    if (totalPixels + region.width * region.height > MAX_ACTIVE_NDI_PIXELS) {
+      throw new Error('NDI streams exceed the 33,554,432-pixel session budget.')
+    }
     // Do not report Running before the executable confirms NDIlib_send_create succeeded.
     const child = await launchSender(name, region.width, region.height, fps)
     let window: BrowserWindow | undefined
@@ -134,6 +140,13 @@ export class NdiOutputManager {
       }
       this.routes.set(key, route)
       child.stdin.on('drain', () => { route.blocked = false })
+      // EPIPE is expected if the native sender exits during a write; it must not crash Electron.
+      child.stdin.on('error', () => {
+        if (this.routes.get(key) === route) this.stopByKey(key, 'NDI sender pipe closed.')
+      })
+      child.once('error', error => {
+        if (this.routes.get(key) === route) this.stopByKey(key, `NDI sender error: ${error.message}`)
+      })
       child.once('exit', code => {
         if (this.routes.get(key) === route) this.stopByKey(key, `NDI sender exited (code ${code}).`)
       })

@@ -12,11 +12,14 @@ import {
   type RecoverySaveCommit,
   type LegacyUpgradeChoice,
   type SimulateDisplayChangeRequest,
+  type NdiOutputRequest,
+  type NdiOutputUpdate,
   type StartLiveOutputRequest,
   type UnsavedChoice,
   type UpdateLiveOutputRequest,
 } from '../shared/ipc.js'
 import { LiveOutputManager } from './live-output.js'
+import { NdiOutputManager } from './ndi-output.js'
 import { ExportFileService } from './export-files.js'
 import { StagedProjectWriter } from './staged-project-write.js'
 import { PresetLibraryStore } from './preset-library-store.js'
@@ -32,6 +35,7 @@ interface WindowState {
 const windowStates = new Map<number, WindowState>()
 const ledmapFilter = [{ name: 'LedMAP Project', extensions: ['ledmap'] }]
 let liveOutputManager: LiveOutputManager | null = null
+let ndiOutputManager: NdiOutputManager | null = null
 const exportFileService = new ExportFileService()
 const projectWriter = new StagedProjectWriter()
 let recoveryStore: RecoveryStore | null = null
@@ -265,6 +269,19 @@ function registerIpc(): void {
     return liveOutputManager.stop(event.sender, outputId)
   })
 
+  ipcMain.handle(ipcChannels.startNdiOutput, (event, value: unknown) => {
+    if (!ndiOutputManager || !value || typeof value !== 'object') throw new Error('NDI Output is unavailable.')
+    return ndiOutputManager.start(event.sender, value as NdiOutputRequest)
+  })
+  ipcMain.handle(ipcChannels.updateNdiOutput, (event, value: unknown) => {
+    if (!ndiOutputManager || !value || typeof value !== 'object') throw new Error('NDI Output is unavailable.')
+    return ndiOutputManager.update(event.sender, value as NdiOutputUpdate)
+  })
+  ipcMain.handle(ipcChannels.stopNdiOutput, (event, streamId: unknown) => {
+    if (!ndiOutputManager) throw new Error('NDI Output is unavailable.')
+    return ndiOutputManager.stop(event.sender, streamId)
+  })
+
   ipcMain.handle(ipcChannels.simulateDisplayChange, (_event, value: unknown) => {
     if (!liveOutputManager || value === null || typeof value !== 'object') return false
     const request = value as Partial<SimulateDisplayChangeRequest>
@@ -332,6 +349,7 @@ async function createWindow(): Promise<void> {
   })
   window.on('closed', () => {
     liveOutputManager?.unregisterEditor(webContentsId)
+    ndiOutputManager?.unregisterEditor(webContentsId)
     windowStates.delete(webContentsId)
   })
   const devUrl = process.env['ELECTRON_RENDERER_URL']
@@ -348,6 +366,7 @@ app.whenReady().then(async () => {
   recoveryStore = new RecoveryStore(join(app.getPath('userData'), 'recovery', 'v1'))
   presetLibraryStore = new PresetLibraryStore(join(app.getPath('userData'), 'preset-library', 'v1'))
   liveOutputManager = new LiveOutputManager()
+  ndiOutputManager = new NdiOutputManager()
   liveOutputManager.attachDisplayEvents()
   await createWindow()
   app.on('activate', () => {

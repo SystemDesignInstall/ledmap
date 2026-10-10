@@ -24,6 +24,10 @@ export const ipcChannels = {
   startLiveOutput: 'live-output:start',
   updateLiveOutput: 'live-output:update',
   stopLiveOutput: 'live-output:stop',
+  startNdiOutput: 'ndi-output:start',
+  updateNdiOutput: 'ndi-output:update',
+  stopNdiOutput: 'ndi-output:stop',
+  ndiOutputStateChanged: 'ndi-output:state-changed',
   displaysChanged: 'live-output:displays-changed',
   liveOutputStateChanged: 'live-output:state-changed',
   outputFrame: 'live-output:frame',
@@ -139,6 +143,27 @@ export interface LiveOutputState {
   readonly reason?: string
 }
 
+export interface NdiOutputRequest {
+  readonly streamId: string
+  readonly streamName: string
+  readonly region: LiveOutputRegion
+  readonly fps: 25 | 30 | 60
+  readonly frame: TestFrame
+}
+
+export interface NdiOutputUpdate {
+  readonly streamId: string
+  readonly region: LiveOutputRegion
+  readonly frame: TestFrame
+}
+
+export interface NdiOutputState {
+  readonly streamId: string
+  readonly running: boolean
+  readonly revision: number
+  readonly reason?: string
+}
+
 export interface SimulateDisplayChangeRequest {
   readonly action: 'add' | 'remove'
   readonly displayId?: string
@@ -194,6 +219,10 @@ export interface LedmapDesktopApi {
   stopLiveOutput(outputId: string): Promise<LiveOutputState>
   onDisplaysChanged(callback: (displays: readonly DisplayDescriptor[]) => void): () => void
   onLiveOutputStateChanged(callback: (state: LiveOutputState) => void): () => void
+  startNdiOutput(request: NdiOutputRequest): Promise<NdiOutputState>
+  updateNdiOutput(request: NdiOutputUpdate): Promise<NdiOutputState>
+  stopNdiOutput(streamId: string): Promise<NdiOutputState>
+  onNdiOutputStateChanged(callback: (state: NdiOutputState) => void): () => void
   simulateDisplayChange(request: SimulateDisplayChangeRequest): Promise<boolean>
   writeExportFiles(request: WriteExportFilesRequest): Promise<ExportWriteResult>
   writeGenericMapping(request: WriteGenericMappingRequest): Promise<ExportWriteResult>

@@ -18,6 +18,14 @@ files:
   - '!node_modules/@ledmap/core{,/**/*}'
   # @xmldom/xmldom is bundled into out/renderer by vite and unused by main/preload.
   - '!node_modules/@xmldom{,/**/*}'
+# Bundles the compiled sender plus official NDI runtime for one-file portable deployment.
+# The resource directory exists for ordinary local packaging; the Windows CI
+# staging script populates it with native binaries and required notices.
+extraResources:
+  - from: build/ndi
+    to: ndi
+    filter:
+      - '**/*'
 win:
   icon: build/icon.ico
   target:

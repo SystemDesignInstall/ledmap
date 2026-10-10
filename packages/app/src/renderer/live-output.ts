@@ -8,6 +8,7 @@ import { displayPickerLabel, liveOutputId, validateLiveOutputRegion } from '../s
 import type { TestBounds } from '../shared/test-engine.js'
 import type { TestOutputOverlay } from './test-canvas.js'
 import type { TestWorkspaceSnapshot } from './test-workspace.js'
+import { createNdiOutputController } from './ndi-output.js'
 
 interface LiveOutputOptions {
   readonly getSelectedScreenBounds: () => TestBounds | null
@@ -67,6 +68,7 @@ export function createLiveOutputController(options: LiveOutputOptions): LiveOutp
   const openButton = element<HTMLButtonElement>('live-output-open')
   const count = element<HTMLSpanElement>('live-output-count')
   const dialog = element<HTMLDialogElement>('live-output-dialog')
+  const ndiController = createNdiOutputController(dialog)
   const list = element<HTMLDivElement>('live-output-list')
   const closeButton = element<HTMLButtonElement>('live-output-close')
   const refreshButton = element<HTMLButtonElement>('live-output-refresh')
@@ -324,6 +326,7 @@ export function createLiveOutputController(options: LiveOutputOptions): LiveOutp
   const controller: LiveOutputController = {
     frameChanged: next => {
       snapshot = next
+      ndiController.frameChanged(next)
       for (const route of routes) {
         if (!route.customized && !route.running && next.frame.bounds.width > 0 && next.frame.bounds.height > 0) {
           route.region = integerRegion(next.frame.bounds)

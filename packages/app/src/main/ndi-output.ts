@@ -58,7 +58,12 @@ function executablePath(): string {
   if (process.platform !== 'win32') throw new Error('NDI Output MVP currently requires Windows.')
   const override = process.env['LEDMAP_NDI_SENDER_PATH']
   if (override && !isAbsolute(override)) throw new Error('LEDMAP_NDI_SENDER_PATH must be absolute.')
-  const path = override || join(process.resourcesPath, 'ndi', 'ledmap-ndi-sender.exe')
+  // Electron Builder's portable target extracts resources to a temporary directory.
+  // A sidecar next to the portable EXE therefore offers a practical SDK-enabled deployment.
+  const portableDir = process.env['PORTABLE_EXECUTABLE_DIR']
+  const sidecar = portableDir ? join(portableDir, 'ledmap-ndi-sender.exe') : null
+  const path = override || (sidecar && existsSync(sidecar) ? sidecar
+    : join(process.resourcesPath, 'ndi', 'ledmap-ndi-sender.exe'))
   if (!existsSync(path)) throw new Error('NDI helper not installed. See docs/specs/LEDMAP-NDI-OUTPUT-MVP.md.')
   return path
 }

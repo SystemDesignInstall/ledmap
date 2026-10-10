@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process'
 // Key: GHSA id. Value: justification. Keep this list minimal and time-stamped on change.
 const exceptions = new Map([
   [
-    'GHSA-hp3w-g68c-fv3c',
+    'GHSA-HP3W-G68C-FV3C',
     'sprintf-js unbounded-precision DoS, reachable only through electron-builder build-tooling logs (devDependency, never shipped in the app bundle). ' +
       'The available fix downgrades to electron-builder@26.5.0 which carries HIGH GHSA-7g7r-gx96-252g. Accepted 2026-10-08; re-check on electron-builder upgrades.',
   ],
@@ -17,30 +17,45 @@ try {
     encoding: 'utf8',
     maxBuffer: 64 * 1024 * 1024,
     stdio: ['ignore', 'pipe', 'pipe'],
+    shell: process.platform === 'win32',
   })
 } catch (error) {
   raw = error?.stdout?.toString() ?? ''
 }
+if (!raw.trim()) throw new Error('`npm audit --json` produced no output')
 
 let report
 try {
-  report = JSON.parse(raw || '{}')
+  report = JSON.parse(raw)
 } catch {
   throw new Error('Unable to parse `npm audit --json` output')
+}
+if (!report || typeof report !== 'object' || !report.vulnerabilities || typeof report.vulnerabilities !== 'object') {
+  throw new Error('Incomplete `npm audit --json` report: missing vulnerabilities')
 }
 
 const ranks = { info: 0, low: 1, moderate: 2, high: 3, critical: 4 }
 const failures = []
-for (const [name, entry] of Object.entries(report.vulnerabilities ?? {})) {
-  if ((ranks[entry.severity] ?? 0) < ranks.low) continue
-  const advisories = new Set()
-  for (const via of entry.via ?? []) {
-    const url = typeof via === 'object' ? via.url ?? '' : ''
-    const match = /GHSA-[a-z0-9-]+/i.exec(url)
-    if (match) advisories.add(match[0].toUpperCase())
+const vulnerabilities = report.vulnerabilities
+function relatedAdvisories(name, seen = new Set()) {
+  if (seen.has(name)) return new Set()
+  seen.add(name)
+  const result = new Set()
+  for (const via of vulnerabilities[name]?.via ?? []) {
+    if (typeof via === 'object') {
+      const match = /GHSA-[a-z0-9-]+/i.exec(via.url ?? '')
+      if (match) result.add(match[0].toUpperCase())
+    } else if (typeof via === 'string') {
+      for (const id of relatedAdvisories(via, seen)) result.add(id)
+    }
   }
+  return result
+}
+for (const [name, entry] of Object.entries(vulnerabilities)) {
+  if ((ranks[entry.severity] ?? 0) < ranks.low) continue
+  const advisories = relatedAdvisories(name)
   const unaccepted = [...advisories].filter(id => !exceptions.has(id))
-  // No advisory link (range-only entry) or any unaccepted advisory -> fail.
+  // No advisory link in the entry or its dependency chain, or any unaccepted advisory -> fail.
   if (advisories.size === 0 || unaccepted.length > 0) {
     failures.push(`${name} [${entry.severity}]: ${(unaccepted.length > 0 ? unaccepted : ['no advisory id']).join(', ')}`)
   }

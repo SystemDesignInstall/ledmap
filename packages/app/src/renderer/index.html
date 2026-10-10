@@ -33,6 +33,8 @@
           <div class="tool-group primary-tools">
             <button id="add-screen" class="primary" type="button">+ Screen</button>
             <button id="fit-project" type="button">Fit All</button>
+            <button id="stage3d-toggle" type="button" aria-pressed="false" title="3D preview of existing Composition Screens">3D View</button>
+            <button id="stage3d-fit" type="button" title="Reset 3D camera" hidden>Reset 3D</button>
             <button id="fit-selection" type="button">Fit Selection</button>
             <button id="actual-size" type="button">100%</button>
             <button id="zoom-out" type="button" aria-label="Zoom out">−</button>
@@ -202,6 +204,7 @@
             <button id="empty-add-screen" class="primary" type="button">Add your first Screen</button>
           </div>
           <canvas id="project-canvas" role="img" aria-label="Project canvas. No Screens."></canvas>
+          <canvas id="stage3d-canvas" role="img" aria-label="3D Composition. Drag to orbit, Shift-drag to pan, wheel to zoom." hidden></canvas>
           <span id="canvas-note" class="canvas-note"></span>
         </div>
       </article>

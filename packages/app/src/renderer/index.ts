@@ -42,6 +42,7 @@ import { createExportWorkspace, type ExportWorkspace } from './export-workspace.
 import { selectCompositionGeometry, type Direction, type Numbering } from '@ledmap/core'
 import { chartBounds, chartLogoBounds, chartSettingsFromExtensions, screenChartStyle, screenNameVisible, screenCabinetLabels, defaultChartGuides, defaultChartInformation, withChartSettings, type ChartSettings, type ChartPalette, type ChartLabels, type ChartAnchor, type ScreenChartStyle } from '../shared/chart-settings.js'
 import { cabinetDisplayLabel, duplicateCabinetLabel, physicalCabinetLabel, type CabinetLabelMode } from '../shared/cabinet-labels.js'
+import { createStage3DWorkspace, type Stage3DWorkspace } from './stage-3d.js'
 
 interface LedmapHook {
   dump(): ReadonlyArray<{
@@ -92,6 +93,9 @@ function element<T extends HTMLElement>(id: string): T {
 }
 
 const canvas = element<HTMLCanvasElement>('project-canvas')
+const stage3DCanvas = element<HTMLCanvasElement>('stage3d-canvas')
+const stage3DToggle = element<HTMLButtonElement>('stage3d-toggle')
+const stage3DFitButton = element<HTMLButtonElement>('stage3d-fit')
 const viewport = element<HTMLDivElement>('viewport')
 const tree = element<HTMLDivElement>('project-tree')
 const properties = element<HTMLDivElement>('properties')
@@ -187,6 +191,8 @@ let activeScreenId: string | null = currentProject().screens[0]?.screen.id ?? nu
 let cellEditScreenId: string | null = null
 const selectedCellKeys = new Set<string>()
 let camera: Camera = fitCamera(projectBounds(currentProject()), 1, 1)
+let stage3DActive = false
+let stage3D: Stage3DWorkspace | null = null
 let snapEnabled = true
 let snapSources: SnapSources = { grid: false, edges: true, centers: true, guides: true }
 let gridStep = 10
@@ -489,8 +495,18 @@ function compositionDrawing(): TestFrame {
 function draw(): void {
   const project = currentProject()
   const hidden = project.screens.length === 0 && creationPreview === null
-  canvas.hidden = hidden
+  canvas.hidden = hidden || stage3DActive
+  stage3DCanvas.hidden = hidden || !stage3DActive
   empty.hidden = !hidden
+  if (stage3DActive) {
+    stage3D?.redraw()
+    const active = activeScreenId ? findScreen(project, activeScreenId) : undefined
+    canvasTitle.textContent = viewMode === 'active' ? active?.screen.name ?? 'Active Screen' : '3D Composition · ' + project.screens.length + ' Screens'
+    canvasNote.textContent = '3D geometry preview · cabinet depth is illustrative'
+    zoomIndicator.textContent = '3D Orbit'
+    toggleMode.disabled = project.screens.length === 0
+    return
+  }
   const settings = chartSettings()
   const visible = viewMode === 'active' ? project.screens.filter(screen => screen.screen.id === activeScreenId) : project.screens
   const transparentScreens = visible.filter(screen => {
@@ -545,6 +561,7 @@ function fitTo(b: { left: number; top: number; right: number; bottom: number; wi
 }
 
 function fitToProject(): void {
+  if (stage3DActive) { stage3D?.fit(); return }
   const active = activeScreenId ? findScreen(currentProject(), activeScreenId) : undefined
   if (viewMode === 'all') {
     const bounds = projectBounds(currentProject())
@@ -595,7 +612,7 @@ function renderStatus(): void {
   compositionStatus.textContent = compositionStatusText()
   selectedCount.textContent = `${selectedScreenIds.length} selected`
   const editScreen = cellEditScreenId ? findScreen(currentProject(), cellEditScreenId) : undefined
-  editCabinetCellsButton.disabled = currentProject().screens.length === 0
+  editCabinetCellsButton.disabled = stage3DActive || currentProject().screens.length === 0
   editCabinetCellsButton.setAttribute('aria-pressed', String(cellEditScreenId !== null))
   cabinetCellCount.textContent = editScreen
     ? `${editScreen.cabinets.length}/${editScreen.grid.columns * editScreen.grid.rows} Cabinets · ${selectedCellKeys.size} selected`
@@ -617,7 +634,8 @@ function renderStatus(): void {
     .filter(source => snapSources[source])
     .map(source => source[0]!.toUpperCase() + source.slice(1))
   snapStatus.textContent = snapEnabled ? `Snap on: ${activeSources.join('+')}` : 'Snap off'
-  fitSelectionButton.disabled = selectedScreenIds.length === 0
+  fitSelectionButton.disabled = stage3DActive || selectedScreenIds.length === 0
+  actualSizeButton.disabled = stage3DActive
   guideAddV.disabled = projectGuides.length >= MAX_PROJECT_GUIDES
   guideAddH.disabled = projectGuides.length >= MAX_PROJECT_GUIDES
   renameScreenButton.disabled = selectedScreenIds.length !== 1
@@ -657,12 +675,14 @@ function fitToSelection(): void {
 }
 
 function zoomCanvas(factor: number): void {
+  if (stage3DActive) { stage3D?.zoomBy(factor); return }
   const { width, height } = canvas.getBoundingClientRect()
   camera = zoomAt(camera, { x: width / 2, y: height / 2 }, factor)
   draw()
 }
 
 function setActualSize(): void {
+  if (stage3DActive) return
   const { width, height } = canvas.getBoundingClientRect()
   const center = toProject(camera, { x: width / 2, y: height / 2 })
   camera = { zoom: 1, offsetX: width / 2 - center.x, offsetY: height / 2 - center.y }
@@ -2781,6 +2801,25 @@ exportWorkspace = createExportWorkspace({
   showError: showDocumentError,
   clearError: clearDocumentError,
 })
+
+stage3D = createStage3DWorkspace({
+  canvas: stage3DCanvas,
+  getScreens: () => visibleProject().screens,
+  getSelectedIds: () => selectedScreenIds,
+  onSelect: selectScreen,
+})
+stage3DToggle.addEventListener('click', () => {
+  endPointerGesture()
+  cellEditScreenId = null
+  selectedCellKeys.clear()
+  stage3DActive = !stage3DActive
+  stage3DToggle.textContent = stage3DActive ? '2D View' : '3D View'
+  stage3DToggle.setAttribute('aria-pressed', String(stage3DActive))
+  stage3DFitButton.hidden = !stage3DActive
+  render()
+})
+stage3DFitButton.addEventListener('click', () => stage3D?.reset())
+
 
 function setAppMode(mode: AppMode): void {
   if (appMode === mode) return

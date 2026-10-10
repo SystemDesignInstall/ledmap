@@ -8,6 +8,8 @@ import {
   type RecoverySnapshotRequest,
   type RecoverySaveCommit,
   type SimulateDisplayChangeRequest,
+  type NdiOutputRequest,
+  type NdiOutputUpdate,
   type StartLiveOutputRequest,
   type UpdateLiveOutputRequest,
   type WriteExportFilesRequest,
@@ -57,6 +59,14 @@ const api: LedmapDesktopApi = {
     const listener = (_event: Electron.IpcRendererEvent, state: Parameters<typeof callback>[0]): void => callback(state)
     ipcRenderer.on(ipcChannels.liveOutputStateChanged, listener)
     return () => ipcRenderer.removeListener(ipcChannels.liveOutputStateChanged, listener)
+  },
+  startNdiOutput: (request: NdiOutputRequest) => ipcRenderer.invoke(ipcChannels.startNdiOutput, request),
+  updateNdiOutput: (request: NdiOutputUpdate) => ipcRenderer.invoke(ipcChannels.updateNdiOutput, request),
+  stopNdiOutput: (streamId: string) => ipcRenderer.invoke(ipcChannels.stopNdiOutput, streamId),
+  onNdiOutputStateChanged: callback => {
+    const listener = (_event: Electron.IpcRendererEvent, state: Parameters<typeof callback>[0]): void => callback(state)
+    ipcRenderer.on(ipcChannels.ndiOutputStateChanged, listener)
+    return () => ipcRenderer.removeListener(ipcChannels.ndiOutputStateChanged, listener)
   },
   simulateDisplayChange: (request: SimulateDisplayChangeRequest) => ipcRenderer.invoke(ipcChannels.simulateDisplayChange, request),
   writeExportFiles: (request: WriteExportFilesRequest) => ipcRenderer.invoke(ipcChannels.writeExportFiles, request),

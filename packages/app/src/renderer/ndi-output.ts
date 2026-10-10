@@ -21,8 +21,16 @@ export function createNdiOutputController(dialog: HTMLDialogElement): NdiOutputC
   const title = document.createElement('h2')
   title.textContent = 'NDI Output'
   const description = document.createElement('p')
-  description.textContent = 'One stream for the whole composition plus an independent stream for each Screen. Windows / NDI SDK sender required.'
-  heading.append(title, description)
+  description.textContent = 'One stream for the whole composition plus an independent stream for each Screen. Windows x64.'
+  const trademark = document.createElement('p')
+  trademark.textContent = 'NDI® is a registered trademark of Vizrt NDI AB. '
+  const ndiLink = document.createElement('a')
+  ndiLink.href = 'https://ndi.video/'
+  ndiLink.target = '_blank'
+  ndiLink.rel = 'noopener noreferrer'
+  ndiLink.textContent = 'ndi.video'
+  trademark.append(ndiLink)
+  heading.append(title, description, trademark)
   const fpsLabel = document.createElement('label')
   fpsLabel.textContent = 'FPS '
   const fpsSelect = document.createElement('select')

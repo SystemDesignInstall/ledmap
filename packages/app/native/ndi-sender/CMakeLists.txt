@@ -10,9 +10,7 @@ endif()
 if(NOT DEFINED NDI_SDK_DIR)
   message(FATAL_ERROR "Set NDI_SDK_DIR to the locally installed NDI 6 SDK directory.")
 endif()
-add_executable(ledmap-ndi-sender WIN32) 
-# A console subsystem is required: stdin transports BGRA and stderr provides diagnostics.
-set_target_properties(ledmap-ndi-sender PROPERTIES WIN32_EXECUTABLE FALSE)
-target_sources(ledmap-ndi-sender PRIVATE main.cpp)
+add_executable(ledmap-ndi-sender main.cpp)
+# Console subsystem required: stdin transports BGRA and stderr provides diagnostics.
 target_include_directories(ledmap-ndi-sender PRIVATE "${NDI_SDK_DIR}/Include")
 target_link_libraries(ledmap-ndi-sender PRIVATE "${NDI_SDK_DIR}/Lib/x64/Processing.NDI.Lib.x64.lib")

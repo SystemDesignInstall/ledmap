@@ -17,7 +17,7 @@ cmake -S packages/app/native/ndi-sender -B packages/app/native/ndi-sender/build 
 cmake --build packages/app/native/ndi-sender/build --config Release
 ```
 
-Set `LEDMAP_NDI_SENDER_PATH` to the absolute path of the resulting `ledmap-ndi-sender.exe` before starting LedMAP. For a packaged build, place the compiled binary at `resources/ndi/ledmap-ndi-sender.exe` (or set the environment variable). The NDI runtime DLLs must be accessible according to the SDK's installation/redistribution instructions.
+Set `LEDMAP_NDI_SENDER_PATH` to the absolute path of the resulting `ledmap-ndi-sender.exe` before starting LedMAP. For a **portable** Windows build, place `ledmap-ndi-sender.exe` directly next to `LedMAP-<version>-win-x64-portable.exe`; the portable launcher exposes that directory to LedMAP. A regular packaged build can also use `resources/ndi/ledmap-ndi-sender.exe`. The NDI runtime DLLs must be accessible according to the SDK's installation/redistribution instructions.
 
 The application returns an explicit error if the helper is missing or the SDK cannot initialize; it does **not** falsely report that a stream is broadcasting.
 

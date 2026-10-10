@@ -2,6 +2,7 @@
 // stdin: consecutive tightly packed BGRA (width * height * 4) video frames.
 // stdout: unused; stderr: READY / ERROR handshake and diagnostics.
 #include <Processing.NDI.Lib.h>
+#include <windows.h>
 #include <cstdint>
 #include <iostream>
 #include <limits>
@@ -28,18 +29,42 @@ int main(int argc, char** argv) {
     std::cerr << "ERROR Unsupported NDI output configuration\n";
     return 2;
   }
-  if (!NDIlib_initialize()) {
+  // Late binding keeps LedMAP launchable even when the optional NDI runtime
+  // is absent. Windows resolves the DLL beside this helper before system paths.
+  HMODULE ndi = LoadLibraryW(L"Processing.NDI.Lib.x64.dll");
+  if (!ndi) {
+    std::cerr << "ERROR Processing.NDI.Lib.x64.dll is missing next to NDI sender\n";
+    return 1;
+  }
+  const auto initialize = reinterpret_cast<decltype(&NDIlib_initialize)>(
+      GetProcAddress(ndi, "NDIlib_initialize"));
+  const auto destroy = reinterpret_cast<decltype(&NDIlib_destroy)>(
+      GetProcAddress(ndi, "NDIlib_destroy"));
+  const auto createSender = reinterpret_cast<decltype(&NDIlib_send_create)>(
+      GetProcAddress(ndi, "NDIlib_send_create"));
+  const auto destroySender = reinterpret_cast<decltype(&NDIlib_send_destroy)>(
+      GetProcAddress(ndi, "NDIlib_send_destroy"));
+  const auto sendVideo = reinterpret_cast<decltype(&NDIlib_send_send_video_v2)>(
+      GetProcAddress(ndi, "NDIlib_send_send_video_v2"));
+  if (!initialize || !destroy || !createSender || !destroySender || !sendVideo) {
+    std::cerr << "ERROR NDI runtime does not export the expected SDK 6 API\n";
+    FreeLibrary(ndi);
+    return 1;
+  }
+  if (!initialize()) {
     std::cerr << "ERROR NDI runtime failed to initialize\n";
+    FreeLibrary(ndi);
     return 1;
   }
   NDIlib_send_create_t options = {};
   options.p_ndi_name = name.c_str();
   options.clock_video = false; // The Electron main process schedules frames.
   options.clock_audio = false;
-  NDIlib_send_instance_t sender = NDIlib_send_create(&options);
+  NDIlib_send_instance_t sender = createSender(&options);
   if (!sender) {
     std::cerr << "ERROR Unable to create NDI sender\n";
-    NDIlib_destroy();
+    destroy();
+    FreeLibrary(ndi);
     return 1;
   }
 
@@ -60,9 +85,10 @@ int main(int argc, char** argv) {
   std::cerr << "READY\n" << std::flush;
   while (std::cin.read(reinterpret_cast<char*>(pixels.data()), static_cast<std::streamsize>(byteCount))) {
     // Synchronous send: the caller may reuse the buffer immediately afterwards.
-    NDIlib_send_send_video_v2(sender, &frame);
+    sendVideo(sender, &frame);
   }
-  NDIlib_send_destroy(sender);
-  NDIlib_destroy();
+  destroySender(sender);
+  destroy();
+  FreeLibrary(ndi);
   return 0;
 }

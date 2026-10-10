@@ -43,7 +43,28 @@ New-Item -Type Directory -Force $extract | Out-Null
 if ($LASTEXITCODE -ne 0) { throw '7-Zip could not unpack the official NDI Runtime.' }
 $dll = Get-ChildItem -Path $extract -Filter 'Processing.NDI.Lib.x64.dll' -Recurse -File | Sort-Object Length -Descending | Select-Object -First 1
 $notices = Get-ChildItem -Path $extract -Filter 'Processing.NDI.Lib.Licenses.txt' -Recurse -File | Select-Object -First 1
-if (-not $dll) { throw 'NDI DLL not present in extracted runtime. Cannot publish a purported NDI-ready build.' }
+if (-not $dll -or -not $notices) {
+  # Some official NDI runtime installer builds cannot be directly unpacked.
+  # In that case, use its documented silent-install switch on the temporary CI runner.
+  Write-Host 'Direct unpacking was incomplete; installing official runtime on CI runner only.'
+  $install = Start-Process -FilePath $installer -ArgumentList '/verysilent', '/suppressmsgboxes', '/norestart' -PassThru -Wait
+  if ($install.ExitCode -ne 0) { throw "NDI runtime installer failed with code $($install.ExitCode)." }
+  $installedPaths = @(
+    (Join-Path $env:ProgramFiles 'NDI'),
+    (Join-Path ${env:ProgramFiles(x86)} 'NDI')
+  ) | Where-Object { $_ -and (Test-Path $_) }
+  foreach ($ndiPath in $installedPaths) {
+    if (-not $dll) {
+      $dll = Get-ChildItem -Path $ndiPath -Filter 'Processing.NDI.Lib.x64.dll' -Recurse -File |
+        Sort-Object Length -Descending | Select-Object -First 1
+    }
+    if (-not $notices) {
+      $notices = Get-ChildItem -Path $ndiPath -Filter 'Processing.NDI.Lib.Licenses.txt' -Recurse -File |
+        Select-Object -First 1
+    }
+  }
+}
+if (-not $dll) { throw 'NDI DLL not present in extracted or installed runtime. Cannot publish a purported NDI-ready build.' }
 if (-not $notices) { throw 'NDI third-party rights notices missing. Refusing to redistribute DLL without notices.' }
 Copy-Item $dll.FullName (Join-Path $stage $dll.Name) -Force
 Copy-Item $notices.FullName (Join-Path $stage $notices.Name) -Force
